@@ -34,8 +34,8 @@ export default function MainContainer() {
           body: JSON.stringify(question),
         });
 
-        if (!response.ok) {
-          toast.error("Error getting data");
+        if (!response.ok) {	
+		  response.text().then(text => {toast.error("Error getting data."+text);})
           setLoading(false);
         } else {
           const data = await response.json();

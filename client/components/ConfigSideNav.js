@@ -24,7 +24,7 @@ export default function ConfigSideNav() {
       }
     } catch (error) {
       setIsLoading(false);
-      toast.error("Error Ingesting data");
+	  response.text().then(text => {toast.error("Error Ingesting data."+text);})
     }
   };
 
@@ -34,7 +34,7 @@ export default function ConfigSideNav() {
       const res = await fetch("http://localhost:5000/download_model");
       const jsonData = await res.json();
       if (!res.ok) {
-        toast.error("Error downloading model");
+	    response.text().then(text => {toast.error("Error downloading model."+text);})  
         setdownloadInProgress(false);
       } else {
         setdownloadInProgress(false);
@@ -68,7 +68,7 @@ export default function ConfigSideNav() {
 
       if (!res.ok) {
         console.log("Error Uploading document");
-        toast.error("Error Uploading document");
+		response.text().then(text => {toast.error("Error Uploading document."+text);})
         setSelectedFile(null); // Clear the selected file after successful upload
         document.getElementById("file-input").value = "";
         setIsUploading(false)

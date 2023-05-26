@@ -17,12 +17,12 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 # How to run
 
 1. Go to client folder and run the below commands
-   npm install
-   npm run dev
+   * npm install
+   * npm run dev
    
 2. Go to server folder and run the below commands
-   pip install requirements.txt
-   npm run dev
+   * pip install requirements.txt
+   * python privateGPT.py
 
 3. Open localhost:3000, click on download model to download the required model initially
 

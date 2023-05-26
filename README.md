@@ -21,7 +21,7 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
    * npm run dev
    
 2. Go to server folder and run the below commands
-   * pip install requirements.txt
+   * pip install -r requirements.txt
    * python privateGPT.py
 
 3. Open localhost:3000, click on download model to download the required model initially

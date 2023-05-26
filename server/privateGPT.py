@@ -139,19 +139,8 @@ def get_answer():
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
-    print("LLM", llm)
-    # Prepare the LLM
-    '''
-    callbacks = [StreamingStdOutCallbackHandler()]
-    match model_type:
-        case "LlamaCpp":
-            llm = LlamaCpp(model_path=model_path, n_ctx=model_n_ctx, callbacks=callbacks, verbose=False)
-        case "GPT4All":
-            llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
-        case _default:
-            print(f"Model {model_type} not supported!")
-            exit;
-    '''        
+    if llm==None:
+        return "Model not downloaded", 400    
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
     if query!=None and query!="":
         res = qa(query)
@@ -201,13 +190,19 @@ def download_and_save():
             bytes_downloaded += len(chunk)
             progress = round((bytes_downloaded / total_size) * 100, 2)
             print(f'Download Progress: {progress}%')
-
-    return jsonify(response="Download completed")
-
-def load_model():
     global llm
     callbacks = [StreamingStdOutCallbackHandler()]
     llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+    return jsonify(response="Download completed")
+
+def load_model():
+    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
+    models_folder = 'models'  # Specify the name of the folder inside the Flask app root
+    file_path = f'{models_folder}/{filename}'
+    if os.path.exists(file_path):
+        global llm
+        callbacks = [StreamingStdOutCallbackHandler()]
+        llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
 
 if __name__ == "__main__":
   load_model()

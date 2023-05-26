@@ -49,7 +49,7 @@ export default function ConfigSideNav() {
   };
 
   const handleFileChange = (event) => {
-    if(event.target.file[0]!=null){
+    if(event.target.files[0]!=null){
       setSelectedFile(event.target.files[0]);
     }
     

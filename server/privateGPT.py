@@ -207,4 +207,4 @@ def load_model():
 if __name__ == "__main__":
   load_model()
   print("LLM0", llm)
-  app.run(host="0.0.0.0", debug = True)
+  app.run(host="0.0.0.0", debug = False)

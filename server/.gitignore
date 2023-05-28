@@ -2,7 +2,7 @@
 .DS_STORE
 
 # Models
-models/
+models/*.bin
 
 # Local Chroma db
 .chroma/

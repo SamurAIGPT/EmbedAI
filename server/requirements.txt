@@ -94,7 +94,7 @@ python-magic==0.4.27
 python-pptx==0.6.21
 pytz==2023.3
 pytz-deprecation-shim==0.1.0.post0
-pywin32==306
+pywin32==306; sys_platform == 'win32'
 PyYAML==6.0
 red-black-tree-mod==1.20
 regex==2023.5.5

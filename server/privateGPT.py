@@ -194,28 +194,41 @@ def upload_doc():
 
 @app.route('/download_model', methods=['GET'])
 def download_and_save():
-    url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'
-    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'
-    models_folder = 'models'
-    n_ctx = 1024  # Replace this with correct value
+    try:
+        url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'
+        filename = 'ggml-gpt4all-j-v1.3-groovy.bin'
+        models_folder = 'models'
+        n_ctx = 1024  # Replace this with correct value
 
-    response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raises an exception for 4xx and 5xx status codes
+    except requests.RequestException as e:
+        return jsonify(error=f"Failed to download the model: {str(e)}"), 500
+
     total_size = int(response.headers.get('content-length', 0))
     bytes_downloaded = 0
     file_path = f'{models_folder}/{filename}'
+
     if os.path.exists(file_path):
-        return jsonify(response="Download completed")
+        return jsonify(response="Download already completed")
 
-    with open(file_path, 'wb') as file:
-        for chunk in response.iter_content(chunk_size=4096):
-            file.write(chunk)
-            bytes_downloaded += len(chunk)
-            progress = round((bytes_downloaded / total_size) * 100, 2)
-            print(f'Download Progress: {progress}%')
+    try:
+        with open(file_path, 'wb') as file:
+            for chunk in response.iter_content(chunk_size=4096):
+                file.write(chunk)
+                bytes_downloaded += len(chunk)
+                progress = round((bytes_downloaded / total_size) * 100, 2)
+                print(f'Download Progress: {progress}%')
+    except IOError as e:
+        return jsonify(error=f"Failed to save the model: {str(e)}"), 500
 
-    callbacks = [StreamingStdOutCallbackHandler()]
-    llm = GPT4All(model=file_path, n_ctx=n_ctx, backend='gptj',
-                  callbacks=callbacks, verbose=False)
+    try:
+        callbacks = [StreamingStdOutCallbackHandler()]
+        llm = GPT4All(model=file_path, n_ctx=n_ctx, backend='gptj',
+                      callbacks=callbacks, verbose=False)
+    except Exception as e:
+        return jsonify(error=f"Failed to load the model: {str(e)}"), 500
+
     return jsonify(response="Download completed")
 
 

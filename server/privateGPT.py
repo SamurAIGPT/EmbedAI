@@ -177,6 +177,8 @@ def download_and_save():
     filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
     models_folder = 'models'  # Specify the name of the folder inside the Flask app root
 
+    if not os.path.exists(models_folder):
+        os.makedirs(models_folder)
     response = requests.get(url,stream=True)
     total_size = int(response.headers.get('content-length', 0))
     bytes_downloaded = 0

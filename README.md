@@ -2,7 +2,7 @@
 
 Create a QnA chatbot on your documents without relying on the internet by utilizing the capabilities of local LLMs. Ensure complete privacy and security as none of your data ever leaves your local execution environment. Seamlessly process and inquire about your documents even without an internet connection. Inspired from [imartinez](https://github.com/imartinez)
 
-<img width="947" alt="pgpt" src="https://github.com/SamurAIGPT/privateGPT/assets/4326215/b5896f05-b1ff-4d79-8b48-d984ee78dc82">
+<img width="948" alt="pgpt" src="https://github.com/SamurAIGPT/privateGPT/assets/4326215/76e24cd4-a890-4253-bb87-098c4f1328fd">
 
 ### Getting started
 

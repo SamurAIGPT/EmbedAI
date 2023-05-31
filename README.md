@@ -4,25 +4,26 @@ Create a QnA chatbot on your documents without relying on the internet by utiliz
 
 <img width="948" alt="pgpt" src="https://github.com/SamurAIGPT/privateGPT/assets/4326215/76e24cd4-a890-4253-bb87-098c4f1328fd">
 
-### Getting started
+## Getting started
 
 Code is up, ⭐ (Star) the repo meanwhile to receive updates
 
 Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Singh](https://twitter.com/ankur_maker) on twitter for updates
 
-### Requirements
+## Requirements
+
 * Python 3.8 or later
 * Minimum 16GB of memory
 
-# How to run
+## How to run
 
 1. Go to client folder and run the below commands
    * npm install
    * npm run dev
-   
+
 2. Go to server folder and run the below commands
    * pip install -r requirements.txt
-   * python privateGPT.py
+   * python privateGPT.
 
 3. Open localhost:3000, click on download model to download the required model initially
 
@@ -30,11 +31,11 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 
 5. Now run any query on your data. Data querying is slow and thus wait for sometime
 
-### Support
+## Support
 
-Join our discord https://discord.gg/A6EzvsKX4u to get support
+Join our discord <https://discord.gg/A6EzvsKX4u> to get support
 
-### Data
+## Data
 
 The supported extensions for documents are:
 
@@ -50,4 +51,3 @@ The supported extensions for documents are:
 * .pdf: Portable Document Format (PDF),
 * .pptx : PowerPoint Document,
 * .txt: Text file (UTF-8),
-

@@ -1,0 +1,28 @@
+version: '3.9'
+
+services:
+    client:
+      container_name: client
+      build: ./client/
+      restart: always
+      volumes:
+        - ./client/:/app/client
+      ports:
+        - 3000:3000
+
+    server:
+      container_name: server
+      build: ./server/
+      restart: always
+      volumes:
+        - ./server/:/app/server
+      environment:
+        PERSIST_DIRECTORY: db
+        MODEL_TYPE: GPT4All
+        MODEL_PATH: models/ggml-gpt4all-j-v1.3-groovy.bin
+        EMBEDDINGS_MODEL_NAME: all-MiniLM-L6-v2
+        MODEL_N_CTX: 1000
+      ports:
+        - 3001:3001
+      depends_on:
+        - client

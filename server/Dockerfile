@@ -6,7 +6,7 @@ RUN rm ~/.cache/pip -rf
 
 WORKDIR /app/
 
-COPY requirements.txt ./
+COPY ./docker/requirements.txt ./
 
 RUN pip install \
     --trusted-host pypi.org \

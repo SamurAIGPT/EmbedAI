@@ -13,6 +13,7 @@ Create a QnA chatbot on your documents without relying on the internet by utiliz
   * [Docker](#docker)
 * [Support](#support)
 * [Data](#data)
+* [Check repos](#check-repos)
 
 ## Getting started
 
@@ -89,3 +90,9 @@ The supported extensions for documents are:
 * .pdf: Portable Document Format (PDF),
 * .pptx : PowerPoint Document,
 * .txt: Text file (UTF-8),
+
+## Check repos
+
+* [Langchain Course](https://github.com/SamurAIGPT/langchain-course)
+* [ChatGPT Developer Plugins](https://github.com/SamurAIGPT/ChatGPT-Developer-Plugins)
+* [Camel AGI](https://github.com/SamurAIGPT/Camel-AutoGPT)

@@ -88,7 +88,7 @@ pyllamacpp==2.3.0
 pypandoc==1.11
 pyparsing==2.4.7
 python-dateutil==2.8.2
-python-docx==0.8.11
+# python-docx==0.8.11
 python-dotenv==1.0.0
 python-magic==0.4.27
 python-pptx==0.6.21
@@ -125,7 +125,7 @@ typing-extensions==4.6.2
 typing-inspect==0.9.0
 tzdata==2023.3
 tzlocal==4.2
-unstructured==0.6.6
+# unstructured==0.6.6
 urllib3==2.0.2
 uvicorn==0.22.0
 watchfiles==0.19.0

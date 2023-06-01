@@ -4,6 +4,16 @@ Create a QnA chatbot on your documents without relying on the internet by utiliz
 
 <img width="948" alt="pgpt" src="https://github.com/SamurAIGPT/privateGPT/assets/4326215/76e24cd4-a890-4253-bb87-098c4f1328fd">
 
+## Contents
+
+* [Getting started](#getting-started)
+* [Requirements](#requirements)
+* [How to run](#how-to-run)
+  * [Local](#local)
+  * [Docker](#docker)
+* [Support](#support)
+* [Data](#data)
+
 ## Getting started
 
 Code is up, ⭐ (Star) the repo meanwhile to receive updates
@@ -17,19 +27,47 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 
 ## How to run
 
+### Local
+
 1. Go to client folder and run the below commands
-   * npm install
-   * npm run dev
+
+   ```shell
+   npm install   
+   ```
+
+   ```shell
+   npm run dev
+   ```
 
 2. Go to server folder and run the below commands
-   * pip install -r requirements.txt
-   * python privateGPT.
 
-3. Open localhost:3000, click on download model to download the required model initially
+   ```shell
+   pip install -r requirements.txt
+   ```
+
+   ```shell
+   python privateGPT.
+   ```
+
+3. Open <http://localhost:3000>, click on download model to download the required model initially
 
 4. Upload any document of your choice and click on Ingest data. Ingestion is fast
 
 5. Now run any query on your data. Data querying is slow and thus wait for sometime
+
+### Docker
+
+1. Go to root and run the command bellow:
+
+   ```shell
+   docker-compose up --build
+   ```
+
+2. Open <http://localhost:3000>, click on download model to download the required model initially
+
+3. Upload any document of your choice and click on Ingest data. Ingestion is fast
+
+4. Now run any query on your data. Data querying is slow and thus wait for sometime
 
 ## Support
 

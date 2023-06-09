@@ -22,6 +22,7 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 ## Requirements
 
 * Python 3.8 or later
+* NodeJS v18.12.1 or later
 * Minimum 16GB of memory
 
 ## How to run

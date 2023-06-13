@@ -44,7 +44,7 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
    ```
 
    ```shell
-   python privateGPT.
+   python privateGPT.py
    ```
 
 3. Open <http://localhost:3000>, click on download model to download the required model initially

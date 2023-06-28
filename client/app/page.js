@@ -11,7 +11,7 @@ export default function Home() {
      <Row className=' pe-3 vh-100 overflow-hidden  g-0'>
         <Col className="side-bar-col" lg={3} xs={3}>
         <div>
-        <div className='d-flex align-items-center justify-content-center py-4'><h3>PrivateGPT</h3></div>
+        <div className='d-flex align-items-center justify-content-center py-4'><h3>Alpine AI</h3></div>
        <ConfigSideNav/>
         </div>
         

@@ -8,8 +8,8 @@ import "react-toastify/dist/ReactToastify.css";
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'PrivateGPT',
-  description: 'PrivateGPT',
+  title: 'Alpine AI',
+  description: 'Alpine AI Enterprise Document Search',
 }
 
 export default function RootLayout({ children }) {

@@ -26,7 +26,7 @@ export default function MainContainer() {
       setChat((chat) => [...chat, { isBot: false, msg: question }]);
       setQuestion("");
       try {
-        const response = await fetch("http://localhost:5000/get_answer", {
+        const response = await fetch("http://localhost:8888/get_answer", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -72,7 +72,7 @@ export default function MainContainer() {
                 >
                   <div>
                     {msg.isBot ? (
-                      <span style={{ fontSize: "12px" }}>PrivateGPT</span>
+                      <span style={{ fontSize: "12px" }}>Alpine AI</span>
                     ) : (
                       <span style={{ fontSize: "12px" }}>User</span>
                     )}
@@ -111,9 +111,9 @@ export default function MainContainer() {
               style={{ color: "black" }}
             >
               <h1 className="mt-sm-5">
-                <small>PrivateGPT by SamurAI</small>
+                <small>Alpine AI</small>
               </h1>
-              <h3 style={{ color: "gray" }}>A better UI for PrivateGPT</h3>
+              <h3 style={{ color: "gray" }}>Enterprise Level Document Search</h3>
             </Stack>
           )}
           {loading ? <Stack gap={2} direction="horizontal" className="loading">

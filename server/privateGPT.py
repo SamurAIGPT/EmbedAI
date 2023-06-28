@@ -1,35 +1,23 @@
-from flask import Flask,jsonify, render_template, flash, redirect, url_for, Markup, request
-from flask_cors import CORS
-from dotenv import load_dotenv
-from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
-from langchain.llms import GPT4All, LlamaCpp
-import os
 import glob
+import os
 from typing import List
+
 import requests
-
-from langchain.document_loaders import (
-    CSVLoader,
-    EverNoteLoader,
-    PDFMinerLoader,
-    TextLoader,
-    UnstructuredEmailLoader,
-    UnstructuredEPubLoader,
-    UnstructuredHTMLLoader,
-    UnstructuredMarkdownLoader,
-    UnstructuredODTLoader,
-    UnstructuredPowerPointLoader,
-    UnstructuredWordDocumentLoader,
-)
-
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from langchain import HuggingFaceTextGenInference
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.chains import RetrievalQA
+from langchain.docstore.document import Document
+from langchain.document_loaders import (CSVLoader, EverNoteLoader, PDFMinerLoader, TextLoader, UnstructuredEPubLoader,
+                                        UnstructuredEmailLoader, UnstructuredHTMLLoader, UnstructuredMarkdownLoader,
+                                        UnstructuredODTLoader, UnstructuredPowerPointLoader,
+                                        UnstructuredWordDocumentLoader)
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.llms import GPT4All
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.docstore.document import Document
-from constants import CHROMA_SETTINGS
 
 app = Flask(__name__)
 CORS(app)
@@ -44,7 +32,12 @@ model_path = os.environ.get('MODEL_PATH')
 model_n_ctx = os.environ.get('MODEL_N_CTX')
 llm = None
 
+
+
+
+
 from constants import CHROMA_SETTINGS
+
 
 class MyElmLoader(UnstructuredEmailLoader):
     """Wrapper to fallback to text/plain when default does not work"""
@@ -57,7 +50,7 @@ class MyElmLoader(UnstructuredEmailLoader):
             except ValueError as e:
                 if 'text/html content not found in email' in str(e):
                     # Try plain text
-                    self.unstructured_kwargs["content_source"]="text/plain"
+                    self.unstructured_kwargs["content_source"] = "text/plain"
                     doc = UnstructuredEmailLoader.load(self)
                 else:
                     raise
@@ -107,14 +100,15 @@ def load_documents(source_dir: str) -> List[Document]:
         )
     return [load_single_document(file_path) for file_path in all_files]
 
+
 @app.route('/ingest', methods=['GET'])
 def ingest_data():
-    # Load environment variables
+    #  Load environment variables
     persist_directory = os.environ.get('PERSIST_DIRECTORY')
     source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
     embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
 
-    # Load documents and split in chunks
+    #  Load documents and split in chunks
     print(f"Loading documents from {source_directory}")
     chunk_size = 500
     chunk_overlap = 50
@@ -126,41 +120,41 @@ def ingest_data():
 
     # Create embeddings
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
-    
+
     # Create and store locally vectorstore
     db = Chroma.from_documents(texts, embeddings, persist_directory=persist_directory, client_settings=CHROMA_SETTINGS)
     db.persist()
     db = None
     return jsonify(response="Success")
-    
+
+
 @app.route('/get_answer', methods=['POST'])
 def get_answer():
     query = request.json
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
-    if llm==None:
-        return "Model not downloaded", 400    
+    if llm == None:
+        return "Model not downloaded", 400
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
-    if query!=None and query!="":
+    if query != None and query != "":
         res = qa(query)
         answer, docs = res['result'], res['source_documents']
-        
-        source_data =[]
+
+        source_data = []
         for document in docs:
-             source_data.append({"name":document.metadata["source"]})
+            source_data.append({"name": document.metadata["source"]})
 
-        return jsonify(query=query,answer=answer,source=source_data)
+        return jsonify(query=query, answer=answer, source=source_data)
 
-    return "Empty Query",400
+    return "Empty Query", 400
 
 
 @app.route('/upload_doc', methods=['POST'])
 def upload_doc():
-    
     if 'document' not in request.files:
         return jsonify(response="No document file found"), 400
-    
+
     document = request.files['document']
     if document.filename == '':
         return jsonify(response="No selected file"), 400
@@ -171,6 +165,7 @@ def upload_doc():
 
     return jsonify(response="Document upload successful")
 
+
 @app.route('/download_model', methods=['GET'])
 def download_and_save():
     url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the URL of the resource to download
@@ -179,7 +174,7 @@ def download_and_save():
 
     if not os.path.exists(models_folder):
         os.makedirs(models_folder)
-    response = requests.get(url,stream=True)
+    response = requests.get(url, stream=True)
     total_size = int(response.headers.get('content-length', 0))
     bytes_downloaded = 0
     file_path = f'{models_folder}/{filename}'
@@ -197,16 +192,30 @@ def download_and_save():
     llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
     return jsonify(response="Download completed")
 
+
 def load_model():
-    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
-    models_folder = 'models'  # Specify the name of the folder inside the Flask app root
-    file_path = f'{models_folder}/{filename}'
-    if os.path.exists(file_path):
-        global llm
-        callbacks = [StreamingStdOutCallbackHandler()]
-        llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+    global llm
+    callbacks = [StreamingStdOutCallbackHandler()]
+    llm = HuggingFaceTextGenInference(
+        inference_server_url=
+        max_new_tokens=512,
+        top_k=10,
+        top_p=0.95,
+        typical_p=0.95,
+        temperature=0.01,
+        repetition_penalty=1.03,
+        callbacks=callbacks,
+    )
+    # filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
+    # models_folder = 'models'  # Specify the name of the folder inside the Flask app root
+    # file_path = f'{models_folder}/{filename}'
+    # if os.path.exists(file_path):
+    #     global llm
+    #     callbacks = [StreamingStdOutCallbackHandler()]
+    #     llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
+
 
 if __name__ == "__main__":
-  load_model()
-  print("LLM0", llm)
-  app.run(host="0.0.0.0", debug = False)
+    load_model()
+    print("LLM0", llm)
+    app.run(host="0.0.0.0", port=8888, debug=False)

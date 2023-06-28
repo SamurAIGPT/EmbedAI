@@ -5,7 +5,7 @@ export default function PromptSideNav() {
     <>
         <div className='prompt-bg p-3 mx-4'>
             <span>Prompt</span>
-            <div style={{color:"gray"}}>You are privateGPT which built with Langchain and GPT4All and Llamacpp</div>
+            <div style={{color:"gray"}}>Alpine AI: Enterprise Level Document Search of Tomorrow</div>
         </div>
     </>
   )

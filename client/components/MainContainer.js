@@ -29,6 +29,9 @@ export default function MainContainer({username}) {
   const askAI = async () => {
     if (question === "") {
       toast.error("Please enter valid input and try again.");
+    }
+    else if (username === "None") {
+        toast.error("Please select a user and try again.");
     } else {
       setLoading(true);
       let getQuestion = question;

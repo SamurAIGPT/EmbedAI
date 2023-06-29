@@ -3,8 +3,9 @@ import React, {useState} from "react";
 import {Button, Stack, Form, Spinner} from "react-bootstrap";
 import {ToastContainer, toast} from "react-toastify";
 
-export default function ConfigSideNav() {
+export default function ConfigSideNav({onUser}) {
     const [isLoading, setIsLoading] = useState(false);
+    const [currentUserId, setcurrentUserId] = useState("None");
     const [downloadInProgress, setdownloadInProgress] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(null);
@@ -29,6 +30,16 @@ export default function ConfigSideNav() {
             })
         }
     };
+
+    const handleUserChange = async (event) => {
+        const user_id = event.target.value;
+        if (user_id !== currentUserId) {
+            console.log("User changed to " + user_id);
+            setcurrentUserId(user_id);
+            onUser(user_id);
+        }
+
+    }
 
     const handleDownloadModel = async () => {
         try {
@@ -119,6 +130,20 @@ export default function ConfigSideNav() {
                     )}
                 </Stack>
             </div>
+
+            <div className="mx-4 mt-3">
+                <Form.Group className="mb-3">
+                    <Form.Label>Select User</Form.Label>
+                    <Form.Select aria-label="user-select" onChange={handleUserChange}>
+                        <option value="None">Select a user...</option>
+                        <option value="Ken">Ken (CEO)</option>
+                        <option value="Jeff">Jeff (COO)</option>
+                        <option value="Andrew">Andrew (CFO)</option>
+                        <option value="Pete">Pete</option>
+                    </Form.Select>
+                </Form.Group>
+            </div>
+
         </>
     );
 }

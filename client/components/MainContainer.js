@@ -1,15 +1,17 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, {useState, useRef, useEffect} from "react";
 import { FormControl, Stack,Spinner } from "react-bootstrap";
 import Image from "next/image";
 import { ToastContainer, toast } from "react-toastify";
 
-export default function MainContainer() {
+export default function MainContainer({username}) {
   const [chat, setChat] = useState([]);
   const [question, setQuestion] = useState("");
+  const [memoryId, setMemoryId] = useState(null);
   const [loading, setLoading] = useState(false);
   const chatRef = useRef(null);
   chatRef.current = chat;
+  useEffect(() => {cleanChat()}, [username]);
 
   const handleInputChanges = (e) => {
     setQuestion(e.target.value);
@@ -17,13 +19,20 @@ export default function MainContainer() {
     e.target.style.height = e.target.scrollHeight + "px";
   };
 
+  const cleanChat = () => {
+    setChat([]);
+    setQuestion("");
+    setMemoryId(null);
+  }
+
+
   const askAI = async () => {
     if (question === "") {
       toast.error("Please enter valid input and try again.");
     } else {
       setLoading(true);
       let getQuestion = question;
-      setChat((chat) => [...chat, { isBot: false, msg: question }]);
+      setChat((chat) => [...chat, { isBot: false, msg: question}]);
       setQuestion("");
       try {
         const response = await fetch("http://localhost:8888/get_answer", {
@@ -31,10 +40,10 @@ export default function MainContainer() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(question),
+          body: JSON.stringify({"query": question, "memory_id": memoryId}),
         });
 
-        if (!response.ok) {	
+        if (!response.ok) {
 		  response.text().then(text => {toast.error("Error getting data."+text);})
           setLoading(false);
         } else {
@@ -47,6 +56,7 @@ export default function MainContainer() {
               source: data.source,
             },
           ]);
+          setMemoryId(data.memory_id);
           setLoading(false);
         }
       } catch (error) {
@@ -55,7 +65,6 @@ export default function MainContainer() {
       }
     }
   };
-
   return (
     <>
       <Stack>
@@ -74,7 +83,7 @@ export default function MainContainer() {
                     {msg.isBot ? (
                       <span style={{ fontSize: "12px" }}>Alpine AI</span>
                     ) : (
-                      <span style={{ fontSize: "12px" }}>User</span>
+                      <span style={{ fontSize: "12px" }}>{username}</span>
                     )}
                   </div>
                   <div className="w-100">
@@ -124,6 +133,21 @@ export default function MainContainer() {
         </div>
         <div className="px-4 justify-content-center align-items-center">
           <div className="d-flex justify-content-center align-items-center mb-sm-0">
+
+            <div
+              className="d-flex flex-column mx-2 justify-content-end align-items-center"
+              style={{ height: "100%", cursor: "pointer", color: "#4e4e4e" }}
+              onClick={cleanChat}
+            >
+              <Image
+                src="/reset.svg"
+                alt="Send"
+                width={20}
+                height={20}
+                priority
+              />
+            </div>
+
             <FormControl
               rows={1}
               className="chat-input p-2"

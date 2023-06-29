@@ -1,5 +1,7 @@
 import glob
+import json
 import os
+import uuid
 from typing import List
 
 import requests
@@ -8,7 +10,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from langchain import HuggingFaceTextGenInference
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.docstore.document import Document
 from langchain.document_loaders import (CSVLoader, EverNoteLoader, PDFMinerLoader, TextLoader, UnstructuredEPubLoader,
                                         UnstructuredEmailLoader, UnstructuredHTMLLoader, UnstructuredMarkdownLoader,
@@ -16,8 +18,10 @@ from langchain.document_loaders import (CSVLoader, EverNoteLoader, PDFMinerLoade
                                         UnstructuredWordDocumentLoader)
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import GPT4All
+from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+from constants import CHROMA_SETTINGS
 
 app = Flask(__name__)
 CORS(app)
@@ -26,17 +30,8 @@ load_dotenv()
 
 embeddings_model_name = os.environ.get("EMBEDDINGS_MODEL_NAME")
 persist_directory = os.environ.get('PERSIST_DIRECTORY')
-
-model_type = os.environ.get('MODEL_TYPE')
-model_path = os.environ.get('MODEL_PATH')
-model_n_ctx = os.environ.get('MODEL_N_CTX')
 llm = None
-
-
-
-
-
-from constants import CHROMA_SETTINGS
+memory = {}
 
 
 class MyElmLoader(UnstructuredEmailLoader):
@@ -130,22 +125,33 @@ def ingest_data():
 
 @app.route('/get_answer', methods=['POST'])
 def get_answer():
-    query = request.json
+    query = request.json['query']
+    memory_id = request.json["memory_id"]
+
+    print(f"Query: {query}, memory_id: {memory_id}")
+
+    if llm is None:
+        return "Model not downloaded", 400
+
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
-    if llm == None:
-        return "Model not downloaded", 400
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
-    if query != None and query != "":
-        res = qa(query)
-        answer, docs = res['result'], res['source_documents']
+
+    if memory_id is None or memory_id == "":
+        memory_id = str(uuid.uuid4())
+        memory[memory_id] = []
+
+    qa = ConversationalRetrievalChain.from_llm(llm, retriever=retriever, return_source_documents=True)
+    if query is not None and query != "":
+        result = qa({"question": query, "chat_history": memory[memory_id]})
+        answer = result["answer"]
+        memory[memory_id].append((query, result["answer"]))
 
         source_data = []
-        for document in docs:
+        for document in result['source_documents']:
             source_data.append({"name": document.metadata["source"]})
 
-        return jsonify(query=query, answer=answer, source=source_data)
+        return jsonify(query=query, answer=answer, source=source_data, memory_id=memory_id)
 
     return "Empty Query", 400
 
@@ -166,38 +172,11 @@ def upload_doc():
     return jsonify(response="Document upload successful")
 
 
-@app.route('/download_model', methods=['GET'])
-def download_and_save():
-    url = 'https://gpt4all.io/models/ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the URL of the resource to download
-    filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
-    models_folder = 'models'  # Specify the name of the folder inside the Flask app root
-
-    if not os.path.exists(models_folder):
-        os.makedirs(models_folder)
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get('content-length', 0))
-    bytes_downloaded = 0
-    file_path = f'{models_folder}/{filename}'
-    if os.path.exists(file_path):
-        return jsonify(response="Download completed")
-
-    with open(file_path, 'wb') as file:
-        for chunk in response.iter_content(chunk_size=4096):
-            file.write(chunk)
-            bytes_downloaded += len(chunk)
-            progress = round((bytes_downloaded / total_size) * 100, 2)
-            print(f'Download Progress: {progress}%')
-    global llm
-    callbacks = [StreamingStdOutCallbackHandler()]
-    llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
-    return jsonify(response="Download completed")
-
-
 def load_model():
     global llm
     callbacks = [StreamingStdOutCallbackHandler()]
     llm = HuggingFaceTextGenInference(
-        inference_server_url=
+        inference_server_url="http://dgx-a100.cloudlab.zhaw.ch:9175/",
         max_new_tokens=512,
         top_k=10,
         top_p=0.95,
@@ -206,13 +185,6 @@ def load_model():
         repetition_penalty=1.03,
         callbacks=callbacks,
     )
-    # filename = 'ggml-gpt4all-j-v1.3-groovy.bin'  # Specify the name for the downloaded file
-    # models_folder = 'models'  # Specify the name of the folder inside the Flask app root
-    # file_path = f'{models_folder}/{filename}'
-    # if os.path.exists(file_path):
-    #     global llm
-    #     callbacks = [StreamingStdOutCallbackHandler()]
-    #     llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', callbacks=callbacks, verbose=False)
 
 
 if __name__ == "__main__":

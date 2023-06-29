@@ -40,7 +40,7 @@ export default function MainContainer({username}) {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({"query": question, "memory_id": memoryId}),
+          body: JSON.stringify({"query": question, "user": username, "memory_id": memoryId}),
         });
 
         if (!response.ok) {
@@ -122,7 +122,7 @@ export default function MainContainer({username}) {
               <h1 className="mt-sm-5">
                 <small>Alpine AI</small>
               </h1>
-              <h3 style={{ color: "gray" }}>Enterprise Level Document Search</h3>
+              <h3 className="subtitle">Enterprise Level Document Search</h3>
             </Stack>
           )}
           {loading ? <Stack gap={2} direction="horizontal" className="loading">

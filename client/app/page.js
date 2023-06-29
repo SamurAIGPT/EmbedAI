@@ -12,7 +12,7 @@ export default function Home() {
 
   return (
   <>
-     <Row className=' pe-3 vh-100 overflow-hidden  g-0'>
+     <Row className='main-row pe-3 vh-100 overflow-hidden  g-0'>
         <Col className="side-bar-col" lg={3} xs={3}>
         <div>
         <div className='d-flex align-items-center justify-content-center py-4'><h3>Alpine AI</h3></div>
@@ -20,10 +20,8 @@ export default function Home() {
         </div>
         
         </Col>
-        <Col lg={9} xs={9}
-          className="main-chat-col mt-3"
-        >
-<MainContainer username={username}/>
+        <Col lg={9} xs={9} className="main-chat-col mt-3">
+        <MainContainer username={username}/>
         </Col>
         <ToastContainer />
       </Row>

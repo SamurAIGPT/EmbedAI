@@ -1,1 +1,0 @@
-# privateGPT Client

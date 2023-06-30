@@ -15,6 +15,7 @@
 
 .main-row {
     padding-top: 0 !important;
+    padding-right: 0 !important;
 }
 
 h1, h2, h3, h4, h5 {
@@ -36,6 +37,20 @@ h1, h2, h3, h4, h5 {
     border-color: #a82323;
 }
 
+a {
+    color: #ff3333;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #a82323;
+}
+
+.chat-control-button:hover {
+    width: 120%;
+    height: 120%;
+
+}
 
 .main-chat-col {
     background-image: url("../public/swiss_alps_transparent.png");
@@ -91,4 +106,15 @@ h1, h2, h3, h4, h5 {
 
 .loading > .spinner-grow:nth-child(3) {
     animation-delay: 100ms;
+}
+
+#footer {
+    opacity: 0.7;
+    color: #8d8d8d;
+    padding: 1rem;
+    text-align: center;
+    font-size: 0.8rem;
+    width: 25%;
+    bottom: 0;
+    position: absolute;
 }

@@ -123,9 +123,9 @@ export default function MainContainer({username}) {
               style={{ color: "black" }}
             >
               <h1 className="mt-sm-5">
-                <small>Alpine AI</small>
+                <small>Enterprise Level Document Search</small>
               </h1>
-              <h3 className="subtitle">Enterprise Level Document Search</h3>
+              <h3 className="subtitle">Made and Hosted in Switzerland</h3>
             </Stack>
           )}
           {loading ? <Stack gap={2} direction="horizontal" className="loading">
@@ -143,8 +143,9 @@ export default function MainContainer({username}) {
               onClick={cleanChat}
             >
               <Image
-                src="/reset.svg"
-                alt="Send"
+                src="/refresh.svg"
+                alt="refresh"
+                className="chat-control-button"
                 width={20}
                 height={20}
                 priority
@@ -173,6 +174,7 @@ export default function MainContainer({username}) {
               <Image
                 src="/send-icon.svg"
                 alt="Send"
+                className="chat-control-button"
                 width={20}
                 height={20}
                 priority

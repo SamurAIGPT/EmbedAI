@@ -108,6 +108,7 @@ export default function ConfigSideNav({onUser}) {
 
     return (
         <>
+
             <div className="mx-4 mt-3">
                 <Form.Group className="mb-3">
                     <Form.Label>Upload your documents</Form.Label>
@@ -143,7 +144,6 @@ export default function ConfigSideNav({onUser}) {
                     </Form.Select>
                 </Form.Group>
             </div>
-
         </>
     );
 }

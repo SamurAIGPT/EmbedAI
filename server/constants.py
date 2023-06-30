@@ -1,28 +1,15 @@
-import os
-from dotenv import load_dotenv
 from chromadb.config import Settings
+from dotenv import load_dotenv
 
 load_dotenv()
 
+users = ["Ken", "Jeff", "Andrew", "Pete"]
+
 CHROMA_SETTINGS = {
-    "Ken": Settings(
+    user: Settings(
         chroma_db_impl='duckdb+parquet',
-        persist_directory="db/Ken",
+        persist_directory=f"db/{user}",
         anonymized_telemetry=False
-    ),
-    "Jeff": Settings(
-        chroma_db_impl='duckdb+parquet',
-        persist_directory="db/Jeff",
-        anonymized_telemetry=False
-    ),
-    "Andrew": Settings(
-        chroma_db_impl='duckdb+parquet',
-        persist_directory="db/Andrew",
-        anonymized_telemetry=False
-    ),
-    "Pete": Settings(
-        chroma_db_impl='duckdb+parquet',
-        persist_directory="db/Pete",
-        anonymized_telemetry=False
-    ),
+    )
+    for user in users
 }

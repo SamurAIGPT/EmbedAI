@@ -31,20 +31,27 @@ def get_answer():
     query = request.json['query']
     memory_id = request.json["memory_id"]
     user = request.json["user"]
+    model_name = request.json["modelname"]
 
     print(f"Query: {query}, memory_id: {memory_id}, user: {user}")
 
     if llm is None:
         return "Model not downloaded", 400
 
+    if model_name is None or model_name == "":
+        return "Model not selected", 400
+
     if memory_id is None or memory_id == "":
         memory_id = str(uuid.uuid4())
         memory[memory_id] = []
 
+    prompt = None  # Default prompt
+    if model_name == "Swiss-Finish":
+        prompt = prompt_pascal
+
     qa = ConversationalRetrievalChain.from_llm(llm, retriever=storage_service.get_retriever(user),
                                                return_source_documents=True, verbose=True,
-                                               combine_docs_chain_kwargs={"prompt": prompt_pascal})
-                                               # condense_question_prompt=prompt_pascal)
+                                               combine_docs_chain_kwargs={"prompt": prompt})
     if query is not None and query != "":
         result = qa({"question": query, "chat_history": memory[memory_id]})
         answer = result["answer"]

@@ -3,9 +3,10 @@ import React, {useState} from "react";
 import {Button, Stack, Form, Spinner} from "react-bootstrap";
 import {ToastContainer, toast} from "react-toastify";
 
-export default function ConfigSideNav({onUser}) {
+export default function ConfigSideNav({onUser, onModel}) {
     const [isLoading, setIsLoading] = useState(false);
-    const [currentUserId, setcurrentUserId] = useState("None");
+    const [currentUserId, setCurrentUserId] = useState("None");
+    const [currentModelName, setCurrentModelName] = useState("None");
     const [downloadInProgress, setdownloadInProgress] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(null);
@@ -32,13 +33,20 @@ export default function ConfigSideNav({onUser}) {
     };
 
     const handleUserChange = async (event) => {
-        const user_id = event.target.value;
-        if (user_id !== currentUserId) {
-            console.log("User changed to " + user_id);
-            setcurrentUserId(user_id);
-            onUser(user_id);
+        const userId = event.target.value;
+        if (userId !== currentUserId) {
+            console.log("User changed to " + userId);
+            setCurrentUserId(userId);
+            onUser(userId);
         }
-
+    }
+    const handleModelChange = async (event) => {
+        const modelName = event.target.value;
+        if (modelName !== currentModelName) {
+            console.log("Model changed to " + modelName);
+            setCurrentModelName(modelName);
+            onModel(modelName);
+        }
     }
 
     const handleDownloadModel = async () => {
@@ -108,30 +116,6 @@ export default function ConfigSideNav({onUser}) {
 
     return (
         <>
-
-            <div className="mx-4 mt-3">
-                <Form.Group className="mb-3">
-                    <Form.Label>Upload your documents</Form.Label>
-                    <Form.Control
-                        type="file"
-                        size="sm"
-                        onChange={handleFileChange}
-                        id="file-input"
-                    />
-                </Form.Group>
-                <Stack direction="horizontal" className="mx-4 mt-3" gap={3}>
-                    {isUploading ? <div className="d-flex justify-content-center"><Spinner animation="border"/><span
-                            className="ms-3">uploading</span></div> :
-                        <Button onClick={(e) => handleUpload()}>Upload</Button>}
-                    {isLoading ? (
-                        <div className="d-flex justify-content-center"><Spinner animation="border"/><span
-                            className="ms-3">ingesting</span></div>
-                    ) : (
-                        <Button onClick={() => ingestData()}>Ingest Data</Button>
-                    )}
-                </Stack>
-            </div>
-
             <div className="mx-4 mt-3">
                 <Form.Group className="mb-3">
                     <Form.Label>Select User</Form.Label>
@@ -143,6 +127,39 @@ export default function ConfigSideNav({onUser}) {
                         <option value="Pete">Pete</option>
                     </Form.Select>
                 </Form.Group>
+            </div>
+            <div className="mx-4 mt-3">
+                <Form.Group className="mb-3">
+                    <Form.Label>Select Model</Form.Label>
+                    <Form.Select aria-label="user-select" onChange={handleModelChange}>
+                        <option value="None">Select a model...</option>
+                        <option value="Falcon">Falcon-40B</option>
+                        <option value="Swiss-Finish">Swiss-Finish</option>
+                    </Form.Select>
+                </Form.Group>
+            </div>
+
+            <div className="mx-4 mt-3">
+                <Form.Group className="mb-3">
+                    <Form.Label>Upload your documents</Form.Label>
+                    <Form.Control
+                        type="file"
+                        size="sm"
+                        onChange={handleFileChange}
+                        id="file-input"
+                    />
+                </Form.Group>
+                <Stack direction="horizontal" className="mt-3" gap={3}>
+                    {isUploading ? <div className="d-flex justify-content-center"><Spinner animation="border"/><span
+                            className="ms-3">uploading</span></div> :
+                        <Button onClick={(e) => handleUpload()}>Upload</Button>}
+                    {isLoading ? (
+                        <div className="d-flex justify-content-center"><Spinner animation="border"/><span
+                            className="ms-3">ingesting</span></div>
+                    ) : (
+                        <Button onClick={() => ingestData()}>Ingest Data</Button>
+                    )}
+                </Stack>
             </div>
         </>
     );

@@ -4,7 +4,7 @@ import { FormControl, Stack,Spinner } from "react-bootstrap";
 import Image from "next/image";
 import { ToastContainer, toast } from "react-toastify";
 
-export default function MainContainer({username}) {
+export default function MainContainer({username, modelname}) {
   const [chat, setChat] = useState([]);
   const [question, setQuestion] = useState("");
   const [memoryId, setMemoryId] = useState(null);
@@ -31,7 +31,10 @@ export default function MainContainer({username}) {
       toast.error("Please enter valid input and try again.");
     }
     else if (username === "None") {
-        toast.error("Please select a user and try again.");
+      toast.error("Please select a user and try again.");
+    }
+    else if (modelname === "None") {
+        toast.error("Please select a model and try again.");
     } else {
       setLoading(true);
       let getQuestion = question;
@@ -43,7 +46,7 @@ export default function MainContainer({username}) {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({"query": question, "user": username, "memory_id": memoryId}),
+          body: JSON.stringify({"query": question, "user": username, "memory_id": memoryId, "modelname": modelname}),
         });
 
         if (!response.ok) {

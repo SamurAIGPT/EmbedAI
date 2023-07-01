@@ -20,15 +20,21 @@ res = es.search(
     body={
         'query': {
             "bool": {
-                "must": [{
-                    'match': {'parts.content': keywords},
-                }],
-                'should': [
-                    {'match': {'From': username}},
-                    {'match': {'To': username}},
-                    {'match': {'Cc': username}},
-                    {'match': {'Bcc': username}},
-                ]
+                "must": [
+                    {'match':
+                         {'parts.content': keywords}
+                     },
+                    {"bool":
+                        {
+                            'should': [
+                                {'match': {'From': username}},
+                                {'match': {'To': username}},
+                                {'match': {'Cc': username}},
+                                {'match': {'Bcc': username}},
+                            ]
+                        }
+                    }
+                ],
             }
         },
         "highlight": {

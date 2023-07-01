@@ -12,14 +12,34 @@ es = Elasticsearch(
     verify_certs=False
 )
 
+username = 'Ken'
+keywords = ['shipment', 'delivery', 'order']
+
 res = es.search(
     index='enron',
     body={
         'query': {
-            'match': {
-                'parts.content': 'Kenneth'
+            "bool": {
+                "must": [{
+                    'match': {'parts.content': keywords},
+                }],
+                'should': [
+                    {'match': {'From': username}},
+                    {'match': {'To': username}},
+                    {'match': {'Cc': username}},
+                    {'match': {'Bcc': username}},
+                ]
             }
-        }
+        },
+        "highlight": {
+            "fields": {
+                "text": {
+                    "fragment_size": 300,
+                    "number_of_fragments": 5
+                }
+            }
+        },
+        "min_score": 0.95
     }
 )
 

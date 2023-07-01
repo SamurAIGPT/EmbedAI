@@ -73,10 +73,10 @@ class ElasticSearchService(DataService):
         )
 
     def ingest_data(self):
-        return jsonify(response="Not necessary for Elastic Search")
+        return jsonify(response="Not necessary for Elastic Search", status=400)
 
     def upload_doc(self, doc: Document, username: str):
-        return jsonify(response="Not supported for Elastic Search")
+        return jsonify(response="Not supported for Elastic Search", status=400)
 
     def get_retriever(self, username: str):
         return ElasticSearchRetriever(self.llm, self.es, username)

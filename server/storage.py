@@ -103,35 +103,33 @@ class VectorStoreService(DataService):
 
     def __init__(self):
         self.persist_directory = os.environ.get('PERSIST_DIRECTORY')
+        self.source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
         embeddings_model_name = os.environ.get("EMBEDDINGS_MODEL_NAME")
+        self.chunk_size = 1000
+        self.chunk_overlap = 50
         self.embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
 
     def ingest_data(self):
-        # Load environment variables
-        persist_directory = os.environ.get('PERSIST_DIRECTORY')
-        source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
-        embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
-
         for user in users:
-            sd = f"{source_directory}/{user}"
-            pd = f"{persist_directory}/{user}"
+            sd = f"{self.source_directory}/{user}"
+            pd = f"{self.persist_directory}/{user}"
             # Load documents and split in chunks
             print(f"Loading documents from {sd} and store them into {pd}")
-            chunk_size = 1000
-            chunk_overlap = 50
+
             documents = self._load_documents(sd)
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
             texts = text_splitter.split_documents(documents)
             print(f"Loaded {len(documents)} documents from {sd}")
-            print(f"Split into {len(texts)} chunks of text (max. {chunk_size} characters each)")
+            print(f"Split into {len(texts)} chunks of text (max. {self.chunk_size} characters each)")
 
             if len(documents) <= 0:
                 continue
 
             # Create and store locally vectorstore
-            db = Chroma.from_documents(texts, embedding_function=self.embeddings, persist_directory=pd,
+            db = Chroma.from_documents(texts, embedding=self.embeddings, persist_directory=pd,
                                        client_settings=CHROMA_SETTINGS[user])
             db.persist()
+            # db.similarity_search("Test", filter={"source": "source_documents/Ken/all_documents/1.eml"})
         return jsonify(response="Success")
 
     def upload_doc(self, doc: json, username: str):

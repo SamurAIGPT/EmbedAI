@@ -128,11 +128,9 @@ class VectorStoreService(DataService):
             if len(documents) <= 0:
                 continue
 
-            # Create embeddings
-            embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
-
             # Create and store locally vectorstore
-            db = Chroma.from_documents(texts, embeddings, persist_directory=pd, client_settings=CHROMA_SETTINGS[user])
+            db = Chroma.from_documents(texts, embedding_function=self.embeddings, persist_directory=pd,
+                                       client_settings=CHROMA_SETTINGS[user])
             db.persist()
         return jsonify(response="Success")
 

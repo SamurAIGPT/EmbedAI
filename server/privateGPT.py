@@ -49,7 +49,7 @@ def get_answer():
     if model_name == "Swiss-Finish":
         prompt = prompt_pascal
 
-    qa = ConversationalRetrievalChain.from_llm(llm, retriever=storage_service.get_retriever(user),
+    qa = ConversationalRetrievalChain.from_llm(llm, retriever=storage_service.get_retriever(user),  #chain_type="map_rerank",
                                                return_source_documents=True, verbose=True,
                                                combine_docs_chain_kwargs={"prompt": prompt})
     if query is not None and query != "":

@@ -1,7 +1,7 @@
 "use client";
 import React, {useState} from "react";
-import {Button, Stack, Form, Spinner} from "react-bootstrap";
-import {ToastContainer, toast} from "react-toastify";
+import {Button, Form, Spinner, Stack} from "react-bootstrap";
+import {toast} from "react-toastify";
 
 export default function ConfigSideNav({onUser, onModel}) {
     const [isLoading, setIsLoading] = useState(false);
@@ -19,14 +19,18 @@ export default function ConfigSideNav({onUser, onModel}) {
             if (!res.ok) {
                 // This will activate the closest `error.js` Error Boundary
                 console.log("Error Ingesting data");
+                toast.error("Error Ingesting data.");
                 setIsLoading(false);
             } else {
                 setIsLoading(false);
+                res.text().then(text => {
+                    toast.success("Successfully indexed data." + text);
+                })
                 console.log(jsonData);
             }
         } catch (error) {
             setIsLoading(false);
-            response.text().then(text => {
+            res.text().then(text => {
                 toast.error("Error Ingesting data." + text);
             })
         }
@@ -124,7 +128,6 @@ export default function ConfigSideNav({onUser, onModel}) {
                         <option value="Ken">Ken (CEO)</option>
                         <option value="Jeff">Jeff (COO)</option>
                         <option value="Andrew">Andrew (CFO)</option>
-                        <option value="Pete">Pete</option>
                     </Form.Select>
                 </Form.Group>
             </div>
@@ -133,8 +136,9 @@ export default function ConfigSideNav({onUser, onModel}) {
                     <Form.Label>Select Model</Form.Label>
                     <Form.Select aria-label="user-select" onChange={handleModelChange}>
                         <option value="None">Select a model...</option>
-                        <option value="Falcon">Falcon-40B</option>
+                        <option value="Falcon-40B">Falcon-40B</option>
                         <option value="Swiss-Finish">Swiss-Finish</option>
+                        <option value="GPT-3.5-Turbo">GPT-3.5-Turbo</option>
                     </Form.Select>
                 </Form.Group>
             </div>
@@ -147,17 +151,18 @@ export default function ConfigSideNav({onUser, onModel}) {
                         size="sm"
                         onChange={handleFileChange}
                         id="file-input"
+                        disabled={true}
                     />
                 </Form.Group>
                 <Stack direction="horizontal" className="mt-3" gap={3}>
                     {isUploading ? <div className="d-flex justify-content-center"><Spinner animation="border"/><span
                             className="ms-3">uploading</span></div> :
-                        <Button onClick={(e) => handleUpload()}>Upload</Button>}
+                        <Button disabled={true} onClick={(e) => handleUpload()}>Upload</Button>}
                     {isLoading ? (
                         <div className="d-flex justify-content-center"><Spinner animation="border"/><span
                             className="ms-3">ingesting</span></div>
                     ) : (
-                        <Button onClick={() => ingestData()}>Ingest Data</Button>
+                        <Button onClick={() => ingestData()}>Create Index</Button>
                     )}
                 </Stack>
             </div>

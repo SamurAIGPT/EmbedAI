@@ -12,6 +12,7 @@ export default function MainContainer({username, modelname}) {
   const chatRef = useRef(null);
   chatRef.current = chat;
   useEffect(() => {cleanChat()}, [username]);
+  useEffect(() => {cleanChat()}, [modelname]);
 
   const handleInputChanges = (e) => {
     setQuestion(e.target.value);

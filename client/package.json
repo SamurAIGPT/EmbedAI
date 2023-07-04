@@ -1,6 +1,8 @@
 {
-  "name": "privategpt",
-  "version": "0.1.0",
+  "name": "AlpineAI Demo",
+  "description": "This is a demo of the AlpineAI platform",
+  "author": "Pascal Sager",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

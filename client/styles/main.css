@@ -37,6 +37,11 @@ h1, h2, h3, h4, h5 {
     border-color: #a82323;
 }
 
+.btn-primary:disabled {
+    background-color: #b7b7b7;
+    border-color: #b7b7b7;
+}
+
 a {
     color: #ff3333;
     text-decoration: none;

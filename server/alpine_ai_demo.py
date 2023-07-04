@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -37,8 +38,14 @@ def get_answer():
     memory_id = request.json["memory_id"]
     user = request.json["user"]
     model_name = request.json["modelname"]
+    start_date = datetime.strptime(request.json["start_date"], "%Y-%m-%d")
+    end_date = datetime.strptime(request.json["end_date"], "%Y-%m-%d")
+    epoch = datetime.utcfromtimestamp(0)
+    milliseconds_start = int((start_date - epoch) / timedelta(milliseconds=1))
+    milliseconds_end = int((end_date - epoch) / timedelta(milliseconds=1))
 
-    print(f"Query: {query}, memory_id: {memory_id}, user: {user}, model: {model_name}")
+    print(f"Query: {query}, memory_id: {memory_id}, user: {user}, model: {model_name}, start_date: {start_date}, "
+          f"end_date: {end_date}")
 
     if llm_name != model_name:
         load_components()
@@ -58,7 +65,7 @@ def get_answer():
     if model_name == "Swiss-Finish":
         prompt = prompt_pascal
 
-    qa = ConversationalRetrievalChain.from_llm(llm, retriever=CustomDataRetriever(data_pipeline, user),
+    qa = ConversationalRetrievalChain.from_llm(llm, retriever=CustomDataRetriever(data_pipeline, user, milliseconds_start, milliseconds_end),
                                                # chain_type="map_rerank",
                                                return_source_documents=True, verbose=VERBOSE,
                                                combine_docs_chain_kwargs={"prompt": prompt})

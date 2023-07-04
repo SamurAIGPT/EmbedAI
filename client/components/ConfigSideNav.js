@@ -3,13 +3,16 @@ import React, {useState} from "react";
 import {Button, Form, Spinner, Stack} from "react-bootstrap";
 import {toast} from "react-toastify";
 
-export default function ConfigSideNav({onUser, onModel}) {
+export default function ConfigSideNav({onUser, onModel, onStartDate, onEndDate}) {
     const [isLoading, setIsLoading] = useState(false);
-    const [currentUserId, setCurrentUserId] = useState("None");
-    const [currentModelName, setCurrentModelName] = useState("None");
-    const [downloadInProgress, setdownloadInProgress] = useState(false);
     const [selectedFile, setSelectedFile] = useState(null);
     const [isUploading, setIsUploading] = useState(null);
+
+    // TODO: Clean this up and use Redux
+    const [currentUserId, setCurrentUserId] = useState("None");
+    const [currentModelName, setCurrentModelName] = useState("None");
+    const [currentStartDate, setCurrentStartDate] = useState("1990-01-01");
+    const [currentEndDate, setCurrentEndDate] = useState("2023-01-01");
 
     const ingestData = async () => {
         try {
@@ -53,33 +56,29 @@ export default function ConfigSideNav({onUser, onModel}) {
         }
     }
 
-    const handleDownloadModel = async () => {
-        try {
-            setdownloadInProgress(true);
-            const res = await fetch("http://localhost:8888/download_model");
-            const jsonData = await res.json();
-            if (!res.ok) {
-                response.text().then(text => {
-                    toast.error("Error downloading model." + text);
-                })
-                setdownloadInProgress(false);
-            } else {
-                setdownloadInProgress(false);
-                toast.success("Model Download complete");
-                console.log(jsonData);
-            }
-        } catch (error) {
-            setdownloadInProgress(false);
-            console.log(error);
-            toast.error("Error downloading model");
+    const handleStartDateChange = async (event) => {
+        const startDate = event.target.value;
+        if (startDate !== currentStartDate) {
+            console.log("Model changed to " + startDate);
+            setCurrentStartDate(startDate);
+            onStartDate(startDate);
         }
-    };
+    }
+
+    const handleEndDateChange = async (event) => {
+        const endDate = event.target.value;
+        if (endDate !== currentEndDate) {
+            console.log("Model changed to " + endDate);
+            setCurrentEndDate(endDate);
+            onEndDate(endDate);
+        }
+    }
+
 
     const handleFileChange = (event) => {
         if (event.target.files[0] != null) {
             setSelectedFile(event.target.files[0]);
         }
-
     };
 
     const handleUpload = async () => {
@@ -140,6 +139,20 @@ export default function ConfigSideNav({onUser, onModel}) {
                         <option value="Swiss-Finish">Swiss-Finish</option>
                         <option value="GPT-3.5-Turbo">GPT-3.5-Turbo</option>
                     </Form.Select>
+                </Form.Group>
+            </div>
+
+
+            <div className="mx-4 mt-3">
+                <Form.Group className="mb-3">
+                    <Form.Label>Start Date</Form.Label>
+                    <Form.Control type="date" name="dstart" placeholder="Start Date" value={currentStartDate}
+                                  onChange={handleStartDateChange}/>
+                </Form.Group>
+                <Form.Group className="mb-3">
+                    <Form.Label>End Date</Form.Label>
+                    <Form.Control type="date" name="dend" placeholder="End Date" value={currentEndDate}
+                                  onChange={handleEndDateChange}/>
                 </Form.Group>
             </div>
 

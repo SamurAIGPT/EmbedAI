@@ -103,7 +103,8 @@ class ElasticSearchService:
             }
         }
 
-        # we return top-1 at the moment
+        if self.verbose:
+            print("ES query:", body)
 
         res = self.es.search(
             index='enron',
@@ -225,8 +226,8 @@ class DataPipeline:
     def ingest_data(self):
         return self.vector_store_service.ingest_data()
 
-    def retrieve_context(self, query, username: str, *args, **kwargs):
-        documents_es = self.es_service.get_relevant_documents(username, query)
+    def retrieve_context(self, query, username: str, milliseconds_start: int, milliseconds_end: int, *args, **kwargs):
+        documents_es = self.es_service.get_relevant_documents(username, query, milliseconds_start, milliseconds_end)
         context = self.vector_store_service.get_context(username, query, documents_es)
 
         if self.verbose:
@@ -237,9 +238,11 @@ class DataPipeline:
 
 class CustomDataRetriever(BaseRetriever):
 
-    def __init__(self, DataPipeline: DataPipeline, username: str):
+    def __init__(self, DataPipeline: DataPipeline, username: str, milliseconds_start: int, milliseconds_end: int):
         self.pipeline = DataPipeline
         self.username = username
+        self.milliseconds_start = milliseconds_start
+        self.milliseconds_end = milliseconds_end
 
     def get_relevant_documents(
             self, query: str, *, callbacks: Callbacks = None, **kwargs: Any
@@ -251,7 +254,7 @@ class CustomDataRetriever(BaseRetriever):
         Returns:
             List of relevant documents
         """
-        return self.pipeline.retrieve_context(query, self.username)
+        return self.pipeline.retrieve_context(query, self.username, self.milliseconds_start, self.milliseconds_end)
 
     async def aget_relevant_documents(
             self, query: str, *, callbacks: Callbacks = None, **kwargs: Any

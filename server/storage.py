@@ -170,7 +170,6 @@ class VectorStoreService:
             db = FAISS.from_documents(texts, embedding=self.embeddings)
             db.save_local(pd)
             self.db_instances[user] = db
-            # db.similarity_search("Test", filter={"source": "source_documents/Ken/all_documents/1.eml"})
         return jsonify(response=f"({document_count})", status=200)
 
     def get_context(self, user: str, query: str, source_docs: List[str]):

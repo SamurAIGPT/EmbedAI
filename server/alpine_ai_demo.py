@@ -131,7 +131,7 @@ def load_components():
     global llm_name
     global data_pipeline
 
-    if llm_name.startswith("Falcon-40B") or llm_name.startswith("Swiss-Finish"):
+    if llm_name == "Falcon-40B-Docs" or llm_name == "Swiss-Finish-Docs":
         callbacks = [StreamingStdOutCallbackHandler()]
         llm = HuggingFaceTextGenInference(
             inference_server_url="http://dgx-a100.cloudlab.zhaw.ch:9175/",
@@ -144,7 +144,16 @@ def load_components():
             repetition_penalty=1.03,
             callbacks=callbacks,
         )
-        print("loaded Falcon-40B")
+        print("loaded Falcon-40B (Docs Parameters")
+    elif llm_name == "Falcon-40B-Chat" or llm_name == "Swiss-Finish-Chat":
+        callbacks = [StreamingStdOutCallbackHandler()]
+        llm = HuggingFaceTextGenInference(
+            inference_server_url="http://dgx-a100.cloudlab.zhaw.ch:9175/",
+            max_new_tokens=512,
+            timeout=120,
+            top_k=10,
+            callbacks=callbacks,
+        )
     elif llm_name.startswith("GPT-3.5-Turbo"):
         llm = ChatOpenAI(temperature=0, model='gpt-3.5-turbo')
         print("loaded GPT-3.5-Turbo")

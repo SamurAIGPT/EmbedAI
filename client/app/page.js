@@ -17,7 +17,7 @@ export default function Home() {
     return (
         <>
             <Row className='main-row pe-3 vh-100 overflow-hidden g-0'>
-                <Col className="side-bar-col" lg={3} xs={3}>
+                <Col className="side-bar-col overflow-scroll" lg={3} xs={3} style={{maxHeight: "90%"}}>
                         <div className='d-flex align-items-center justify-content-center py-4'><h3>Alpine AI</h3></div>
                         <ConfigSideNav onUser={setUsername} onModel={setModelname} onStartDate={setStartDate} onEndDate={setEndDate}/>
                     <div id="footer" className="justify-content-end">

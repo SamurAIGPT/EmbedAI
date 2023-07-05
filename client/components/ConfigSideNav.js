@@ -135,9 +135,11 @@ export default function ConfigSideNav({onUser, onModel, onStartDate, onEndDate})
                     <Form.Label>Select Model</Form.Label>
                     <Form.Select aria-label="user-select" onChange={handleModelChange}>
                         <option value="None">Select a model...</option>
-                        <option value="Falcon-40B">Falcon-40B</option>
-                        <option value="Swiss-Finish">Swiss-Finish</option>
-                        <option value="GPT-3.5-Turbo">GPT-3.5-Turbo</option>
+                        <option value="Falcon-40B-Docs">Falcon-40B (Doc Search)</option>
+                        <option value="Swiss-Finish-Docs">Swiss-Finish (Doc Search)</option>
+                        <option value="GPT-3.5-Turbo-Docs">GPT-3.5-Turbo (Doc Search)</option>
+                        <option value="Falcon-40B-Chat">Falcon-40B (Chat)</option>
+                        <option value="GPT-3.5-Turbo-Chat">GPT-3.5-Turbo (Chat)</option>
                     </Form.Select>
                 </Form.Group>
             </div>

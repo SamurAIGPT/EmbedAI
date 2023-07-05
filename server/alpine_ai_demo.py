@@ -7,7 +7,7 @@ from flask_cors import CORS
 from langchain import HuggingFaceTextGenInference, LLMChain
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chains import ConversationalRetrievalChain
-from langchain.chat_models import ChatOpenAI
+from langchain.llms.openai import OpenAIChat
 from langchain.memory import ConversationBufferWindowMemory
 
 from server.custom_prompts import chat_prompt, swiss_finish_doc_prompt
@@ -140,13 +140,13 @@ def load_components():
             top_k=10,
             top_p=0.95,
             typical_p=0.95,
-            temperature=0.001,
-            repetition_penalty=1.03,
+            temperature=0.3,
+            repetition_penalty=1.23,
             callbacks=callbacks,
         )
         print("loaded Falcon-40B")
     elif llm_name.startswith("GPT-3.5-Turbo"):
-        llm = ChatOpenAI(temperature=0, model='gpt-3.5-turbo')
+        llm = OpenAIChat(model='gpt-3.5-turbo')
         print("loaded GPT-3.5-Turbo")
 
     else:

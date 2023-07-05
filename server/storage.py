@@ -53,6 +53,7 @@ class ElasticSearchService:
             print("Conversion form query to ES keywords:")
             print(conversion_prompt)
 
+        #[HumanMessage(content=messages[0])]
         keywords = self.llm(conversion_prompt)
         for rmk in ["\n", "\r", "\t", "Answer: ", "Keywords: "]:
             keywords = keywords.replace(rmk, "")
@@ -61,20 +62,21 @@ class ElasticSearchService:
         if self.verbose:
             print("ES keywords:", keywords)
 
+        should = []
+
+        for keyword in keywords:
+            should.append({'match': {'parts.content': keyword}})
+
         must = [
             {
                 "bool": {
-                    'should': [
-                        {'match': {'From': email}},
-                        {'match': {'To': email}},
-                        {'match': {'X-cc': email}},
-                        {'match': {'X-bcc': email}},
-                    ]
+                    'should': should,
+                    "minimum_should_match": 1
                 }
-            }
+            },
         ]
 
-        must.extend([{'match': {'parts.content': keyword}} for keyword in keywords])
+        #must.extend([{'match': {'parts.content': keyword}} for keyword in keywords])
 
         body = {
             'query': {
@@ -109,13 +111,15 @@ class ElasticSearchService:
         res = self.es.search(
             index='enron',
             body=body,
-            size=1
+            size=5
         )
 
-        if len(res['hits']['hits']) == 0:
+        n_res = len(res['hits']['hits'])
+        if n_res == 0:
             result = []
         else:
-            result = [Path(self.source_directory) / user / f"{res['hits']['hits'][0]['_id']}.json"]
+            ids = set([res['hits']['hits'][i]['_id'] for i in range(n_res)])
+            result = [Path(self.source_directory) / user / f"{mid}.json" for mid in ids]
 
         if self.verbose:
             print("ES result:", result)
@@ -130,8 +134,9 @@ class VectorStoreService:
         self.persist_directory = os.environ.get('PERSIST_DIRECTORY')
         self.source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
         embeddings_model_name = os.environ.get("EMBEDDINGS_MODEL_NAME")
-        self.chunk_size = 1000
-        self.chunk_overlap = 50
+        self.chunk_size = 2000
+        self.chunk_overlap = 100
+        self.max_context_len = 500
         self.embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
         self.db_instances = {}
 
@@ -177,8 +182,7 @@ class VectorStoreService:
         if self.verbose:
             print("FAISS Query:", query, "Source docs:", source_docs)
 
-        assert len(
-            source_docs) <= 1, "Only one source document is supported at the moment (ES provides too many sources)"
+        #assert len(source_docs) <= 1, "Only one source document is supported at the moment (ES provides too many sources)"
 
         if len(source_docs) == 0:
             result = ""
@@ -189,12 +193,29 @@ class VectorStoreService:
             source = source_docs[0]
             if not isinstance(source, str):
                 source = str(source)
-            result = db.similarity_search(query, filter={"source": source})
+            results = db.similarity_search(query, filter={"source": source}, k=100)
+
+            tmp_result = []
+            unique_result_strings = set()
+            for result in results:
+                if not result.page_content in unique_result_strings:
+                    tmp_result.append(result)
+                    unique_result_strings.add(result.page_content)
+            results = tmp_result
+            #greedy context filling
+            tmp_result = []
+            current_lent = 0
+            for result in results:
+                current_lent += len(result.page_content.split(' '))
+                if current_lent > self.max_context_len:
+                    break
+                tmp_result.append(result)
+            results = tmp_result
 
         if self.verbose:
-            print("FAISS result:", result)
+            print("FAISS result:", results)
 
-        return result
+        return results
 
     def _load_single_document(self, file_path: str) -> Document:
         ext = "." + file_path.rsplit(".", 1)[-1]

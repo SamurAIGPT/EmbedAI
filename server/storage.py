@@ -184,7 +184,7 @@ class VectorStoreService:
         #assert len(source_docs) <= 1, "Only one source document is supported at the moment (ES provides too many sources)"
 
         if len(source_docs) == 0:
-            result = ""
+            results = ""
             if self.verbose:
                 print("FAISS: No source document provided, returning empty string")
 

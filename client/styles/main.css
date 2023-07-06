@@ -85,6 +85,7 @@ a:hover {
 
 .chat-input {
     border: 1px solid #9e9e9e !important;
+    position: relative;
 }
 
 @media screen and (max-width: 980px) {

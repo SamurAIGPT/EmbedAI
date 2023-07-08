@@ -40,6 +40,18 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 2. Go to server folder and run the below commands
 
    ```shell
+   python -m venv my_env
+   ```
+
+   ```shell
+   // Linux
+   source my_env/bin/activate
+
+   // Windows
+   my_env\Scripts\activate
+   ```
+
+   ```shell
    pip install -r requirements.txt
    ```
 

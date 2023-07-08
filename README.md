@@ -45,7 +45,7 @@ Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Sin
 
    ```shell
    // Linux
-   source my_env/bin/activate
+   source ./my_env/Scripts/activate
 
    // Windows
    my_env\Scripts\activate

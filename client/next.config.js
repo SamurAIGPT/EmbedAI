@@ -1,7 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
-    dirs: [], // Only run ESLint these directories during production builds (next build)
+
+    dirs: ["app"], // Only run ESLint these directories during production builds (next build)
   },
 }
 

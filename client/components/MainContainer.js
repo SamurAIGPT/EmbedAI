@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { FormControl, Stack, Spinner } from 'react-bootstrap'
 import Image from 'next/image'
 import { toast } from 'react-toastify'
@@ -63,6 +63,7 @@ export default function MainContainer() {
         <div className=' mx-2 px-md-5 py-sm-4 chat-scroll'>
           {chat.length > 0 ? (
             chat.map((msg) => (
+              // eslint-disable-next-line react/jsx-key
               <Stack direction='vertical' gap={3}>
                 <div
                   className={
@@ -90,7 +91,7 @@ export default function MainContainer() {
                             <Stack direction='vertical' gap={3}>
                               <span>{msg.msg}</span>
                               <span style={{ fontSize: '12px' }}>
-                                {msg.source != null && msg.source != ''
+                                {msg.source !== null && msg.source !== ''
                                   ? 'Source: ' + msg.source[0].name
                                   : ''}
                               </span>
@@ -136,7 +137,7 @@ export default function MainContainer() {
               value={question}
               onChange={(e) => handleInputChanges(e)}
               onKeyDown={(e) => {
-                if (e.code == 'Enter' && !e.shiftKey) {
+                if (e.code === 'Enter' && !e.shiftKey) {
                   e.preventDefault() // prevent moving to next line
                   askAI() // call function ask
                 }

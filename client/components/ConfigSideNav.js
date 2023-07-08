@@ -1,7 +1,7 @@
 'use client'
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Button, Stack, Form, Spinner } from 'react-bootstrap'
-import { ToastContainer, toast } from 'react-toastify'
+import { toast } from 'react-toastify'
 
 export default function ConfigSideNav() {
   const [isLoading, setIsLoading] = useState(false)

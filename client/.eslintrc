@@ -5,19 +5,25 @@
     "es6": true,
     "node": true
   },
+  "settings": {
+    "react": {
+      "version": "detect"
+    },
+    "next": {
+      "rootDir": "."
+    }
+  },
   "extends": [
     "standard",
     "eslint:recommended",
-    "plugin:next/recommended",
-    "plugin:react/recommended",
-    "plugin:react-hooks/recommended",
-    "plugin:node/recommended",
-    "plugin:import/recommended",
-    "plugin:promise/recommended",
+    "next",
     "prettier"
   ],
   "parserOptions": {
-    "ecmaVersion": 14
+    "ecmaVersion": 14,
+    "ecmaFeatures": {
+      "jsx": true
+    }
   },
   "rules": {
     "strict": 0,
@@ -57,43 +63,9 @@
     "no-async-promise-executor": "off",
     "no-new-func": "off",
     "no-undef": "off",
-    "node/exports-style": [
+    "@next/next/no-html-link-for-pages": [
       "error",
-      "module.exports"
-    ],
-    "node/file-extension-in-import": "off",
-    "node/prefer-global/buffer": [
-      "error",
-      "always"
-    ],
-    "node/prefer-global/console": [
-      "error",
-      "always"
-    ],
-    "node/prefer-global/process": [
-      "error",
-      "always"
-    ],
-    "node/prefer-global/url-search-params": [
-      "error",
-      "always"
-    ],
-    "node/prefer-global/url": [
-      "error",
-      "always"
-    ],
-    "node/prefer-promises/dns": "error",
-    "node/prefer-promises/fs": "off",
-    "node/no-unpublished-require": "off",
-    "node/no-unpublished-import": "off",
-    "node/no-unsupported-features/es-syntax": "off",
-    "node/no-path-concat": "off",
-    "node/no-extraneous-import": "off",
-    "node/no-missing-import": "off",
-    "import/extensions": [
-      "error",
-      "ignorePackages"
-    ],
-    "promise/always-return": "off"
+      "."
+    ]
   }
 }

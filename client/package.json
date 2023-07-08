@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint-js": "prettier --write **/*.js",
+    "lint": "next lint",
+    "format": "prettier --write **/*.js",
     "lint-css": "stylelint **/*.css --fix"
   },
   "dependencies": {
@@ -22,11 +23,6 @@
     "eslint-config-next": "13.4.3",
     "eslint-config-prettier": "^8.8.0",
     "eslint-config-standard": "^17.1.0",
-    "eslint-plugin-import": "^2.27.5",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^6.1.1",
-    "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
     "prettier": "^3.0.0",
     "stylelint": "^14.16.1",
     "stylelint-config-prettier": "^9.0.5"

@@ -84,14 +84,14 @@ export default function MainContainer() {
                         <>
                           {msg.msg == null ? (
                             <div>
-                              <span class='blinking-cursor'> █</span>
+                              <span className='blinking-cursor'> █</span>
                             </div>
                           ) : (
                             <Stack direction='vertical' gap={3}>
                               <span>{msg.msg}</span>
                               <span style={{ fontSize: '12px' }}>
                                 {msg.source != null && msg.source != ''
-                                  ? 'Source: ' + msg.source[0]['name']
+                                  ? 'Source: ' + msg.source[0].name
                                   : ''}
                               </span>
                             </Stack>

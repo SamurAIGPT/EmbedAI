@@ -2,15 +2,24 @@
 
 A Flask application to manage your privateGPT instance.
 
+## Linux Installation Notes
+
+If you get a cartopy build error, ensure you have that installed:
+````sh
+sudo apt-get install libgeos-dev 
+````
 ## MacOS Installation Notes
 
-Ensure you run:
+If you get a cartopy build error, ensure you have that installed:
+````sh
+brew install libgeos-dev 
+````
+
+To fix the lingering OpenSSL issue, ensure you run:
 
 ```sh
 pip install urllib3==1.26.6
 ```
-
-To fix the lingering OpenSSL issue.
 
 Now, you can execute:
 

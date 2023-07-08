@@ -1,116 +1,131 @@
-"use client";
-import React, { useState } from "react";
-import { Button, Stack, Form,Spinner  } from "react-bootstrap";
-import { ToastContainer, toast } from "react-toastify";
+'use client'
+import React, { useState } from 'react'
+import { Button, Stack, Form, Spinner } from 'react-bootstrap'
+import { ToastContainer, toast } from 'react-toastify'
 
 export default function ConfigSideNav() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [downloadInProgress, setdownloadInProgress] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [isUploading, setIsUploading] = useState(null);
+  const [isLoading, setIsLoading] = useState(false)
+  const [downloadInProgress, setdownloadInProgress] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [isUploading, setIsUploading] = useState(null)
 
   const ingestData = async () => {
     try {
-      setIsLoading(true);
-      const res = await fetch("http://localhost:5000/ingest");
-      const jsonData = await res.json();
+      setIsLoading(true)
+      const res = await fetch('http://localhost:5000/ingest')
+      const jsonData = await res.json()
       if (!res.ok) {
         // This will activate the closest `error.js` Error Boundary
-        console.log("Error Ingesting data");
-        setIsLoading(false);
+        console.log('Error Ingesting data')
+        setIsLoading(false)
       } else {
-        setIsLoading(false);
-        console.log(jsonData);
+        setIsLoading(false)
+        console.log(jsonData)
       }
     } catch (error) {
-      setIsLoading(false);
-	  response.text().then(text => {toast.error("Error Ingesting data."+text);})
+      setIsLoading(false)
+      response.text().then((text) => {
+        toast.error('Error Ingesting data.' + text)
+      })
     }
-  };
+  }
 
   const handleDownloadModel = async () => {
     try {
-      setdownloadInProgress(true);
-      const res = await fetch("http://localhost:5000/download_model");
-      const jsonData = await res.json();
+      setdownloadInProgress(true)
+      const res = await fetch('http://localhost:5000/download_model')
+      const jsonData = await res.json()
       if (!res.ok) {
-	    response.text().then(text => {toast.error("Error downloading model."+text);})  
-        setdownloadInProgress(false);
+        response.text().then((text) => {
+          toast.error('Error downloading model.' + text)
+        })
+        setdownloadInProgress(false)
       } else {
-        setdownloadInProgress(false);
-        toast.success("Model Download complete");
-        console.log(jsonData);
+        setdownloadInProgress(false)
+        toast.success('Model Download complete')
+        console.log(jsonData)
       }
     } catch (error) {
-      setdownloadInProgress(false);
-      console.log(error);
-      toast.error("Error downloading model");
+      setdownloadInProgress(false)
+      console.log(error)
+      toast.error('Error downloading model')
     }
-  };
+  }
 
   const handleFileChange = (event) => {
-    if(event.target.files[0]!=null){
-      setSelectedFile(event.target.files[0]);
+    if (event.target.files[0] != null) {
+      setSelectedFile(event.target.files[0])
     }
-    
-  };
+  }
 
   const handleUpload = async () => {
     setIsUploading(true)
     try {
-      const formData = new FormData();
-      formData.append("document", selectedFile);
+      const formData = new FormData()
+      formData.append('document', selectedFile)
 
-      const res = await fetch("http://localhost:5000/upload_doc", {
-        method: "POST",
+      const res = await fetch('http://localhost:5000/upload_doc', {
+        method: 'POST',
         body: formData,
-      });
+      })
 
       if (!res.ok) {
-        console.log("Error Uploading document");
-		response.text().then(text => {toast.error("Error Uploading document."+text);})
-        setSelectedFile(null); // Clear the selected file after successful upload
-        document.getElementById("file-input").value = "";
+        console.log('Error Uploading document')
+        response.text().then((text) => {
+          toast.error('Error Uploading document.' + text)
+        })
+        setSelectedFile(null) // Clear the selected file after successful upload
+        document.getElementById('file-input').value = ''
         setIsUploading(false)
       } else {
-        const data = await res.json();
-        console.log(data);
-        toast.success("Document Upload Successful");
-        setSelectedFile(null); // Clear the selected file after successful upload
-        document.getElementById("file-input").value = "";
+        const data = await res.json()
+        console.log(data)
+        toast.success('Document Upload Successful')
+        setSelectedFile(null) // Clear the selected file after successful upload
+        document.getElementById('file-input').value = ''
         setIsUploading(false)
       }
     } catch (error) {
-      console.log("error");
-      toast.error("Error Uploading document");
-      setSelectedFile(null); // Clear the selected file after successful upload
-      document.getElementById("file-input").value = "";
+      console.log('error')
+      toast.error('Error Uploading document')
+      setSelectedFile(null) // Clear the selected file after successful upload
+      document.getElementById('file-input').value = ''
       setIsUploading(false)
     }
-  };
+  }
 
   return (
     <>
-      <div className="mx-4 mt-3">
-        <Form.Group className="mb-3">
+      <div className='mx-4 mt-3'>
+        <Form.Group className='mb-3'>
           <Form.Label>Upload your documents</Form.Label>
           <Form.Control
-            type="file"
-            size="sm"
+            type='file'
+            size='sm'
             onChange={handleFileChange}
-            id="file-input"
+            id='file-input'
           />
         </Form.Group>
-        {isUploading? <div className="d-flex justify-content-center"><Spinner animation="border" /><span className="ms-3">uploading</span></div>:<Button onClick={(e) => handleUpload()}>Upload</Button>}
+        {isUploading ? (
+          <div className='d-flex justify-content-center'>
+            <Spinner animation='border' />
+            <span className='ms-3'>uploading</span>
+          </div>
+        ) : (
+          <Button onClick={(e) => handleUpload()}>Upload</Button>
+        )}
       </div>
-      <Stack direction="horizontal" className="mx-4 mt-5" gap={3}>
+      <Stack direction='horizontal' className='mx-4 mt-5' gap={3}>
         {downloadInProgress ? (
-          <div className="d-flex justify-content-center"><Spinner animation="border" /><span className="ms-3">downloading</span></div>
+          <div className='d-flex justify-content-center'>
+            <Spinner animation='border' />
+            <span className='ms-3'>downloading</span>
+          </div>
         ) : (
           <div>
             <Button
               onClick={(e) => {
-                handleDownloadModel();
+                handleDownloadModel()
               }}
             >
               Download Model
@@ -118,11 +133,14 @@ export default function ConfigSideNav() {
           </div>
         )}
         {isLoading ? (
-          <div className="d-flex justify-content-center"><Spinner animation="border" /><span className="ms-3">ingesting</span></div>
+          <div className='d-flex justify-content-center'>
+            <Spinner animation='border' />
+            <span className='ms-3'>ingesting</span>
+          </div>
         ) : (
           <Button onClick={() => ingestData()}>Ingest Data</Button>
         )}
       </Stack>
     </>
-  );
+  )
 }

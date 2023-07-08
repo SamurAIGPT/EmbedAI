@@ -1,54 +1,53 @@
 .main {
-background-color: black;
-color: beige;
+  background-color: black;
+  color: beige;
 }
 
-.chat-scroll{
+.chat-scroll {
   overflow-y: scroll;
   scrollbar-width: thin;
   height: 88vh;
 }
+
 .chat-scroll::-webkit-scrollbar {
   width: 1rem;
 }
 
 .main-chat-col {
- background-color: #fafafa;
- border-radius: 12px;
- height:100% !important;
+  background-color: #fafafa;
+  border-radius: 12px;
+  height: 100% !important;
 }
 
-.prompt-bg{
-  border: 1px solid rgb(194, 194, 194);
+.prompt-bg {
+  border: 1px solid rgb(194 194 194);
   border-radius: 20px !important;
 }
 
 .user-msg {
-  background-color: #f1f1f1 ;
+  background-color: #f1f1f1;
   color: #000000;
   border-radius: 15px;
 }
 
-.bot-msg{
-  background-color: #dfdfdf !important ;
+.bot-msg {
+  background-color: #dfdfdf !important;
   color: #000000;
   border-radius: 15px;
 }
 
-.chat-input{
+.chat-input {
   border: 1px solid #9e9e9e !important;
   position: relative;
 }
 
 @media screen and (max-width: 980px) {
-  .chat-scroll{
+  .chat-scroll {
     height: 90vh;
   }
 }
 
 .blinking-cursor {
-  -webkit-animation: 0.4s blink step-end infinite;
-  -moz-animation: 0.4s blink step-end infinite;
   animation: 0.4s blink step-end infinite;
 }
 
@@ -57,9 +56,11 @@ color: beige;
   height: 0.5rem !important;
   width: 0.5rem !important;
 }
+
 .loading > .spinner-grow:nth-child(2) {
   animation-delay: 50ms;
 }
+
 .loading > .spinner-grow:nth-child(3) {
   animation-delay: 100ms;
 }

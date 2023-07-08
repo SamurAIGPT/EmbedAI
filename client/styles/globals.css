@@ -4,15 +4,14 @@
   margin: 0;
 }
 
-html,
-body {
+html, body {
   max-width: 100vw;
   overflow-x: hidden;
 }
 
 body {
-  color: rgb(0, 0, 0) !important;
-  background: #ffffff  !important;
+  color: rgb(0 0 0) !important;
+  background: #ffffff !important;
 }
 
 a {

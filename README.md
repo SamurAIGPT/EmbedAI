@@ -1,81 +1,112 @@
-# PrivateGPT
+🛡️ PrivateGPT
+Create your own Q&A chatbot using your personal documents — without needing the internet. Powered by local LLMs (Large Language Models), PrivateGPT ensures your data never leaves your computer, giving you complete privacy and offline capability.
 
-Create a QnA chatbot on your documents without relying on the internet by utilizing the capabilities of local LLMs. Ensure complete privacy and security as none of your data ever leaves your local execution environment. Seamlessly process and inquire about your documents even without an internet connection. Inspired from [imartinez](https://github.com/imartinez)
+Inspired by imartinez
 
 <img width="948" alt="pgpt" src="https://github.com/SamurAIGPT/privateGPT/assets/4326215/76e24cd4-a890-4253-bb87-098c4f1328fd">
+📚 Contents
+Getting Started
 
-## Contents
+Requirements
 
-* [Getting started](#getting-started)
-* [Requirements](#requirements)
-* [How to run](#how-to-run)
-* [Support](#support)
-* [Data](#data)
-* [Check repos](#check-repos)
+How to Run
 
-## Getting started
+Support
 
-Code is up, ⭐ (Star) the repo meanwhile to receive updates
+Supported File Types
 
-Follow [Anil Chandra Naidu Matcha](https://twitter.com/matchaman11) & [Ankur Singh](https://twitter.com/ankur_maker) on twitter for updates
+Related Repos
 
-## Requirements
+🚀 Getting Started
+The code is ready to use! ⭐ Star this repository to stay updated with the latest changes.
 
-* Python 3.8 or later
-* NodeJS v18.12.1 or later
-* Minimum 16GB of memory
+Stay connected with us on Twitter for updates:
+Anil Chandra Naidu Matcha & Ankur Singh
 
-## How to run
+✅ Requirements
+Before you begin, make sure your system has:
 
-1. Go to client folder and run the below commands
+Python 3.8 or newer
 
-   ```shell
-   npm install   
-   ```
+Node.js v18.12.1 or newer
 
-   ```shell
-   npm run dev
-   ```
+At least 16 GB of RAM
 
-2. Go to server folder and run the below commands
+▶️ How to Run
+Follow these steps to get PrivateGPT running on your local machine:
 
-   ```shell
-   pip install -r requirements.txt
-   ```
+1. Start the Client (Frontend)
+Open your terminal and run:
 
-   ```shell
-   python privateGPT.py
-   ```
+bash
+Copier
+Modifier
+cd client
+npm install
+npm run dev
+This will start the frontend at: http://localhost:3000
 
-3. Open <http://localhost:3000>, click on download model to download the required model initially
+2. Start the Server (Backend)
+In a new terminal window:
 
-4. Upload any document of your choice and click on Ingest data. Ingestion is fast
+bash
+Copier
+Modifier
+cd server
+pip install -r requirements.txt
+python privateGPT.py
+3. Use the App
+Open http://localhost:3000 in your browser.
 
-5. Now run any query on your data. Data querying is slow and thus wait for sometime
+Click Download Model to fetch the required language model (only needed once).
 
-## Support
+Upload a document (see supported types below).
 
-Join our discord <https://discord.gg/A6EzvsKX4u> to get support
+Click Ingest Data to process the document (this step is fast).
 
-## Data
+Now you can ask questions about your uploaded document.
 
-The supported extensions for documents are:
+⏳ Data querying may be slow — please wait a moment for responses.
 
-* .csv: CSV,
-* .docx: Word Document,
-* .enex: EverNote,
-* .eml: Email,
-* .epub: EPub,
-* .html: HTML File,
-* .md: Markdown,
-* .msg: Outlook Message,
-* .odt: Open Document Text,
-* .pdf: Portable Document Format (PDF),
-* .pptx : PowerPoint Document,
-* .txt: Text file (UTF-8),
+💬 Support
+Need help or want to ask questions?
+Join our community on Discord:
+👉 https://discord.gg/A6EzvsKX4u
 
-## Check repos
+📁 Supported File Types
+PrivateGPT supports the following document formats:
 
-* [Langchain Course](https://github.com/SamurAIGPT/langchain-course)
-* [ChatGPT Developer Plugins](https://github.com/SamurAIGPT/ChatGPT-Developer-Plugins)
-* [Camel AGI](https://github.com/SamurAIGPT/Camel-AutoGPT)
+.csv — CSV
+
+.docx — Word Document
+
+.enex — Evernote Export
+
+.eml — Email
+
+.epub — ePub Book
+
+.html — HTML File
+
+.md — Markdown
+
+.msg — Outlook Message
+
+.odt — Open Document Text
+
+.pdf — PDF Document
+
+.pptx — PowerPoint
+
+.txt — Plain Text (UTF-8)
+
+🔗 Related Repositories
+Here are some related projects you might find useful:
+
+📘 Langchain Course
+
+🔌 ChatGPT Developer Plugins
+
+🤖 Camel AGI
+
+

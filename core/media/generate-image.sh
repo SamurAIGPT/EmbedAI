@@ -5,6 +5,7 @@
 set -e
 
 MUAPI_BASE="https://api.muapi.ai/api/v1"
+SCHEMA_FILE="$(dirname "$0")/../../schema_data.json"
 
 # Defaults
 PROMPT=""
@@ -19,29 +20,7 @@ JSON_ONLY=false
 MAX_WAIT=300
 POLL_INTERVAL=3
 
-# Check for --add-key first
-for arg in "$@"; do
-    if [ "$arg" = "--add-key" ]; then
-        shift
-        KEY_VALUE=""
-        if [[ -n "$1" && ! "$1" =~ ^-- ]]; then
-            KEY_VALUE="$1"
-        fi
-        if [ -z "$KEY_VALUE" ]; then
-            echo "Enter your muapi.ai API key:" >&2
-            read -r KEY_VALUE
-        fi
-        if [ -n "$KEY_VALUE" ]; then
-            grep -v "^MUAPI_KEY=" .env > .env.tmp 2>/dev/null || true
-            mv .env.tmp .env 2>/dev/null || true
-            echo "MUAPI_KEY=$KEY_VALUE" >> .env
-            echo "MUAPI_KEY saved to .env" >&2
-        fi
-        exit 0
-    fi
-done
-
-# Load .env
+# Check for .env and setup
 if [ -f ".env" ]; then source .env 2>/dev/null || true; fi
 
 # Parse arguments
@@ -64,63 +43,36 @@ while [[ $# -gt 0 ]]; do
             echo "" >&2
             echo "Options:" >&2
             echo "  --prompt, -p    Text description (required)" >&2
-            echo "  --model, -m     Model (default: flux-dev)" >&2
-            echo "                  flux-dev, flux-schnell, nano-banana, nano-banana-pro," >&2
-            echo "                  midjourney-v7-text-to-image, gpt4o-text-to-image," >&2
-            echo "                  google-imagen4, wan2.1-text-to-image, qwen-text-to-image-2512," >&2
-            echo "                  bytedance-seedream-v4.5, ideogram-v3-t2i, reve-text-to-image" >&2
-            echo "  --width         Image width (default: 1024)" >&2
-                        echo "  --height         Image height (default: 1024)" >&2
-                        echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4, 21:9, etc." >&2
-                        echo "  --resolution    1k, 2k, 4k (for nano-banana-pro)" >&2
-                        echo "  --num-images    Number of images 1-4 (default: 1)" >&2
+            echo "  --model, -m     Model name (default: flux-dev)" >&2
+            echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4, 21:9" >&2
+            echo "  --resolution    1k, 2k, 4k (for supported models)" >&2
+            echo "  --width/--height Manual pixel override" >&2
             echo "  --async         Return request_id immediately" >&2
-            echo "  --timeout       Max wait seconds (default: 300)" >&2
             echo "  --json          Raw JSON output only" >&2
             exit 0 ;;
         *) shift ;;
     esac
 done
 
-# Validate key
-if [ -z "$MUAPI_KEY" ]; then
-    echo "Error: MUAPI_KEY not set" >&2
-    echo "Run: bash generate-image.sh --add-key \"your_key\"" >&2
-    echo "Or:  export MUAPI_KEY=your_key" >&2
+if [ -z "$MUAPI_KEY" ]; then echo "Error: MUAPI_KEY not set" >&2; exit 1; fi
+if [ -z "$PROMPT" ]; then echo "Error: --prompt is required" >&2; exit 1; fi
+
+# --- DYNAMIC SCHEMA PARSING ---
+if [ ! -f "$SCHEMA_FILE" ]; then echo "Error: schema_data.json not found at $SCHEMA_FILE" >&2; exit 1; fi
+
+MODEL_DATA=$(jq -r ".[] | select(.name == \"$MODEL\")" "$SCHEMA_FILE")
+if [ -z "$MODEL_DATA" ]; then
+    echo "Error: Model '$MODEL' not found in schema_data.json" >&2
+    echo "Available models: $(jq -r '.[] | .name' "$SCHEMA_FILE" | head -10)..." >&2
     exit 1
 fi
 
-if [ -z "$PROMPT" ]; then
-    echo "Error: --prompt is required" >&2
-    exit 1
-fi
+ENDPOINT=$(echo "$MODEL_DATA" | jq -r '.input_schema.schemas.input_data.endpoint_url')
+PARAMS=$(echo "$MODEL_DATA" | jq -r '.input_schema.schemas.input_data.properties | keys[]')
 
-# Map model flag to endpoint
-case $MODEL in
-    flux-dev)            ENDPOINT="flux-dev-image" ;;
-    flux-schnell)        ENDPOINT="flux-schnell-image" ;;
-    nano-banana)         ENDPOINT="nano-banana" ;;
-    nano-banana-pro)     ENDPOINT="nano-banana-pro" ;;
-    midjourney-v7-text-to-image) ENDPOINT="midjourney-v7-text-to-image" ;;
-    gpt4o-text-to-image)  ENDPOINT="gpt4o-text-to-image" ;;
-    google-imagen4)      ENDPOINT="google-imagen4" ;;
-    wan2.1-text-to-image) ENDPOINT="wan2.1-text-to-image" ;;
-    qwen-text-to-image-2512) ENDPOINT="qwen-text-to-image-2512" ;;
-    bytedance-seedream-v4.5) ENDPOINT="bytedance-seedream-v4.5" ;;
-    ideogram-v3-t2i)     ENDPOINT="ideogram-v3-t2i" ;;
-    reve-text-to-image)  ENDPOINT="reve-text-to-image" ;;
-    *)
-        echo "Error: Unknown model '$MODEL'" >&2
-        echo "Valid: flux-dev, flux-schnell, nano-banana, nano-banana-pro," >&2
-        echo "       midjourney-v7-text-to-image, gpt4o-text-to-image," >&2
-        echo "       google-imagen4, wan2.1-text-to-image, qwen-text-to-image-2512," >&2
-        echo "       bytedance-seedream-v4.5, ideogram-v3-t2i, reve-text-to-image" >&2
-        exit 1 ;;
-esac
-
-# Auto-map aspect ratio to width/height for models that don't support aspect_ratio field
-# (Currently based on flux-dev schema)
-if [ -n "$ASPECT_RATIO" ] && [[ "$MODEL" == flux-* || "$MODEL" == gpt4o* ]]; then
+# Auto-map aspect ratio to width/height if model doesn't support aspect_ratio field
+SUPPORTS_AR=$(echo "$PARAMS" | grep -w "aspect_ratio" || true)
+if [ -n "$ASPECT_RATIO" ] && [ -z "$SUPPORTS_AR" ]; then
     case $ASPECT_RATIO in
         "1:1")   WIDTH=1024; HEIGHT=1024 ;;
         "16:9")  WIDTH=1344; HEIGHT=768 ;;
@@ -131,89 +83,50 @@ if [ -n "$ASPECT_RATIO" ] && [[ "$MODEL" == flux-* || "$MODEL" == gpt4o* ]]; the
     esac
 fi
 
-# Build payload
+# Build Payload Dynamically
 PROMPT_JSON=$(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
+PAYLOAD="{\"prompt\": $PROMPT_JSON"
 
-if [[ "$MODEL" == "nano-banana-pro" ]]; then
-    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\", \"resolution\": \"$RESOLUTION\"}"
-elif [[ "$MODEL" == "nano-banana" ]]; then
-    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\"}"
-elif [[ "$MODEL" == flux-* || "$MODEL" == gpt4o* ]]; then
-    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"width\": $WIDTH, \"height\": $HEIGHT, \"num_images\": $NUM_IMAGES}"
-elif [[ "$MODEL" == midjourney* || "$MODEL" == google-imagen* || "$MODEL" == wan* || "$MODEL" == qwen* || "$MODEL" == bytedance* || "$MODEL" == ideogram* || "$MODEL" == reve* ]]; then
-     # Most of these modern models in schema support aspect_ratio
-     PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\"}"
-else
-    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"width\": $WIDTH, \"height\": $HEIGHT, \"num_images\": $NUM_IMAGES}"
-fi
+# Add numeric parameters
+if echo "$PARAMS" | grep -w "num_images" >/dev/null; then PAYLOAD="$PAYLOAD, \"num_images\": $NUM_IMAGES"; fi
+if echo "$PARAMS" | grep -w "width" >/dev/null && [ -z "$SUPPORTS_AR" ]; then PAYLOAD="$PAYLOAD, \"width\": $WIDTH, \"height\": $HEIGHT"; fi
 
+# Add string parameters
+if [ -n "$SUPPORTS_AR" ]; then PAYLOAD="$PAYLOAD, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\""; fi
+if echo "$PARAMS" | grep -w "resolution" >/dev/null; then PAYLOAD="$PAYLOAD, \"resolution\": \"$RESOLUTION\""; fi
+
+PAYLOAD="$PAYLOAD}"
+
+# --- EXECUTION ---
 HEADERS=(-H "x-api-key: $MUAPI_KEY" -H "Content-Type: application/json")
+[ "$JSON_ONLY" = false ] && echo "Submitting to $ENDPOINT (Model: $MODEL)..." >&2
 
-[ "$JSON_ONLY" = false ] && echo "Submitting to $ENDPOINT..." >&2
-
-# Submit request
 SUBMIT=$(curl -s -X POST "${MUAPI_BASE}/${ENDPOINT}" "${HEADERS[@]}" -d "$PAYLOAD")
 
-if echo "$SUBMIT" | grep -q '"error"'; then
-    ERR=$(echo "$SUBMIT" | grep -o '"error":"[^"]*"' | head -1 | cut -d'"' -f4)
-    [ -z "$ERR" ] && ERR=$(echo "$SUBMIT" | grep -o '"detail":"[^"]*"' | head -1 | cut -d'"' -f4)
-    echo "Error: ${ERR:-$SUBMIT}" >&2
-    exit 1
+if echo "$SUBMIT" | grep -q '"error"\|"detail"'; then
+    ERR=$(echo "$SUBMIT" | jq -r '.error // .detail // empty')
+    echo "Error: ${ERR:-$SUBMIT}" >&2; exit 1
 fi
 
-REQUEST_ID=$(echo "$SUBMIT" | grep -oE '"request_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | sed 's/"$//')
-
-if [ -z "$REQUEST_ID" ]; then
-    echo "Error: No request_id in response" >&2
-    echo "$SUBMIT" >&2
-    exit 1
-fi
-
+REQUEST_ID=$(echo "$SUBMIT" | jq -r '.request_id')
 [ "$JSON_ONLY" = false ] && echo "Request ID: $REQUEST_ID" >&2
 
-# Async: return immediately
-if [ "$ASYNC" = true ]; then
-    [ "$JSON_ONLY" = false ] && echo "" >&2
-    [ "$JSON_ONLY" = false ] && echo "Request submitted. Check status with:" >&2
-    [ "$JSON_ONLY" = false ] && echo "  bash check-result.sh --id \"$REQUEST_ID\"" >&2
-    echo "$SUBMIT"
-    exit 0
-fi
+if [ "$ASYNC" = true ]; then echo "$SUBMIT"; exit 0; fi
 
-# Poll for result
+# Polling
 [ "$JSON_ONLY" = false ] && echo "Waiting for completion..." >&2
-
 ELAPSED=0
-LAST_STATUS=""
 while [ $ELAPSED -lt $MAX_WAIT ]; do
     sleep $POLL_INTERVAL
     ELAPSED=$((ELAPSED + POLL_INTERVAL))
-
     RESULT=$(curl -s -X GET "${MUAPI_BASE}/predictions/${REQUEST_ID}/result" "${HEADERS[@]}")
-    STATUS=$(echo "$RESULT" | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*: *"//' | sed 's/"$//')
-
-    if [ "$STATUS" != "$LAST_STATUS" ] && [ "$JSON_ONLY" = false ]; then
-        echo "Status: $STATUS" >&2
-        LAST_STATUS="$STATUS"
+    STATUS=$(echo "$RESULT" | jq -r '.status')
+    if [ "$STATUS" = "completed" ]; then
+        URL=$(echo "$RESULT" | jq -r '.output.outputs[0]')
+        [ "$JSON_ONLY" = false ] && echo "Success! URL: $URL" >&2
+        echo "$RESULT"; exit 0
+    elif [ "$STATUS" = "failed" ]; then
+        echo "Error: $(echo "$RESULT" | jq -r '.output.error')" >&2; exit 1
     fi
-
-    case $STATUS in
-        completed)
-            [ "$JSON_ONLY" = false ] && echo "" >&2
-            [ "$JSON_ONLY" = false ] && echo "Generation complete!" >&2
-            URL=$(echo "$RESULT" | grep -o '"outputs":\[[^]]*\]' | grep -o '"[^"]*\.\(png\|jpg\|jpeg\|webp\)"' | head -1 | tr -d '"')
-            [ -n "$URL" ] && [ "$JSON_ONLY" = false ] && echo "Image URL: $URL" >&2
-            echo "$RESULT"
-            exit 0 ;;
-        failed)
-            ERR=$(echo "$RESULT" | grep -o '"error":"[^"]*"' | head -1 | cut -d'"' -f4)
-            echo "Error: Generation failed: ${ERR:-unknown}" >&2
-            echo "$RESULT"
-            exit 1 ;;
-    esac
 done
-
-echo "Error: Timeout after ${MAX_WAIT}s" >&2
-echo "Request ID: $REQUEST_ID" >&2
-echo "Check with: bash check-result.sh --id \"$REQUEST_ID\"" >&2
 exit 1

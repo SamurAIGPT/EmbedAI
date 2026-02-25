@@ -63,9 +63,10 @@ while [[ $# -gt 0 ]]; do
             echo "Options:" >&2
             echo "  --prompt, -p    Text description (required)" >&2
             echo "  --model, -m     Model (default: flux-dev)" >&2
-            echo "                  flux-dev, flux-schnell, flux-kontext-dev, flux-kontext-pro," >&2
-            echo "                  flux-kontext-max, hidream-fast, hidream-dev, hidream-full," >&2
-            echo "                  midjourney, gpt4o, seedream, reve, qwen, wan" >&2
+            echo "                  flux-dev, flux-schnell, nano-banana, nano-banana-pro," >&2
+            echo "                  midjourney-v7-text-to-image, gpt4o-text-to-image," >&2
+            echo "                  google-imagen4, wan2.1-text-to-image, qwen-text-to-image-2512," >&2
+            echo "                  bytedance-seedream-v4.5, ideogram-v3-t2i, reve-text-to-image" >&2
             echo "  --width         Image width (default: 1024)" >&2
             echo "  --height        Image height (default: 1024)" >&2
             echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4 (overrides width/height for some models)" >&2
@@ -95,22 +96,22 @@ fi
 case $MODEL in
     flux-dev)            ENDPOINT="flux-dev-image" ;;
     flux-schnell)        ENDPOINT="flux-schnell-image" ;;
-    flux-kontext-dev)    ENDPOINT="flux-kontext-dev-t2i" ;;
-    flux-kontext-pro)    ENDPOINT="flux-kontext-pro-t2i" ;;
-    flux-kontext-max)    ENDPOINT="flux-kontext-max-t2i" ;;
-    hidream-fast)        ENDPOINT="hidream_i1_fast_image" ;;
-    hidream-dev)         ENDPOINT="hidream_i1_dev_image" ;;
-    hidream-full)        ENDPOINT="hidream_i1_full_image" ;;
-    midjourney)          ENDPOINT="midjourney-v7-text-to-image" ;;
-    gpt4o)               ENDPOINT="gpt4o-text-to-image" ;;
-    seedream)            ENDPOINT="bytedance-seedream-image" ;;
-    reve)                ENDPOINT="reve-text-to-image" ;;
-    qwen)                ENDPOINT="qwen-image" ;;
-    wan)                 ENDPOINT="wan2.1-text-to-image" ;;
+    nano-banana)         ENDPOINT="nano-banana" ;;
+    nano-banana-pro)     ENDPOINT="nano-banana-pro" ;;
+    midjourney-v7-text-to-image) ENDPOINT="midjourney-v7-text-to-image" ;;
+    gpt4o-text-to-image)  ENDPOINT="gpt4o-text-to-image" ;;
+    google-imagen4)      ENDPOINT="google-imagen4" ;;
+    wan2.1-text-to-image) ENDPOINT="wan2.1-text-to-image" ;;
+    qwen-text-to-image-2512) ENDPOINT="qwen-text-to-image-2512" ;;
+    bytedance-seedream-v4.5) ENDPOINT="bytedance-seedream-v4.5" ;;
+    ideogram-v3-t2i)     ENDPOINT="ideogram-v3-t2i" ;;
+    reve-text-to-image)  ENDPOINT="reve-text-to-image" ;;
     *)
         echo "Error: Unknown model '$MODEL'" >&2
-        echo "Valid: flux-dev, flux-schnell, flux-kontext-dev, flux-kontext-pro, flux-kontext-max," >&2
-        echo "       hidream-fast, hidream-dev, hidream-full, midjourney, gpt4o, seedream, reve, qwen, wan" >&2
+        echo "Valid: flux-dev, flux-schnell, nano-banana, nano-banana-pro," >&2
+        echo "       midjourney-v7-text-to-image, gpt4o-text-to-image," >&2
+        echo "       google-imagen4, wan2.1-text-to-image, qwen-text-to-image-2512," >&2
+        echo "       bytedance-seedream-v4.5, ideogram-v3-t2i, reve-text-to-image" >&2
         exit 1 ;;
 esac
 

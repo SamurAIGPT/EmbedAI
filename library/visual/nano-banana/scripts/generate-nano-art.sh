@@ -47,4 +47,4 @@ EXTRA: $TEXT_PROMPT.
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CORE_SCRIPT="$SCRIPT_DIR/../../../../core/media/generate-image.sh"
 
-bash "$CORE_SCRIPT" --prompt "$EXPERT_PROMPT" --model flux-dev --json
+bash "$CORE_SCRIPT" --prompt "$EXPERT_PROMPT" --model "nano-banana" --json

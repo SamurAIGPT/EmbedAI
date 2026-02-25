@@ -55,9 +55,10 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: ./generate-video.sh --prompt \"...\" [options]" >&2
             echo "" >&2
             echo "Models (--model):" >&2
-            echo "  veo3, veo3-fast, kling-master, wan2, wan22, wan22-fast" >&2
-            echo "  seedance-pro, seedance-lite, hunyuan, hunyuan-fast" >&2
-            echo "  runway, pixverse, vidu, minimax-std, minimax-pro (default)" >&2
+            echo "  veo3, veo3-fast, kling-v3.0-pro-text-to-video, openai-sora-2-pro-text-to-video" >&2
+            echo "  wan2.5-text-to-video, wan2.2-text-to-video, hunyuan-text-to-video" >&2
+            echo "  minimax-hailuo-02-pro-t2v (default), pixverse-v5.5-t2v, vidu-v2.0-t2v" >&2
+            echo "  luma-dream-machine, runway-text-to-video" >&2
             echo "" >&2
             echo "Options:" >&2
             echo "  --aspect-ratio  16:9, 9:16, 1:1 (default: 16:9)" >&2
@@ -98,24 +99,21 @@ fi
 case $MODEL in
     veo3)          ENDPOINT="veo3-text-to-video" ;;
     veo3-fast)     ENDPOINT="veo3-fast-text-to-video" ;;
-    kling-master)  ENDPOINT="kling-v2.1-master-t2v" ;;
-    wan2)          ENDPOINT="wan2.1-text-to-video" ;;
-    wan22)         ENDPOINT="wan2.2-text-to-video" ;;
-    wan22-fast)    ENDPOINT="wan2.2-5b-fast-t2v" ;;
-    seedance-pro)  ENDPOINT="seedance-pro-t2v" ;;
-    seedance-lite) ENDPOINT="seedance-lite-t2v" ;;
+    kling-v3.0-pro) ENDPOINT="kling-v3.0-pro-text-to-video" ;;
+    openai-sora-2-pro) ENDPOINT="openai-sora-2-pro-text-to-video" ;;
+    wan2.5)        ENDPOINT="wan2.5-text-to-video" ;;
+    wan2.2)        ENDPOINT="wan2.2-text-to-video" ;;
     hunyuan)       ENDPOINT="hunyuan-text-to-video" ;;
-    hunyuan-fast)  ENDPOINT="hunyuan-fast-text-to-video" ;;
     runway)        ENDPOINT="runway-text-to-video" ;;
-    pixverse)      ENDPOINT="pixverse-v4.5-t2v" ;;
-    vidu)          ENDPOINT="vidu-v2.0-t2v" ;;
-    minimax-std)   ENDPOINT="minimax-hailuo-02-standard-t2v" ;;
+    pixverse-v5.5) ENDPOINT="pixverse-v5.5-t2v" ;;
+    vidu-v2.0)     ENDPOINT="vidu-v2.0-t2v" ;;
     minimax-pro)   ENDPOINT="minimax-hailuo-02-pro-t2v" ;;
+    luma-dream)    ENDPOINT="luma-dream-machine" ;;
     *)
         echo "Error: Unknown model '$MODEL'" >&2
-        echo "Valid: veo3, veo3-fast, kling-master, wan2, wan22, wan22-fast," >&2
-        echo "       seedance-pro, seedance-lite, hunyuan, hunyuan-fast," >&2
-        echo "       runway, pixverse, vidu, minimax-std, minimax-pro" >&2
+        echo "Valid: veo3, veo3-fast, kling-v3.0-pro, openai-sora-2-pro," >&2
+        echo "       wan2.5, wan2.2, hunyuan, runway, pixverse-v5.5," >&2
+        echo "       vidu-v2.0, minimax-pro, luma-dream" >&2
         exit 1 ;;
 esac
 

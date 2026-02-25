@@ -1,19 +1,63 @@
-# 🎭 Nano-Banana Expert Art Skill
+# 🍌 Nano-Banana Expert Skill (Gemini 3 Style)
 
-**Expert high-fidelity image generation for AI Agents.**  
-Uses the Google-pioneered "Nano-Banana" prompting framework (Pseudo-Code & Creative Briefs) to produce cinematic, professional-grade visual assets.
+**A specialized skill for AI Agents to leverage "Reasoning-Driven" image generation.**
+Based on the advanced prompting architecture of Google's Gemini 3 (Nano Banana Pro), this skill moves beyond keyword stuffing to structured, logic-based creative briefs.
 
-## 🚀 Usage
+## Core Competencies
+
+1. **Reasoning-Driven Prompting**: Using natural language logic to define physics, lighting, and spatial relationships.
+2. **Structured Creative Briefs**: Implementing the "Perfect Prompt" formula: `Subject + Action + Context + Composition + Lighting`.
+3. **Text Rendering Precision**: Explicitly defining typography and signifiers for legible text integration.
+4. **Contextual Grounding**: Using "Search Grounding" logic (simulated) to anchor generations in real-world accuracy.
+
+---
+
+## 🏗️ Technical Specification
+
+### 1. The "Perfect Prompt" Formula
+
+| Component | Description | Example |
+| :--- | :--- | :--- |
+| **Subject** | Detailed entity description | "A stoic robot barista with exposed copper wiring" |
+| **Action** | Dynamic interaction | "Pouring a latte art leaf with mechanical precision" |
+| **Context** | Environment & Atmosphere | "Inside a neon-lit cyberpunk cafe at midnight" |
+| **Composition** | Camera & Lens choice | "Close-up, 85mm lens, f/1.8 aperture" |
+| **Lighting** | Mood & Direction | "Volumetric blue rim light, warm cafe glow" |
+| **Style** | Aesthetic anchor | "Cinematic, photorealistic, 4K production value" |
+
+### 2. Advanced Features
+- **Negative Constraint Logic**: Instead of "no blurry," use "Ensure sharp focus on the subject's eyes."
+- **Identity Consistency**: (Simulated) "Maintain consistent facial structure across variations."
+- **Text Integration**: Use double quotes for specific text: `The sign reads "OPEN 24/7"`.
+
+---
+
+## 🚀 Protocol: Using Nano-Banana
+
+### Step 1: Define the Creative Logic
+Provide the agent with a subject and a specific scenario.
+
+### Step 2: Invoke the Script
+The `generate-nano-art.sh` script translates the logic into a structured Gemini 3-style prompt.
 
 ```bash
-# Generate a cinematic shot
-bash scripts/generate-nano-art.sh --subject "A futuristic robot gardener in a neon glasshouse" --style "photorealistic"
+# Generating a reasoning-driven image
+bash scripts/generate-nano-art.sh \
+  --subject "a glass chess piece" \
+  --action "shattering into liquid shards" \
+  --context "on a obsidian table" \
+  --style "macro photography"
 ```
 
-## ✨ Expert Features
-- **Auto-Prompting** — Automatically wraps subjects in high-contrast lighting and cinematic composition variables.
-- **Pseudo-Code Logic** — Uses structured prompting to prevent "prompt drift" in high-fidelity models.
-- **Optimized for `flux-dev`** — Curated model selection for the best output-to-speed ratio.
+---
 
-## ⚙️ How it Works
-This skill is a **domain-expert wrapper** around the `core/media/generate-image.sh` primitive. It handles the "Expert Knowledge" layer so the agent only needs to provide the **subject**.
+## ⚠️ Constraints & Guardrails
+
+- **No Keyword Soup**: **MANDATORY** - Do not use "trending on artstation, masterpiece, 8k". Use natural language descriptions.
+- **Physics Logic**: Ensure the prompt describes *physically possible* lighting and reflection interactions.
+- **Full Sentences**: The model parses relationships; use "light reflecting off the water" instead of "water, reflection".
+
+---
+
+## ⚙️ Implementation Details
+This skill applies a "Logic Wrapper" around the `core/media/generate-image.sh` primitive, converting fragmented inputs into a coherent, reasoning-ready narrative prompt.

@@ -18,9 +18,9 @@ The raw infrastructure for interacting with [muapi.ai](https://muapi.ai).
 ### 📚 Expert Library (`/library`)
 Domain-specific skills that bake in "Expert Knowledge" and "Prompt Engineering."
 - `library/motion/cinema-director/` — Technical film direction & cinematography.
-- `library/visual/nano-banana/` — High-fidelity 3D/Photo art skill.
-- `library/visual/ui-design/` — Mobile/Web UI mockups & wireframes.
-- `library/visual/logo-creator/` — Minimalist vector logos & branding.
+- `library/visual/nano-banana/` — Reasoning-driven image generation (Gemini 3 Style).
+- `library/visual/ui-design/` — Mobile/Web UI mockups (Atomic Design).
+- `library/visual/logo-creator/` — Minimalist vector branding (Geometric Primitives).
 
 ---
 

@@ -11,6 +11,7 @@ PROMPT=""
 MODEL="minimax-pro"
 ASPECT_RATIO="16:9"
 DURATION=5
+GENERATE_AUDIO=true
 ASYNC=false
 JSON_ONLY=false
 MAX_WAIT=600
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --model|-m) MODEL="$2"; shift 2 ;;
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
         --duration) DURATION="$2"; shift 2 ;;
+        --no-audio) GENERATE_AUDIO=false; shift ;;
         --async) ASYNC=true; shift ;;
         --status) ACTION="status"; REQUEST_ID="$2"; shift 2 ;;
         --result) ACTION="result"; REQUEST_ID="$2"; shift 2 ;;
@@ -62,7 +64,8 @@ while [[ $# -gt 0 ]]; do
             echo "" >&2
             echo "Options:" >&2
             echo "  --aspect-ratio  16:9, 9:16, 1:1 (default: 16:9)" >&2
-            echo "  --duration      5 or 10 seconds (default: 5)" >&2
+            echo "  --duration      Video length in seconds (default: 5)" >&2
+            echo "  --no-audio      Disable audio generation" >&2
             echo "  --async         Return request_id immediately" >&2
             echo "  --status ID     Check status of a request" >&2
             echo "  --result ID     Get result of a completed request" >&2
@@ -120,7 +123,7 @@ esac
 if [ -z "$PROMPT" ]; then echo "Error: --prompt is required" >&2; exit 1; fi
 
 PROMPT_JSON=$(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
-PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"$ASPECT_RATIO\"}"
+PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"$ASPECT_RATIO\", \"duration\": $DURATION, \"generate_audio\": $GENERATE_AUDIO}"
 
 [ "$JSON_ONLY" = false ] && echo "Submitting to $ENDPOINT..." >&2
 

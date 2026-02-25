@@ -7,6 +7,7 @@ ACTION=""
 CONTEXT=""
 STYLE="cinematic"
 LIGHTING="natural"
+RESOLUTION="1k"
 TEXT=""
 
 while [[ $# -gt 0 ]]; do
@@ -16,13 +17,14 @@ while [[ $# -gt 0 ]]; do
         --context) CONTEXT="$2"; shift 2 ;;
         --style) STYLE="$2"; shift 2 ;;
         --lighting) LIGHTING="$2"; shift 2 ;;
+        --resolution) RESOLUTION="$2"; shift 2 ;;
         --text) TEXT="$2"; shift 2 ;;
         *) shift ;;
     esac
 done
 
 if [ -z "$SUBJECT" ]; then
-    echo "Usage: bash generate-nano-art.sh --subject 'robot' [--action 'pouring coffee'] [--context 'cafe'] [--style 'photorealistic'] [--text 'CAFE']"
+    echo "Usage: bash generate-nano-art.sh --subject 'robot' [--action 'pouring coffee'] [--context 'cafe'] [--style 'photorealistic'] [--resolution 1k|2k|4k] [--text 'CAFE']"
     exit 1
 fi
 
@@ -47,4 +49,4 @@ EXTRA: $TEXT_PROMPT.
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CORE_SCRIPT="$SCRIPT_DIR/../../../../core/media/generate-image.sh"
 
-bash "$CORE_SCRIPT" --prompt "$EXPERT_PROMPT" --model "nano-banana" --json
+bash "$CORE_SCRIPT" --prompt "$EXPERT_PROMPT" --model "nano-banana-pro" --resolution "$RESOLUTION" --json

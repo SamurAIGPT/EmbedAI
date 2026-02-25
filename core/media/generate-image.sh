@@ -12,6 +12,7 @@ MODEL="flux-dev"
 WIDTH=1024
 HEIGHT=1024
 ASPECT_RATIO=""
+RESOLUTION="1k"
 NUM_IMAGES=1
 ASYNC=false
 JSON_ONLY=false
@@ -51,6 +52,7 @@ while [[ $# -gt 0 ]]; do
         --width) WIDTH="$2"; shift 2 ;;
         --height) HEIGHT="$2"; shift 2 ;;
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
+        --resolution) RESOLUTION="$2"; shift 2 ;;
         --num-images) NUM_IMAGES="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
@@ -68,9 +70,10 @@ while [[ $# -gt 0 ]]; do
             echo "                  google-imagen4, wan2.1-text-to-image, qwen-text-to-image-2512," >&2
             echo "                  bytedance-seedream-v4.5, ideogram-v3-t2i, reve-text-to-image" >&2
             echo "  --width         Image width (default: 1024)" >&2
-            echo "  --height        Image height (default: 1024)" >&2
-            echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4 (overrides width/height for some models)" >&2
-            echo "  --num-images    Number of images 1-4 (default: 1)" >&2
+                        echo "  --height         Image height (default: 1024)" >&2
+                        echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4, 21:9, etc." >&2
+                        echo "  --resolution    1k, 2k, 4k (for nano-banana-pro)" >&2
+                        echo "  --num-images    Number of images 1-4 (default: 1)" >&2
             echo "  --async         Return request_id immediately" >&2
             echo "  --timeout       Max wait seconds (default: 300)" >&2
             echo "  --json          Raw JSON output only" >&2
@@ -115,11 +118,33 @@ case $MODEL in
         exit 1 ;;
 esac
 
+# Auto-map aspect ratio to width/height for models that don't support aspect_ratio field
+# (Currently based on flux-dev schema)
+if [ -n "$ASPECT_RATIO" ] && [[ "$MODEL" == flux-* || "$MODEL" == gpt4o* ]]; then
+    case $ASPECT_RATIO in
+        "1:1")   WIDTH=1024; HEIGHT=1024 ;;
+        "16:9")  WIDTH=1344; HEIGHT=768 ;;
+        "9:16")  WIDTH=768;  HEIGHT=1344 ;;
+        "4:3")   WIDTH=1152; HEIGHT=896 ;;
+        "3:4")   WIDTH=896;  HEIGHT=1152 ;;
+        "21:9")  WIDTH=1536; HEIGHT=640 ;;
+    esac
+fi
+
 # Build payload
-if [ -n "$ASPECT_RATIO" ]; then
-    PAYLOAD="{\"prompt\": $(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))'), \"aspect_ratio\": \"$ASPECT_RATIO\", \"num_images\": $NUM_IMAGES}"
+PROMPT_JSON=$(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
+
+if [[ "$MODEL" == "nano-banana-pro" ]]; then
+    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\", \"resolution\": \"$RESOLUTION\"}"
+elif [[ "$MODEL" == "nano-banana" ]]; then
+    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\"}"
+elif [[ "$MODEL" == flux-* || "$MODEL" == gpt4o* ]]; then
+    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"width\": $WIDTH, \"height\": $HEIGHT, \"num_images\": $NUM_IMAGES}"
+elif [[ "$MODEL" == midjourney* || "$MODEL" == google-imagen* || "$MODEL" == wan* || "$MODEL" == qwen* || "$MODEL" == bytedance* || "$MODEL" == ideogram* || "$MODEL" == reve* ]]; then
+     # Most of these modern models in schema support aspect_ratio
+     PAYLOAD="{\"prompt\": $PROMPT_JSON, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\"}"
 else
-    PAYLOAD="{\"prompt\": $(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))'), \"width\": $WIDTH, \"height\": $HEIGHT, \"num_images\": $NUM_IMAGES}"
+    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"width\": $WIDTH, \"height\": $HEIGHT, \"num_images\": $NUM_IMAGES}"
 fi
 
 HEADERS=(-H "x-api-key: $MUAPI_KEY" -H "Content-Type: application/json")

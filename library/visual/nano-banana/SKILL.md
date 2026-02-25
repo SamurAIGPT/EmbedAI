@@ -32,6 +32,17 @@ Based on the advanced prompting architecture of Google's Gemini 3 (Nano Banana P
 
 ---
 
+## 🧠 Prompt Optimization Protocol (Agent Instruction)
+
+**Before calling the script, the Agent MUST rewrite the user's prompt into a logic-driven Reasoning Brief:**
+
+1. **NO KEYWORD SOUP**: Remove "8k, masterpiece, ultra-detailed." Use full, descriptive sentences.
+2. **PHYSICAL CONSISTENCY**: Describe how elements interact (e.g., "The light from the crystal shards casts caustic patterns across the obsidian floor").
+3. **TEXT PRECISION**: If the user wants text, define it precisely: `featuring a sign that says "STORE NAME" in a weathered serif font`.
+4. **OPTICAL DIRECTIVES**: Specify lens behavior: *Shallow Depth of Field (f/1.8)*, *Macro Lens*, *Anamorphic Flare*.
+
+---
+
 ## 🚀 Protocol: Using Nano-Banana
 
 ### Step 1: Define the Creative Logic

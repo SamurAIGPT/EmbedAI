@@ -32,6 +32,17 @@ The UI/UX Design skill translates product requirements into technical design spe
 
 ---
 
+## 🧠 Prompt Optimization Protocol (Agent Instruction)
+
+**Before calling the script, the Agent MUST expand the user's requirements into a Design Specification:**
+
+1. **ATOMIC STRUCTURE**: Mention specific components (Atoms): *Glassmorphic buttons*, *Input fields with 4px radius*, *Iconic sidebars*.
+2. **HIERARCHY**: Use layout patterns: *F-Pattern* for content-heavy sites, *Z-Pattern* for landing pages, *Grid-based Dashboards*.
+3. **TYPOGRAPHY & TOKENS**: Injected design tokens: *Inter Sans-serif*, *8pt spacing system*, *WCAG high-contrast colors*.
+4. **NO SKEUOMORPHISM**: Ensure the prompt enforces *Flat Design* or *Glassmorphism* to avoid "photograph-of-screen" results.
+
+---
+
 ## 🚀 Protocol: Using the UI Designer
 
 ### Step 1: Define the Product Brief

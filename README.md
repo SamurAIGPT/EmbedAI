@@ -36,6 +36,12 @@ High-value skills that translate creative intent into technical directives.
 
 ---
 
+## 🧠 Self-Optimizing Skills
+
+Every expert skill in the **Library** includes a **Prompt Optimization Protocol**. This allows LLMs (like Claude or Gemini) to use their own reasoning to expand simple user requests into high-fidelity technical briefs before calling the generation scripts.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Configure Your API Key

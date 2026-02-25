@@ -31,6 +31,17 @@ The Logo Creator skill translates brand vision into minimalist, scalable, and ic
 
 ---
 
+## 🧠 Prompt Optimization Protocol (Agent Instruction)
+
+**Before calling the script, the Agent MUST refine the brand vision into a Geometric Minimalist Brief:**
+
+1. **PRIMITIVE FOCUS**: Reduce the concept to basic shapes: *Circle, Square, Triangle*.
+2. **NEGATIVE SPACE**: Explicitly instruct the model to use *negative space* for secondary meaning (e.g., "The space between the letters forms an arrow").
+3. **PRODUCTION CONSTRAINTS**: Use *Solid colors*, *Monochromatic palettes*, and *Flat design only*. NO gradients or 3D effects.
+4. **CENTERED COMPOSITION**: Always specify *Isolated on white background* and *perfectly centered* for scalability.
+
+---
+
 ## 🚀 Protocol: Using the Logo Creator
 
 ### Step 1: Define the Brand Brief

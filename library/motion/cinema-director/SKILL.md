@@ -38,6 +38,18 @@ The Cinema Director skill translates high-level creative intent into technical c
 
 ---
 
+## 🧠 Prompt Optimization Protocol (Agent Instruction)
+
+**Before calling the script, the Agent MUST expand the user's raw prompt using these Director's Rules:**
+
+1. **TECHNICAL INFUSION**: Transform "cool action" into a technical shot. 
+   - *Formula*: `[Shot Type] + [Subject/Action] + [Environment] + [Lighting] + [Camera Movement] + [Lens Effect]`
+2. **MOTION DYNAMICS**: Use cinematic verbs: *Dolly In* (intimacy), *Crane Up* (majestic), *Orbit* (heroic), *Truck* (parallel motion).
+3. **LIGHTING RECIPES**: Apply specific illumination: *Volumetric God Rays*, *Teal-and-Orange Grade*, *Cyberpunk Rim Lighting*, *Rembrandt Portrait Lighting*.
+4. **PHYSICS LOGIC**: Describe light relationships (e.g., "Neon reflections shimmering on rain-slicked asphalt") to trigger model reasoning.
+
+---
+
 ## 🚀 Protocol: Using the Cinema Director
 
 ### Step 1: Define the Creative Brief

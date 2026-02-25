@@ -14,6 +14,7 @@ ASPECT_RATIO="16:9"
 DURATION=5
 GENERATE_AUDIO=true
 ASYNC=false
+VIEW=false
 JSON_ONLY=false
 MAX_WAIT=600
 POLL_INTERVAL=5
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --duration) DURATION="$2"; shift 2 ;;
         --no-audio) GENERATE_AUDIO=false; shift ;;
         --async) ASYNC=true; shift ;;
+        --view) VIEW=true; shift ;;
         --status) ACTION="status"; REQUEST_ID="$2"; shift 2 ;;
         --result) ACTION="result"; REQUEST_ID="$2"; shift 2 ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --duration      Length in seconds (3-15)" >&2
             echo "  --no-audio      Disable audio generation" >&2
             echo "  --async         Return request_id immediately" >&2
+            echo "  --view          Download and open video (macOS only)" >&2
             echo "  --status ID     Check status of a request" >&2
             echo "  --json          Raw JSON output only" >&2
             exit 0 ;;
@@ -110,8 +113,22 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     RESULT=$(curl -s -X GET "${MUAPI_BASE}/predictions/${REQUEST_ID}/result" "${HEADERS[@]}")
     STATUS=$(echo "$RESULT" | jq -r '.status')
     if [ "$STATUS" = "completed" ]; then
-        URL=$(echo "$RESULT" | jq -r '.output.outputs[0]')
+        URL=$(echo "$RESULT" | jq -r '.outputs[0]')
         [ "$JSON_ONLY" = false ] && echo "Success! URL: $URL" >&2
+        
+        if [ "$VIEW" = true ]; then
+            EXT="${URL##*.}"
+            [ -z "$EXT" ] || [[ "$EXT" == http* ]] && EXT="mp4"
+            OUTPUT_DIR="$(dirname "$0")/../../media_outputs"
+            mkdir -p "$OUTPUT_DIR"
+            TEMP_FILE="$OUTPUT_DIR/muapi_$(date +%s).$EXT"
+            [ "$JSON_ONLY" = false ] && echo "Downloading to $TEMP_FILE..." >&2
+            curl -s -o "$TEMP_FILE" "$URL"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                open "$TEMP_FILE"
+            fi
+        fi
+        
         echo "$RESULT"; exit 0
     elif [ "$STATUS" = "failed" ]; then
         echo "Error: $(echo "$RESULT" | jq -r '.output.error')" >&2; exit 1

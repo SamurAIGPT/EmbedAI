@@ -16,6 +16,7 @@ ASPECT_RATIO=""
 RESOLUTION="1k"
 NUM_IMAGES=1
 ASYNC=false
+VIEW=false
 JSON_ONLY=false
 MAX_WAIT=300
 POLL_INTERVAL=3
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
         --resolution) RESOLUTION="$2"; shift 2 ;;
         --num-images) NUM_IMAGES="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
+        --view) VIEW=true; shift ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
         --json) JSON_ONLY=true; shift ;;
         --help|-h)
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --resolution    1k, 2k, 4k (for supported models)" >&2
             echo "  --width/--height Manual pixel override" >&2
             echo "  --async         Return request_id immediately" >&2
+            echo "  --view          Download and open image (macOS only)" >&2
             echo "  --json          Raw JSON output only" >&2
             exit 0 ;;
         *) shift ;;
@@ -122,8 +125,22 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     RESULT=$(curl -s -X GET "${MUAPI_BASE}/predictions/${REQUEST_ID}/result" "${HEADERS[@]}")
     STATUS=$(echo "$RESULT" | jq -r '.status')
     if [ "$STATUS" = "completed" ]; then
-        URL=$(echo "$RESULT" | jq -r '.output.outputs[0]')
+        URL=$(echo "$RESULT" | jq -r '.outputs[0]')
         [ "$JSON_ONLY" = false ] && echo "Success! URL: $URL" >&2
+        
+        if [ "$VIEW" = true ]; then
+            EXT="${URL##*.}"
+            [ -z "$EXT" ] || [[ "$EXT" == http* ]] && EXT="jpg"
+            OUTPUT_DIR="$(dirname "$0")/../../media_outputs"
+            mkdir -p "$OUTPUT_DIR"
+            TEMP_FILE="$OUTPUT_DIR/muapi_$(date +%s).$EXT"
+            [ "$JSON_ONLY" = false ] && echo "Downloading to $TEMP_FILE..." >&2
+            curl -s -o "$TEMP_FILE" "$URL"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                open "$TEMP_FILE"
+            fi
+        fi
+        
         echo "$RESULT"; exit 0
     elif [ "$STATUS" = "failed" ]; then
         echo "Error: $(echo "$RESULT" | jq -r '.output.error')" >&2; exit 1

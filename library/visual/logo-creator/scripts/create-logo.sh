@@ -1,6 +1,6 @@
 #!/bin/bash
 # Expert Skill: Logo Creator
-# Generates minimalist, vector-style logos suitable for branding.
+# Translates brand vision into professional vector-style branding.
 
 BRAND=""
 STYLE="minimalist"
@@ -18,17 +18,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$CONCEPT" ]; then
-    echo "Usage: bash create-logo.sh --concept 'fox head' --brand 'Foxy' [--style minimalist|flat|mascot] [--color 'orange on white']"
+    echo "Usage: bash create-logo.sh --concept 'description' --brand 'name' [--style minimalist|abstract|mascot] [--color 'palette']"
     exit 1
 fi
 
-# Expert Logo Prompt
+# Branding Logic
 EXPERT_PROMPT="[LOGO_BRIEF]
-BRAND: \"$BRAND\"
-ICON: $CONCEPT
-STYLE: $STYLE vector logo, simple geometric shapes, flat design
-COLOR: $COLOR background
-[EXECUTE] Generate a clean, professional vector logo. CENTERED. NO realistic shading, NO complex details, NO 3D rendering. Just the mark and text."
+BRAND_NAME: \"$BRAND\"
+ICON_CONCEPT: $CONCEPT
+DESIGN_PHILOSOPHY: $STYLE, geometric primitives, negative space, flat design
+TECHNICAL: High scalability, solid $COLOR background, symmetric, centered
+TYPOGRAPHY: Geometric sans-serif wordmark
+[EXECUTE] Generate a clean, professional vector logo. NO 3D rendering, NO realistic shading, NO complex gradients. Pure brand identity mark."
 
 # Call Core Primitive
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

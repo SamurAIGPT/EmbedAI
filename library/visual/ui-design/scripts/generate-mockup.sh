@@ -1,9 +1,9 @@
 #!/bin/bash
 # Expert Skill: UI/UX Design Mockup Generator
-# Generates high-fidelity UI designs for web and mobile using Flux/Midjourney best practices.
+# Translates product requirements into design system directives.
 
 PLATFORM="mobile"
-STYLE="modern clean"
+STYLE="modern"
 THEME="light"
 DESCRIPTION=""
 
@@ -18,26 +18,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$DESCRIPTION" ]; then
-    echo "Usage: bash generate-mockup.sh --desc 'travel app home screen' [--platform mobile|web] [--style modern|glassmorphism] [--theme light|dark]"
+    echo "Usage: bash generate-mockup.sh --desc 'travel app' [--platform mobile|web] [--style glassmorphism|brutalist] [--theme light|dark]"
     exit 1
 fi
 
-# Aspect Ratio Logic
+# Design System Logic
 if [ "$PLATFORM" == "mobile" ]; then
     AR_FLAG="--aspect-ratio 9:16"
-    PLATFORM_KW="High-fidelity iPhone 15 Pro UI mockup"
+    LAYOUT="Card-based, bottom navigation bar, 8pt grid system"
+    SYSTEM="iOS Human Interface Guidelines style"
 else
     AR_FLAG="--aspect-ratio 16:9"
-    PLATFORM_KW="High-fidelity Desktop Website UI mockup"
+    LAYOUT="Sidebar navigation, grid layout, F-pattern hierarchy"
+    SYSTEM="Modern SaaS Design System style"
 fi
 
-# Expert Prompt Construction
+# Technical UX Brief
 EXPERT_PROMPT="[UX_BRIEF]
-TYPE: $PLATFORM_KW
+PLATFORM: $PLATFORM
 CONTEXT: $DESCRIPTION
-STYLE: $STYLE, $THEME mode, vector icons, inter font
-LAYOUT: Professional dribbble style, clean whitespace, user-centric
-[EXECUTE] Generate a flat, high-quality UI design. No hand holding device, just the interface."
+DESIGN_SYSTEM: $SYSTEM, $THEME mode
+STYLE_TOKENS: $STYLE aesthetic, geometric sans-serif (Inter), high-contrast accessibility
+LAYOUT_PATTERN: $LAYOUT, professional whitespace, vector icons
+[EXECUTE] Generate a high-fidelity flat UI mockup. NO hands, NO physical devices, NO background clutter. Pure digital interface only."
 
 # Call Core Primitive
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

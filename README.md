@@ -1,4 +1,4 @@
-# muapi.ai Agent Skills
+# Generative-Media-Skills
 
 A collection of skills for AI coding agents to use [muapi.ai](https://muapi.ai) — a generative media aggregator with 100+ AI models for image, video, and audio generation.
 

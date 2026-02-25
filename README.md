@@ -3,6 +3,8 @@
 **The Ultimate Multimodal Toolset for Claude Code, Cursor, and Gemini CLI.**  
 A high-performance, schema-driven architecture for AI agents to generate, edit, and display professional-grade images, videos, and audio.
 
+![Agent Skills Demo](media_outputs/cld6-demo.webp)
+
 [🚀 Get Started](#-quick-start) | [🎨 Expert Library](#-expert-library) | [⚙️ Core Primitives](#-core-primitives) | [📖 Reference](#-schema-reference)
 
 ---
@@ -44,13 +46,28 @@ Every expert skill in the **Library** includes a **Prompt Optimization Protocol*
 
 ## 🚀 Quick Start
 
-### 1. Configure Your API Key
+### 1. Install the Skills
+```bash
+# Install all skills to your AI agent
+npx skills add SamurAIGPT/Generative-Media-Skills --all
+
+# Or install a specific skill
+npx skills add SamurAIGPT/Generative-Media-Skills --skill muapi-media-generation
+
+# List available skills
+npx skills add SamurAIGPT/Generative-Media-Skills --list
+
+# Install to specific agents
+npx skills add SamurAIGPT/Generative-Media-Skills --all -a claude-code -a cursor
+```
+
+### 2. Configure Your API Key
 ```bash
 # Get your key at https://muapi.ai/dashboard
 bash core/platform/setup.sh --add-key "YOUR_MUAPI_KEY"
 ```
 
-### 2. Run an Expert Skill with Direct Display
+### 3. Run an Expert Skill with Direct Display
 Generate a high-fidelity image and open it immediately using the `--view` flag.
 ```bash
 # Use Nano-Banana reasoning to generate a 2K masterpiece
@@ -61,7 +78,7 @@ bash library/visual/nano-banana/scripts/generate-nano-art.sh \
   --view
 ```
 
-### 3. Direct a Cinematic Scene
+### 4. Direct a Cinematic Scene
 ```bash
 cd library/motion/cinema-director
 # Create a 10-second 'epic' reveal without audio

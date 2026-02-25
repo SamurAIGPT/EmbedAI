@@ -1,3 +1,8 @@
+---
+name: muapi-ui-design
+description: Generate high-fidelity UI/UX mockups for mobile and web apps using Atomic Design principles — creates wireframes and design systems via muapi.ai
+---
+
 # 🎨 UI/UX Design Mockup Skill
 
 **A specialized skill for AI Agents to architect high-fidelity digital interfaces.**

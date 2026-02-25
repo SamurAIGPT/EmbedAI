@@ -1,3 +1,8 @@
+---
+name: muapi-cinema-director
+description: Direct high-fidelity cinematic video with AI — translates creative intent into technical cinematographic directives for Veo3, Kling, and Luma video models via muapi.ai
+---
+
 # 🎬 AI Cinema Director Skill
 
 **A specialized skill for AI Agents to direct high-fidelity cinematic video.**

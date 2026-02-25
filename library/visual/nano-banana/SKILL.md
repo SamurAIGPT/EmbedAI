@@ -1,3 +1,8 @@
+---
+name: muapi-nano-banana
+description: Reasoning-driven image generation using structured creative briefs (Gemini 3 style) — generates high-fidelity images via muapi.ai with logic-based prompting
+---
+
 # 🍌 Nano-Banana Expert Skill (Gemini 3 Style)
 
 **A specialized skill for AI Agents to leverage "Reasoning-Driven" image generation.**

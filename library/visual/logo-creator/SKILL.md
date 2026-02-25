@@ -1,3 +1,8 @@
+---
+name: muapi-logo-creator
+description: Engineer professional-grade brand logos using geometric primitives and negative space — generates minimalist, scalable vector-style marks via muapi.ai
+---
+
 # 🖼️ Logo Creator Skill
 
 **A specialized skill for AI Agents to engineer professional-grade brand identities.**

@@ -17,24 +17,31 @@ The raw infrastructure for interacting with [muapi.ai](https://muapi.ai).
 
 ### 📚 Expert Library (`/library`)
 Domain-specific skills that bake in "Expert Knowledge" and "Prompt Engineering."
+- `library/motion/cinema-director/` — Technical film direction & cinematography.
 - `library/visual/nano-banana/` — High-fidelity 3D/Photo art skill.
 - `library/visual/ui-design/` — Mobile/Web UI mockups & wireframes.
 - `library/visual/logo-creator/` — Minimalist vector logos & branding.
-- *Coming Soon: 99+ additional specialized skills.*
 
 ---
 
-## 🚀 Quick Start (Expert Skill)
+## 🚀 Quick Start (Expert Directed Film)
 
 ### 1. Setup API Key
 ```bash
 bash core/platform/setup.sh --add-key "YOUR_MUAPI_KEY"
 ```
 
-### 2. Run an Expert Skill (Nano-Banana)
+### 2. Direct a Cinematic Scene
+The Cinema Director skill translates "Director's Intent" into technical cinematography.
 ```bash
-cd library/visual/nano-banana
-bash scripts/generate-nano-art.sh --subject "Cyberpunk city in 8k" --style "photorealistic"
+cd library/motion/cinema-director
+# Direct an 'epic' reveal of a futuristic city
+bash scripts/generate-film.sh --subject "a cyberpunk metropolis in the clouds" --intent "epic" --model "kling-master"
+```
+
+### 3. Check Result
+```bash
+bash ../../../core/platform/check-result.sh --id "REQUEST_ID_FROM_STEP_2"
 ```
 
 ---

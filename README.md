@@ -1,226 +1,95 @@
-# Generative Media Skills for AI Agents
+# 🎭 Generative Media Skills for AI Agents
 
-A collection of high-performance generative media skills for AI coding agents (Claude Code, Cursor, Gemini CLI, Windsurf). Create images, videos, and audio tracks directly from your agent workflow, powered by the [muapi.ai](https://muapi.ai) multi-model engine.
+**Transform your AI Agent into a creative powerhouse.**  
+A standardized collection of high-performance skills for AI coding agents (**Claude Code, Cursor, Gemini CLI, Windsurf**) to generate, edit, and enhance images, videos, and audio.
 
-## Compatibility
-
-These skills provide a standardized way to integrate generative media into modern AI agent environments:
-- **Claude Code:** Use via terminal commands.
-- **Gemini CLI:** Integrated as local tool/scripts.
-- **Cursor / Windsurf:** Add to `.cursorrules` or use via terminal.
-- **MCP (Model Context Protocol):** Scripts can be easily wrapped as MCP tools.
-
-## Installation
-
-```bash
-npx skills add muapi-ai/skills
-```
-
-## Available Skills
-
-### muapi-generate
-
-Generate images and videos using 50+ models with async queue support.
-
-**Use when:**
-- "Generate an image of..."
-- "Create a video"
-- "Make a picture using Midjourney / Flux / Seedream"
-- "Text to video with Veo3 / Kling / Wan"
-- "Image to video"
-- "Upload a file"
-
-**Scripts:**
-- `generate-image.sh` — Text-to-image (Flux, Midjourney, GPT-4o, HiDream, Seedream, Reve, Qwen, Wan)
-- `generate-video.sh` — Text-to-video (Veo3, Kling, Wan, Seedance, Runway, Hunyuan, Minimax, Pixverse, Vidu)
-- `image-to-video.sh` — Image-to-video (same models, I2V variants)
-- `upload.sh` — Upload local files to muapi CDN
-
-### muapi-image-edit
-
-Edit and enhance images using AI.
-
-**Use when:**
-- "Edit this image"
-- "Change the style / background"
-- "Upscale / enhance this photo"
-- "Remove the background / object"
-- "Face swap"
-- "Make it Ghibli style / anime"
-
-**Scripts:**
-- `edit-image.sh` — Flux Kontext i2i, GPT-4o edit, Reve, SeedEdit, Midjourney, Qwen
-- `enhance-image.sh` — Upscale, background remove, face swap, style transfer, object eraser
-
-### muapi-video-edit
-
-Edit videos with AI effects, lipsync, and transformations.
-
-**Use when:**
-- "Add lipsync to this video"
-- "Apply AI effects to video"
-- "Dance effects"
-- "Modify this video"
-
-**Scripts:**
-- `video-effects.sh` — Wan effects, video/image effects, dance, face swap, dress change, Luma
-- `lipsync.sh` — Sync, LatentSync, Creatify, Veed lipsync
-
-### muapi-audio
-
-Music and audio generation.
-
-**Use when:**
-- "Create music"
-- "Generate a song"
-- "Add audio to video"
-- "Extend / remix this track"
-
-**Scripts:**
-- `create-music.sh` — Suno create/remix/extend, MMAudio text-to-audio, video-to-audio
-
-### muapi-platform
-
-Platform utilities: API key setup, file upload, prediction polling.
-
-**Use when:**
-- "Setup my API key"
-- "Check result of request"
-- "Upload a file"
-
-**Scripts:**
-- `setup.sh` — Configure MUAPI_KEY
-- `check-result.sh` — Poll a prediction by request ID
+[🚀 Get Started](#quick-start) | [🎨 Supported Models](#recommended-models) | [📖 API Reference](#api-reference)
 
 ---
 
-## Getting Your API Key
+## ✨ Features
 
-1. Go to [muapi.ai/dashboard](https://muapi.ai/dashboard)
-2. Navigate to API Keys
-3. Create a new key
+- **🌈 Multimodal Mastery** — Generate high-fidelity Images, Videos, and Audio tracks within a single workflow.
+- **🤖 Agent-Native** — Optimized for terminal-based agents with clean JSON outputs and async job handling.
+- **🛠️ 100+ AI Models** — One integration to access **Midjourney v7, Flux, Kling, Veo3, Suno,** and more.
+- **⚡ Pro-Grade Controls** — Support for upscaling, background removal, face swapping, and cinematic motion.
+- **🔌 Powered by [muapi.ai](https://muapi.ai)** — A unified generative media engine.
 
-## Quick Start
+---
+
+## 🏗️ Architecture
+
+```text
+/
+├── 🖼️ muapi-generate/      # Text-to-Image, Text-to-Video, I2V
+├── 🪄 muapi-image-edit/    # Upscaling, Style Transfer, Inpainting
+├── 🎬 muapi-video-edit/    # Lipsync, Video Effects, Face Swap
+├── 🎵 muapi-audio/         # Music & Sound Generation
+└── ⚙️ muapi-platform/      # API Setup & Result Polling
+```
+
+---
+
+## 🚀 Quick Start
 
 ### 1. Setup API Key
-
 ```bash
-bash setup.sh --add-key "your_key_here"
-# Or: export MUAPI_KEY=your_key_here
+# Get your key at https://muapi.ai/dashboard
+bash muapi-platform/scripts/setup.sh --add-key "YOUR_MUAPI_KEY"
 ```
 
-### 2. Generate an Image
-
+### 2. Generate Your First Masterpiece
 ```bash
-# Flux Dev (fast, high quality)
-bash generate-image.sh --prompt "a sunset over mountains" --model flux-dev
+# Generate a cinematic image with Flux
+bash muapi-generate/scripts/generate-image.sh --prompt "Cyberpunk city in 8k" --model flux-dev
 
-# Midjourney v7
-bash generate-image.sh --prompt "cinematic portrait" --model midjourney
-
-# GPT-4o image
-bash generate-image.sh --prompt "a futuristic city" --model gpt4o
-```
-
-### 3. Generate a Video
-
-```bash
-# Text-to-video with Veo3
-bash generate-video.sh --prompt "ocean waves crashing" --model veo3
-
-# Async mode (returns request_id immediately for long jobs)
-bash generate-video.sh --prompt "epic battle scene" --model kling-master --async
-
-# Check status / get result
-bash check-result.sh --id "request_id_here"
-```
-
-### 4. Image to Video
-
-```bash
-bash image-to-video.sh --image-url "https://example.com/photo.jpg" \
-  --prompt "camera slowly zooms in" --model kling-pro
-```
-
-### 5. Music Generation
-
-```bash
-bash create-music.sh --style "lo-fi hip hop" --prompt "chill beats for studying"
+# Create a high-quality video with Veo3
+bash muapi-generate/scripts/generate-video.sh --prompt "Drone shot of ocean waves" --model veo3
 ```
 
 ---
 
-## API Reference
+## 🎨 Supported Models
 
-**Base URL:** `https://api.muapi.ai/api/v1`
+### 🖼️ Image Generation
+| Model | API Endpoint | Highlights |
+| :--- | :--- | :--- |
+| **Midjourney v7** | `midjourney-v7-t2i` | Best artistic quality & realism |
+| **Flux Dev** | `flux-dev-image` | High prompt adherence & detail |
+| **GPT-4o** | `gpt4o-text-to-image` | Excellent instruction following |
+| **Seedream** | `bytedance-seedream` | Photorealistic textures |
 
-**Authentication:** `x-api-key: YOUR_KEY` header
+### 🎥 Video Generation
+| Model | API Endpoint | Highlights |
+| :--- | :--- | :--- |
+| **Veo3** | `veo3-text-to-video` | Industry-leading video quality |
+| **Kling Master** | `kling-v2.1-master` | Premium motion & consistency |
+| **Wan 2.1** | `wan2.1-text-to-video` | State-of-the-art open source |
+| **Luma Dream** | `luma-dream-machine` | Creative cinematic motion |
 
-**Request flow:**
-```
-POST /api/v1/{endpoint}  →  {"request_id": "abc123"}
-GET  /api/v1/predictions/{id}/result  →  poll until {"status": "completed", "outputs": [...]}
-```
+---
 
-## Common Flags
+## 🔧 Compatibility
 
-All scripts support:
+These skills are "plug-and-play" for modern AI agent environments:
+- **Claude Code:** Direct terminal execution.
+- **Gemini CLI:** Integrated as local scripts/tools.
+- **Cursor / Windsurf:** Add to `.cursorrules` or terminal.
+- **MCP:** Easily wrappable as Model Context Protocol tools.
 
-| Flag | Description |
-|------|-------------|
-| `--add-key [KEY]` | Save MUAPI_KEY to .env |
-| `--help`, `-h` | Show help |
-| `--json` | Raw JSON output only |
-| `--async` | Submit and return request_id immediately |
-| `--status ID` | Check status of a queued request |
+---
 
-## Recommended Models
+## 📖 API Reference
 
-### Text-to-Image
+**Base URL:** `https://api.muapi.ai/api/v1`  
+**Auth:** `x-api-key: YOUR_KEY`
 
-| Model Flag | API Endpoint | Notes |
-|------------|--------------|-------|
-| `flux-dev` | `flux-dev-image` | Fast, high quality |
-| `flux-schnell` | `flux-schnell-image` | Fastest |
-| `midjourney` | `midjourney-v7-text-to-image` | Best artistic quality |
-| `gpt4o` | `gpt4o-text-to-image` | Instruction-following |
-| `seedream` | `bytedance-seedream-image` | Photorealistic |
-| `hidream-fast` | `hidream_i1_fast_image` | Fast, detailed |
-| `reve` | `reve-text-to-image` | Creative styles |
-| `qwen` | `qwen-image` | Good prompt adherence |
-| `wan` | `wan2.1-text-to-image` | Open source |
-| `flux-kontext-pro` | `flux-kontext-pro-t2i` | Best Kontext |
+**Job Flow:**
+1. **Submit:** `POST /api/v1/{endpoint}` → returns `request_id`
+2. **Poll:** `GET /api/v1/predictions/{id}/result` → wait for `completed`
 
-### Text-to-Video
+---
 
-| Model Flag | API Endpoint | Notes |
-|------------|--------------|-------|
-| `veo3` | `veo3-text-to-video` | Highest quality |
-| `veo3-fast` | `veo3-fast-text-to-video` | Fast version |
-| `kling-master` | `kling-v2.1-master-t2v` | Best overall |
-| `wan2` | `wan2.1-text-to-video` | Open source |
-| `wan22` | `wan2.2-text-to-video` | Latest Wan |
-| `seedance-pro` | `seedance-pro-t2v` | Fast, good quality |
-| `hunyuan` | `hunyuan-text-to-video` | High quality |
-| `runway` | `runway-text-to-video` | Creative |
-| `minimax-pro` | `minimax-hailuo-02-pro-t2v` | Good for characters |
-| `pixverse` | `pixverse-v4.5-t2v` | Creative styles |
+## 📄 License
 
-### Image-to-Video
-
-| Model Flag | API Endpoint | Notes |
-|------------|--------------|-------|
-| `kling-pro` | `kling-v2.1-pro-i2v` | **Best overall** |
-| `kling-master` | `kling-v2.1-master-i2v` | Premium |
-| `veo3` | `veo3-image-to-video` | High quality |
-| `veo3-fast` | `veo3-fast-image-to-video` | Fast |
-| `seedance-pro` | `seedance-pro-i2v` | Smooth motion |
-| `wan2` | `wan2.1-image-to-video` | Open source |
-| `minimax-pro` | `minimax-hailuo-02-pro-i2v` | Good characters |
-| `runway` | `runway-image-to-video` | Creative |
-| `pixverse` | `pixverse-v4.5-i2v` | Creative |
-| `vidu` | `vidu-v2.0-i2v` | Fast |
-
-## License
-
-MIT
+MIT © 2026

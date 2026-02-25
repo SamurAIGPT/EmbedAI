@@ -1,8 +1,14 @@
-# Generative-Media-Skills
+# Generative Media Skills for AI Agents
 
-A collection of skills for AI coding agents to use [muapi.ai](https://muapi.ai) — a generative media aggregator with 100+ AI models for image, video, and audio generation.
+A collection of high-performance generative media skills for AI coding agents (Claude Code, Cursor, Gemini CLI, Windsurf). Create images, videos, and audio tracks directly from your agent workflow, powered by the [muapi.ai](https://muapi.ai) multi-model engine.
 
-Skills follow the [Agent Skills](https://agentskills.io/) format.
+## Compatibility
+
+These skills provide a standardized way to integrate generative media into modern AI agent environments:
+- **Claude Code:** Use via terminal commands.
+- **Gemini CLI:** Integrated as local tool/scripts.
+- **Cursor / Windsurf:** Add to `.cursorrules` or use via terminal.
+- **MCP (Model Context Protocol):** Scripts can be easily wrapped as MCP tools.
 
 ## Installation
 

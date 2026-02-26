@@ -15,6 +15,7 @@ A high-performance, schema-driven architecture for AI agents to generate, edit, 
 - **🧠 Expert Knowledge Layer** — Domain-specific skills that bake in professional cinematography, atomic design, and branding logic.
 - **⚡ Dynamic Schema-Driven** — Powered by `schema_data.json`, scripts automatically resolve the latest models, endpoints, and valid parameters.
 - **🖼️ Direct Media Display** — Use the `--view` flag to automatically download and open generated media in your system viewer.
+- **📁 Local File Support** — Auto-upload images, videos, faces, and audio from your local machine to the CDN for processing.
 - **🌈 100+ AI Models** — One-click access to **Midjourney v7, Flux Pro, Kling 3.0, Veo3, Suno V5**, and more.
 
 ---
@@ -70,8 +71,9 @@ bash core/platform/setup.sh --add-key "YOUR_MUAPI_KEY"
 ### 3. Run an Expert Skill with Direct Display
 Generate a high-fidelity image and open it immediately using the `--view` flag.
 ```bash
-# Use Nano-Banana reasoning to generate a 2K masterpiece
+# Use Nano-Banana reasoning to generate a 2K masterpiece from a local image
 bash library/visual/nano-banana/scripts/generate-nano-art.sh \
+  --file ./my-source-image.jpg \
   --subject "a glass hummingbird" \
   --style "macro photography" \
   --resolution "2k" \

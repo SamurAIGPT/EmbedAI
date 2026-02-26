@@ -8,9 +8,13 @@ MUAPI_BASE="https://api.muapi.ai/api/v1"
 
 OP=""
 VIDEO_URL=""
+VIDEO_FILE=""
 IMAGE_URL=""
+IMAGE_FILE=""
 FACE_URL=""
+FACE_FILE=""
 AUDIO_URL=""
+AUDIO_FILE=""
 PROMPT=""
 EFFECT=""
 ASYNC=false
@@ -40,9 +44,13 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --op) OP="$2"; shift 2 ;;
         --video-url) VIDEO_URL="$2"; shift 2 ;;
+        --video-file) VIDEO_FILE="$2"; shift 2 ;;
         --image-url) IMAGE_URL="$2"; shift 2 ;;
+        --image-file) IMAGE_FILE="$2"; shift 2 ;;
         --face-url) FACE_URL="$2"; shift 2 ;;
+        --face-file) FACE_FILE="$2"; shift 2 ;;
         --audio-url) AUDIO_URL="$2"; shift 2 ;;
+        --audio-file) AUDIO_FILE="$2"; shift 2 ;;
         --prompt|-p) PROMPT="$2"; shift 2 ;;
         --effect) EFFECT="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
@@ -61,6 +69,12 @@ while [[ $# -gt 0 ]]; do
             echo "  luma-modify    Modify video with prompt (--video-url, --prompt)" >&2
             echo "  luma-reframe   Reframe video (--video-url, --prompt)" >&2
             echo "  vidu-reference Vidu character reference (--image-url, --prompt)" >&2
+            echo "" >&2
+            echo "File Inputs:" >&2
+            echo "  --video-file     Local video file" >&2
+            echo "  --image-file     Local image file" >&2
+            echo "  --face-file      Local face image file" >&2
+            echo "  --audio-file     Local audio file" >&2
             exit 0 ;;
         *) shift ;;
     esac
@@ -74,6 +88,25 @@ PROMPT_JSON=$(echo "${PROMPT:-}" | python3 -c 'import json,sys; print(json.dumps
 EFFECT_JSON=$(echo "${EFFECT:-}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
 
 clean_url() { echo "$1" | tr -d '"'; }
+
+# Auto-upload local files
+upload_file() {
+    local FPATH="$1"
+    if [ ! -f "$FPATH" ]; then echo "Error: File not found: $FPATH" >&2; exit 1; fi
+    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$FPATH")..." >&2
+    local RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" -H "x-api-key: $MUAPI_KEY" -F "file=@${FPATH}")
+    local URL=$(echo "$RESP" | jq -r '.url // empty')
+    if [ -z "$URL" ]; then
+        local ERR=$(echo "$RESP" | jq -r '.error // .detail // "Upload failed"')
+        echo "Error: $ERR" >&2; exit 1
+    fi
+    echo "$URL"
+}
+
+if [ -n "$VIDEO_FILE" ]; then VIDEO_URL=$(upload_file "$VIDEO_FILE"); fi
+if [ -n "$IMAGE_FILE" ]; then IMAGE_URL=$(upload_file "$IMAGE_FILE"); fi
+if [ -n "$FACE_FILE" ]; then FACE_URL=$(upload_file "$FACE_FILE"); fi
+if [ -n "$AUDIO_FILE" ]; then AUDIO_URL=$(upload_file "$AUDIO_FILE"); fi
 
 case $OP in
     wan-effects)

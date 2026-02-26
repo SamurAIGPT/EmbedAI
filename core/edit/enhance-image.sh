@@ -10,7 +10,9 @@ OP=""
 IMAGE_URL=""
 IMAGE_FILE=""
 FACE_URL=""
+FACE_FILE=""
 MASK_URL=""
+MASK_FILE=""
 PROMPT=""
 ASYNC=false
 JSON_ONLY=false
@@ -41,7 +43,9 @@ while [[ $# -gt 0 ]]; do
         --image-url) IMAGE_URL="$2"; shift 2 ;;
         --file) IMAGE_FILE="$2"; shift 2 ;;
         --face-url) FACE_URL="$2"; shift 2 ;;
+        --face-file) FACE_FILE="$2"; shift 2 ;;
         --mask-url) MASK_URL="$2"; shift 2 ;;
+        --mask-file) MASK_FILE="$2"; shift 2 ;;
         --prompt|-p) PROMPT="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
@@ -62,7 +66,12 @@ while [[ $# -gt 0 ]]; do
             echo "  extend           Extend/outpaint image" >&2
             echo "  product-shot     Clean product shot background" >&2
             echo "  product-photo    Professional product photography (requires --prompt)" >&2
-            echo "  object-erase     Erase object (requires --mask-url)" >&2
+            echo "  object-erase     Erase object (requires --mask-url or --mask-file index)" >&2
+            echo "" >&2
+            echo "File Inputs:" >&2
+            echo "  --file           Main image file" >&2
+            echo "  --face-file      Face image for swap" >&2
+            echo "  --mask-file      Mask image for erase" >&2
             exit 0 ;;
         *) shift ;;
     esac
@@ -73,16 +82,23 @@ if [ -z "$OP" ]; then echo "Error: --op is required" >&2; exit 1; fi
 
 HEADERS=(-H "x-api-key: $MUAPI_KEY" -H "Content-Type: application/json")
 
-# Auto-upload local file
-if [ -n "$IMAGE_FILE" ]; then
-    if [ ! -f "$IMAGE_FILE" ]; then echo "Error: File not found: $IMAGE_FILE" >&2; exit 1; fi
-    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$IMAGE_FILE")..." >&2
-    UPLOAD_RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" \
-        -H "x-api-key: $MUAPI_KEY" -F "file=@${IMAGE_FILE}")
-    IMAGE_URL=$(echo "$UPLOAD_RESP" | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [ -z "$IMAGE_URL" ]; then echo "Error: Upload failed" >&2; echo "$UPLOAD_RESP" >&2; exit 1; fi
-    [ "$JSON_ONLY" = false ] && echo "Uploaded: $IMAGE_URL" >&2
-fi
+# Auto-upload local files
+upload_file() {
+    local FPATH="$1"
+    if [ ! -f "$FPATH" ]; then echo "Error: File not found: $FPATH" >&2; exit 1; fi
+    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$FPATH")..." >&2
+    local RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" -H "x-api-key: $MUAPI_KEY" -F "file=@${FPATH}")
+    local URL=$(echo "$RESP" | jq -r '.url // empty')
+    if [ -z "$URL" ]; then
+        local ERR=$(echo "$RESP" | jq -r '.error // .detail // "Upload failed"')
+        echo "Error: $ERR" >&2; exit 1
+    fi
+    echo "$URL"
+}
+
+if [ -n "$IMAGE_FILE" ]; then IMAGE_URL=$(upload_file "$IMAGE_FILE"); fi
+if [ -n "$FACE_FILE" ]; then FACE_URL=$(upload_file "$FACE_FILE"); fi
+if [ -n "$MASK_FILE" ]; then MASK_URL=$(upload_file "$MASK_FILE"); fi
 
 if [ -z "$IMAGE_URL" ]; then echo "Error: --image-url or --file is required" >&2; exit 1; fi
 IMAGE_URL_CLEAN=$(echo "$IMAGE_URL" | tr -d '"')

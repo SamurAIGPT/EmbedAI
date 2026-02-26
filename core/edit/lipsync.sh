@@ -7,7 +7,9 @@ set -e
 MUAPI_BASE="https://api.muapi.ai/api/v1"
 
 VIDEO_URL=""
+VIDEO_FILE=""
 AUDIO_URL=""
+AUDIO_FILE=""
 MODEL="sync"
 ASYNC=false
 JSON_ONLY=false
@@ -35,7 +37,9 @@ if [ -f ".env" ]; then source .env 2>/dev/null || true; fi
 while [[ $# -gt 0 ]]; do
     case $1 in
         --video-url) VIDEO_URL="$2"; shift 2 ;;
+        --video-file) VIDEO_FILE="$2"; shift 2 ;;
         --audio-url) AUDIO_URL="$2"; shift 2 ;;
+        --audio-file) AUDIO_FILE="$2"; shift 2 ;;
         --model|-m) MODEL="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
@@ -50,14 +54,36 @@ while [[ $# -gt 0 ]]; do
             echo "  latent    LatentSync — open source" >&2
             echo "  creatify  Creatify — fast" >&2
             echo "  veed      Veed — reliable" >&2
+            echo "" >&2
+            echo "File Inputs:" >&2
+            echo "  --video-file     Local video file" >&2
+            echo "  --audio-file     Local audio file" >&2
             exit 0 ;;
         *) shift ;;
     esac
 done
 
 if [ -z "$MUAPI_KEY" ]; then echo "Error: MUAPI_KEY not set" >&2; exit 1; fi
-if [ -z "$VIDEO_URL" ]; then echo "Error: --video-url is required" >&2; exit 1; fi
-if [ -z "$AUDIO_URL" ]; then echo "Error: --audio-url is required" >&2; exit 1; fi
+
+# Auto-upload local files
+upload_file() {
+    local FPATH="$1"
+    if [ ! -f "$FPATH" ]; then echo "Error: File not found: $FPATH" >&2; exit 1; fi
+    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$FPATH")..." >&2
+    local RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" -H "x-api-key: $MUAPI_KEY" -F "file=@${FPATH}")
+    local URL=$(echo "$RESP" | jq -r '.url // empty')
+    if [ -z "$URL" ]; then
+        local ERR=$(echo "$RESP" | jq -r '.error // .detail // "Upload failed"')
+        echo "Error: $ERR" >&2; exit 1
+    fi
+    echo "$URL"
+}
+
+if [ -n "$VIDEO_FILE" ]; then VIDEO_URL=$(upload_file "$VIDEO_FILE"); fi
+if [ -n "$AUDIO_FILE" ]; then AUDIO_URL=$(upload_file "$AUDIO_FILE"); fi
+
+if [ -z "$VIDEO_URL" ]; then echo "Error: --video-url or --video-file is required" >&2; exit 1; fi
+if [ -z "$AUDIO_URL" ]; then echo "Error: --audio-url or --audio-file is required" >&2; exit 1; fi
 
 HEADERS=(-H "x-api-key: $MUAPI_KEY" -H "Content-Type: application/json")
 

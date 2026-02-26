@@ -10,6 +10,7 @@ MUAPI_BASE="https://api.muapi.ai/api/v1"
 IMAGE_URL=""
 IMAGE_FILE=""
 LAST_IMAGE_URL=""
+LAST_IMAGE_FILE=""
 PROMPT=""
 MODEL="kling-pro"
 ASPECT_RATIO="16:9"
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
         --image-url) IMAGE_URL="$2"; shift 2 ;;
         --file|--image) IMAGE_FILE="$2"; shift 2 ;;
         --last-image-url) LAST_IMAGE_URL="$2"; shift 2 ;;
+        --last-image-file) LAST_IMAGE_FILE="$2"; shift 2 ;;
         --prompt|-p) PROMPT="$2"; shift 2 ;;
         --model|-m) MODEL="$2"; shift 2 ;;
         --aspect-ratio) ASPECT_RATIO="$2"; shift 2 ;;
@@ -68,6 +70,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --image-url URL         Input image URL" >&2
             echo "  --file PATH             Local file (auto-uploads)" >&2
             echo "  --last-image-url URL    End frame URL (start+end interpolation)" >&2
+            echo "  --last-image-file PATH  Local end frame (auto-uploads)" >&2
             echo "  --prompt TEXT           Motion description" >&2
             echo "  --aspect-ratio          16:9, 9:16, 1:1 (default: 16:9)" >&2
             echo "  --duration              5 or 10 seconds (default: 5)" >&2
@@ -98,21 +101,22 @@ if [ "$ACTION" = "status" ] || [ "$ACTION" = "result" ]; then
     exit 0
 fi
 
-# Auto-upload local file
-if [ -n "$IMAGE_FILE" ]; then
-    if [ ! -f "$IMAGE_FILE" ]; then echo "Error: File not found: $IMAGE_FILE" >&2; exit 1; fi
-    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$IMAGE_FILE")..." >&2
-    UPLOAD_RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" \
-        -H "x-api-key: $MUAPI_KEY" \
-        -F "file=@${IMAGE_FILE}")
-    IMAGE_URL=$(echo "$UPLOAD_RESP" | grep -o '"url":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [ -z "$IMAGE_URL" ]; then
-        echo "Error: Upload failed" >&2
-        echo "$UPLOAD_RESP" >&2
-        exit 1
+# Auto-upload local files
+upload_file() {
+    local FPATH="$1"
+    if [ ! -f "$FPATH" ]; then echo "Error: File not found: $FPATH" >&2; exit 1; fi
+    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$FPATH")..." >&2
+    local RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" -H "x-api-key: $MUAPI_KEY" -F "file=@${FPATH}")
+    local URL=$(echo "$RESP" | jq -r '.url // empty')
+    if [ -z "$URL" ]; then
+        local ERR=$(echo "$RESP" | jq -r '.error // .detail // "Upload failed"')
+        echo "Error: $ERR" >&2; exit 1
     fi
-    [ "$JSON_ONLY" = false ] && echo "Uploaded: $IMAGE_URL" >&2
-fi
+    echo "$URL"
+}
+
+if [ -n "$IMAGE_FILE" ]; then IMAGE_URL=$(upload_file "$IMAGE_FILE"); fi
+if [ -n "$LAST_IMAGE_FILE" ]; then LAST_IMAGE_URL=$(upload_file "$LAST_IMAGE_FILE"); fi
 
 if [ -z "$IMAGE_URL" ]; then
     echo "Error: --image-url or --file is required" >&2

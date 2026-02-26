@@ -11,7 +11,9 @@ STYLE=""
 PROMPT=""
 SUNO_MODEL="V5"
 AUDIO_URL=""
+AUDIO_FILE=""
 VIDEO_URL=""
+VIDEO_FILE=""
 DURATION=10
 ASYNC=false
 JSON_ONLY=false
@@ -43,7 +45,9 @@ while [[ $# -gt 0 ]]; do
         --prompt|-p) PROMPT="$2"; shift 2 ;;
         --suno-model) SUNO_MODEL="$2"; shift 2 ;;
         --audio-url) AUDIO_URL="$2"; shift 2 ;;
+        --audio-file) AUDIO_FILE="$2"; shift 2 ;;
         --video-url) VIDEO_URL="$2"; shift 2 ;;
+        --video-file) VIDEO_FILE="$2"; shift 2 ;;
         --duration) DURATION="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
@@ -62,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             echo "  bash create-music.sh --style \"lo-fi hip hop\" --prompt \"chill beats\"" >&2
             echo "  bash create-music.sh --op text-to-audio --prompt \"thunderstorm\" --duration 15" >&2
             echo "  bash create-music.sh --op video-to-audio --video-url URL --prompt \"epic score\"" >&2
+            echo "" >&2
+            echo "File Inputs:" >&2
+            echo "  --audio-file     Local audio file for remix/extend" >&2
+            echo "  --video-file     Local video file for video-to-audio" >&2
             exit 0 ;;
         *) shift ;;
     esac
@@ -72,6 +80,23 @@ if [ -z "$MUAPI_KEY" ]; then echo "Error: MUAPI_KEY not set" >&2; exit 1; fi
 HEADERS=(-H "x-api-key: $MUAPI_KEY" -H "Content-Type: application/json")
 PROMPT_JSON=$(echo "${PROMPT:-}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
 STYLE_JSON=$(echo "${STYLE:-}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
+
+# Auto-upload local files
+upload_file() {
+    local FPATH="$1"
+    if [ ! -f "$FPATH" ]; then echo "Error: File not found: $FPATH" >&2; exit 1; fi
+    [ "$JSON_ONLY" = false ] && echo "Uploading $(basename "$FPATH")..." >&2
+    local RESP=$(curl -s -X POST "${MUAPI_BASE}/upload_file" -H "x-api-key: $MUAPI_KEY" -F "file=@${FPATH}")
+    local URL=$(echo "$RESP" | jq -r '.url // empty')
+    if [ -z "$URL" ]; then
+        local ERR=$(echo "$RESP" | jq -r '.error // .detail // "Upload failed"')
+        echo "Error: $ERR" >&2; exit 1
+    fi
+    echo "$URL"
+}
+
+if [ -n "$AUDIO_FILE" ]; then AUDIO_URL=$(upload_file "$AUDIO_FILE"); fi
+if [ -n "$VIDEO_FILE" ]; then VIDEO_URL=$(upload_file "$VIDEO_FILE"); fi
 
 case $OP in
     create)

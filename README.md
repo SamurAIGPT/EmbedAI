@@ -16,7 +16,7 @@ A high-performance, schema-driven architecture for AI agents to generate, edit, 
 - **⚡ Dynamic Schema-Driven** — Powered by `schema_data.json`, scripts automatically resolve the latest models, endpoints, and valid parameters.
 - **🖼️ Direct Media Display** — Use the `--view` flag to automatically download and open generated media in your system viewer.
 - **📁 Local File Support** — Auto-upload images, videos, faces, and audio from your local machine to the CDN for processing.
-- **🌈 100+ AI Models** — One-click access to **Midjourney v7, Flux Pro, Kling 3.0, Veo3, Suno V5**, and more.
+- **🌈 100+ AI Models** — One-click access to **Midjourney v7, Flux Pro, Seedance 2.0, Kling 3.0, Veo3**, and more.
 
 ---
 
@@ -36,12 +36,13 @@ High-value skills that translate creative intent into technical directives.
 - **Nano-Banana** (`/library/visual/nano-banana/`) — Reasoning-driven image generation (Gemini 3 Style).
 - **UI Designer** (`/library/visual/ui-design/`) — High-fidelity mobile/web mockups (Atomic Design).
 - **Logo Creator** (`/library/visual/logo-creator/`) — Minimalist vector branding (Geometric Primitives).
+- **Seedance 2 (Doubao Video)** (`/library/motion/seedance-2/`) — Director-level cinematic video generation with native audio-video sync (ByteDance).
 
 ---
 
 ## 🧠 Self-Optimizing Skills
 
-Every expert skill in the **Library** includes a **Prompt Optimization Protocol**. This allows LLMs (like Claude or Gemini) to use their own reasoning to expand simple user requests into high-fidelity technical briefs before calling the generation scripts.
+Every expert skill in the **Library** includes a **Prompt Optimization Protocol**. This allows AI agents to translate simple user requests into high-fidelity technical briefs (e.g. converting "cool city shot" into a **Seedance 2** technical director brief with dolly motion and rim lighting).
 
 ---
 
@@ -90,6 +91,12 @@ bash scripts/generate-film.sh \
   --model "kling-v3.0-pro" \
   --duration 10 \
   --no-audio \
+  --view
+
+# Direct a cinematic masterpiece with Seedance 2
+bash library/motion/seedance-2/scripts/generate-seedance.sh \
+  --subject "a floating steampunk city" \
+  --intent "reveal" \
   --view
 ```
 

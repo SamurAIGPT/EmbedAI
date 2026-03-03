@@ -18618,9 +18618,8 @@
     }
   },
   {
-    "name": "seedance-2.0",
-    "category": "Image to Video",
-    "isComingSoon": true,
+    "name": "seedance-v2.0-t2v",
+    "category": "Text to Video",
     "variant": "Seedance 2.0",
     "family": "bytedance",
     "group_of": "video",
@@ -18634,12 +18633,47 @@
               "type": "string",
               "title": "Prompt",
               "description": "The prompt to generate the video"
+            },
+            "aspect_ratio": {
+              "enum": [
+                "16:9",
+                "9:16",
+                "1:1"
+              ],
+              "title": "Aspect Ratio",
+              "name": "aspect_ratio",
+              "type": "string",
+              "description": "Aspect ratio of the output video.",
+              "default": "16:9"
+            },
+            "duration": {
+              "enum": [
+                5,
+                10,
+                15
+              ],
+              "title": "Duration",
+              "name": "duration",
+              "type": "int",
+              "description": "The duration of the generated video in seconds",
+              "default": 5
+            },
+            "quality": {
+              "enum": [
+                "basic",
+                "high"
+              ],
+              "title": "Quality",
+              "name": "quality",
+              "type": "string",
+              "description": "The quality of the generated video.",
+              "default": "basic"
             }
           },
           "required": [
             "prompt"
           ],
-          "endpoint_url": "seedance-2.0"
+          "endpoint_url": "seedance-v2.0-t2v"
         }
       }
     }

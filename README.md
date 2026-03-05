@@ -36,7 +36,7 @@ High-value skills that translate creative intent into technical directives.
 - **Nano-Banana** (`/library/visual/nano-banana/`) — Reasoning-driven image generation (Gemini 3 Style).
 - **UI Designer** (`/library/visual/ui-design/`) — High-fidelity mobile/web mockups (Atomic Design).
 - **Logo Creator** (`/library/visual/logo-creator/`) — Minimalist vector branding (Geometric Primitives).
-- **Seedance 2 (Doubao Video)** (`/library/motion/seedance-2/`) — Director-level cinematic video generation with native audio-video sync (ByteDance).
+- **Seedance 2 (Doubao Video)** (`/library/motion/seedance-2/`) — Director-level cinematic video generation with text-to-video, image-to-video (up to 9 reference images), and video extension — all with native audio-video sync (ByteDance).
 
 ---
 
@@ -93,11 +93,26 @@ bash scripts/generate-film.sh \
   --no-audio \
   --view
 
-# Direct a cinematic masterpiece with Seedance 2
+# Direct a cinematic masterpiece with Seedance 2 (text-to-video)
 bash library/motion/seedance-2/scripts/generate-seedance.sh \
   --subject "a floating steampunk city" \
   --intent "reveal" \
   --view
+
+# Animate a reference image into video (image-to-video)
+bash library/motion/seedance-2/scripts/generate-seedance.sh \
+  --mode i2v \
+  --file ./concept.jpg \
+  --subject "camera slowly pulls back to reveal the full landscape" \
+  --intent "reveal" \
+  --view
+
+# Extend an existing Seedance 2.0 video
+bash library/motion/seedance-2/scripts/generate-seedance.sh \
+  --mode extend \
+  --request-id "YOUR_REQUEST_ID" \
+  --subject "camera continues pulling back to reveal the vast city" \
+  --duration 10
 ```
 
 ---

@@ -10,9 +10,37 @@ Chain any combination of muapi.ai generation steps into automated pipelines. The
 ## Core Operations
 
 1. **Generate** (`generate-workflow.sh`) — AI architect creates a workflow from a description
-2. **Edit** (`generate-workflow.sh --workflow-id`) — Modify an existing workflow with a prompt
-3. **Run** (`run-workflow.sh`) — Execute a workflow, poll node-by-node, collect outputs
-4. **CLI** (`muapi workflow`) — Full CRUD + visualization directly from the terminal
+2. **Discover** (`discover-workflow.sh`) — Find a relevant existing workflow by natural language
+3. **Edit** (`generate-workflow.sh --workflow-id`) — Modify an existing workflow with a prompt
+4. **Interactive Run** (`interactive-run.sh`) — Prompt for inputs and execute a workflow
+5. **Run** (`run-workflow.sh`) — Execute a workflow, poll node-by-node, collect outputs
+6. **CLI** (`muapi workflow`) — Full CRUD + visualization directly from the terminal
+
+---
+
+## Agent Guided Discovery & Selection
+
+As an AI agent, you have the ability to read and understand the purpose of available workflows to select the best one for the user's task (e.g., "create a UGC video").
+
+1. **Discover**: Fetch the catalog of available workflows and their descriptions in JSON format.
+   ```bash
+   muapi workflow discover --output-json
+   ```
+2. **Match (Internal Reasoning)**: Use your LLM capabilities to analyze the `name`, `category`, and `description` fields of the returned workflows. Find the best match for the user's intent.
+3. **Analyze**: If you find a promising candidate, inspect its structure to ensure it has the necessary nodes and parameters.
+   ```bash
+   muapi workflow get <workflow_id> --output-json
+   ```
+4. **Choose & Confirm**:
+   - If one workflow is a perfect match, proceed to run it.
+   - If multiple workflows are highly relevant, present the options to the user with their descriptions and ask them to confirm which one to use.
+   - If no workflow matches the user's complex request, offer to **architect** a new one using `muapi workflow create`.
+
+### Example Agent Reasoning
+> "The user wants a product promo video. I fetched the catalog using `discover`. I see two potential workflows:
+> 1. `wf_123`: 'Product promo with background music'
+> 2. `wf_456`: 'Simple video gen'
+> I will analyze `wf_123` with `get`. It has the required nodes. I will suggest `wf_123` or just run it if the match is precise."
 
 ---
 
@@ -21,8 +49,7 @@ Chain any combination of muapi.ai generation steps into automated pipelines. The
 ### Step 1 — Describe your pipeline
 
 ```bash
-bash scripts/generate-workflow.sh \
-  --prompt "take a text prompt, generate an image with flux-dev, then upscale it to 4K"
+muapi workflow create "take a text prompt, generate an image with flux-dev, then upscale it to 4K"
 ```
 
 The architect returns a workflow with a unique ID and a node graph. Save the ID.
@@ -37,20 +64,6 @@ muapi workflow get <workflow_id>
 muapi workflow get <workflow_id> --output-json
 ```
 
-Output shows each node, its type, parameters, and connections:
-```
-[text-passthrough]
-  id: node1
-
-        node1 ──► node2
-
-[flux-dev: image-generate]        [ai-image-upscale]
-  id: node2                         id: node3
-  prompt: (from node1)
-
-        node2 ──► node3
-```
-
 ### Step 3 — Run it
 
 ```bash
@@ -58,56 +71,49 @@ Output shows each node, its type, parameters, and connections:
 muapi workflow execute <workflow_id> \
   --input "node1.prompt=a glowing crystal cave at midnight"
 
-# Or with the shell script
-bash scripts/run-workflow.sh \
-  --workflow-id <workflow_id> \
-  --input "node1.prompt=a glowing crystal cave at midnight" \
-  --download ./outputs \
-  --view
+# Use --download to pull results locally
+muapi workflow execute <workflow_id> \
+  --input "node1.prompt=a sunset" \
+  --download ./outputs
+```
+
+### Step 4 — Discovery (Optional)
+If you want to reuse an existing workflow instead of creating a new one:
+
+```bash
+# Search by keywords
+muapi workflow discover "ugc video"
+```
+
+### Step 5 — Interactive Execution
+Run a workflow and have the CLI prompt you for each required input:
+
+```bash
+muapi workflow run-interactive <workflow_id>
 ```
 
 ---
 
-## Workflow Prompt Examples
+## Workflow Examples
 
 ### Image Pipelines
 
 ```bash
 # Text → Image → Upscale
-bash scripts/generate-workflow.sh \
-  --prompt "take a text prompt, generate with flux-dev, upscale the result"
+muapi workflow create "take a text prompt, generate with flux-dev, upscale the result"
 
 # Text → Image → Background removal → Product shot
-bash scripts/generate-workflow.sh \
-  --prompt "generate a product image with hidream, remove background, create professional product shot"
-
-# Image + text → Style transfer → Enhance
-bash scripts/generate-workflow.sh \
-  --prompt "take an input image, apply ghibli style, then upscale"
+muapi workflow create "generate a product image with hidream, remove background, create professional product shot"
 ```
 
 ### Video Pipelines
 
 ```bash
 # Text → Video
-bash scripts/generate-workflow.sh \
-  --prompt "generate a 10-second cinematic video from a text prompt using kling-master"
+muapi workflow create "generate a 10-second cinematic video from a text prompt using kling-master"
 
 # Image → Video → Lipsync
-bash scripts/generate-workflow.sh \
-  --prompt "animate an input image with seedance, then apply lipsync from an audio file"
-
-# Text → Image → Video → Effects
-bash scripts/generate-workflow.sh \
-  --prompt "generate an image with flux, animate it with kling, apply cinematic video effects"
-```
-
-### Audio Pipelines
-
-```bash
-# Text → Music → Video with music
-bash scripts/generate-workflow.sh \
-  --prompt "generate background music with suno, then create a looping video that matches the vibe"
+muapi workflow create "animate an input image with seedance, then apply lipsync from an audio file"
 ```
 
 ---
@@ -116,19 +122,10 @@ bash scripts/generate-workflow.sh \
 
 ```bash
 # Add a step
-bash scripts/generate-workflow.sh \
-  --prompt "add a face-swap step after the image generation" \
-  --workflow-id <id>
+muapi workflow edit <id> --prompt "add a face-swap step after the image generation"
 
 # Swap a model
-bash scripts/generate-workflow.sh \
-  --prompt "change the video model from kling to veo3" \
-  --workflow-id <id>
-
-# Remove a step
-bash scripts/generate-workflow.sh \
-  --prompt "remove the upscale node and connect the image directly to the output" \
-  --workflow-id <id>
+muapi workflow edit <id> --prompt "change the video model from kling to veo3"
 ```
 
 ---

@@ -18,8 +18,6 @@ ASYNC=false
 JSON_ONLY=false
 MAX_WAIT=600
 POLL_INTERVAL=5
-DEMO=true
-DEMO_URL="https://cdn.muapi.ai/outputs/df8c9b12ff4b4790a417f8ef5cedd915.mp4"
 
 MUAPI_BASE="https://api.muapi.ai/api/v1"
 
@@ -40,7 +38,6 @@ while [[ $# -gt 0 ]]; do
         --request-id) EXTEND_REQUEST_ID="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --json) JSON_ONLY=true; shift ;;
-        --demo) DEMO=true; shift ;;
         --help|-h)
             echo "Seedance 2 Cinema Expert"
             echo "Usage: bash generate-seedance.sh [--mode t2v|i2v|extend] [options]"
@@ -166,39 +163,6 @@ upload_file() {
     fi
     echo "$URL"
 }
-
-# --- Demo mode: skip API, return hardcoded URL ---
-if [ "$DEMO" = true ]; then
-    case $INTENT in
-        "reveal")   MOVEMENT="Slow crane up and tilt down, wide establishing shot."; LIGHTING="Volumetric god rays, golden hour atmosphere, warm bloom."; OPTICS="Deep focus, anamorphic widescreen, ultra-high clarity." ;;
-        "tense")    MOVEMENT="Handheld jittery movement, dutch angle close-up, unstable framing."; LIGHTING="Low key, harsh shadows, flickering magenta neon, split lighting."; OPTICS="Shallow depth of field, anamorphic lens flare, slight motion blur." ;;
-        "epic")     MOVEMENT="Dolly in with circular orbit, low hero angle, sweeping arc."; LIGHTING="Dramatic rim lighting, high contrast cinematic grade, specular highlights."; OPTICS="Anamorphic 35mm, sharp focus on subject, chromatic aberration edges." ;;
-        "narrative") MOVEMENT="Smooth tracking shot following subject, natural Steadicam motion."; LIGHTING="Natural soft light, blue hour tones, practical light sources."; OPTICS="Standard 50mm, realistic bokeh, minimal distortion." ;;
-        *) MOVEMENT="Smooth cinematic pan, balanced stable framing."; LIGHTING="Natural studio lighting, balanced highlights and shadows."; OPTICS="Standard cinematic lens, high-fidelity optics." ;;
-    esac
-    DIRECTOR_PROMPT="[SCENE] $SUBJECT. [LIGHTING] $LIGHTING [ACTION] Fluid continuous motion. [CAMERA] $MOVEMENT [STYLE] $OPTICS High-fidelity production grade, 24fps. Maintain high character consistency, zero flicker."
-    [ "$JSON_ONLY" = false ] && echo "Submitting to seedance-v2.0-t2v..." >&2
-    [ "$JSON_ONLY" = false ] && echo "Director Brief: $DIRECTOR_PROMPT" >&2
-    sleep 1
-    [ "$JSON_ONLY" = false ] && echo "Status: processing (10s)" >&2
-    sleep 1
-    [ "$JSON_ONLY" = false ] && echo "Status: completed" >&2
-    [ "$JSON_ONLY" = false ] && echo "Success! URL: $DEMO_URL" >&2
-    if [ "$VIEW" = true ]; then
-        OUTPUT_DIR="$(dirname "$0")/../../../../media_outputs"
-        mkdir -p "$OUTPUT_DIR"
-        TEMP_FILE="$OUTPUT_DIR/muapi_$(date +%s).mp4"
-        [ "$JSON_ONLY" = false ] && echo "Downloading to $TEMP_FILE..." >&2
-        curl -s -o "$TEMP_FILE" "$DEMO_URL"
-        [[ "$OSTYPE" == "darwin"* ]] && open "$TEMP_FILE"
-    fi
-    if [ "$JSON_ONLY" = true ]; then
-        echo "{\"status\":\"completed\",\"outputs\":[\"$DEMO_URL\"]}"
-    else
-        echo "$DEMO_URL"
-    fi
-    exit 0
-fi
 
 # --- Validate API key ---
 if [ -z "$MUAPI_KEY" ]; then echo "Error: MUAPI_KEY not set" >&2; exit 1; fi

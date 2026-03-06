@@ -3,7 +3,6 @@
 **The Ultimate Multimodal Toolset for Claude Code, Cursor, and Gemini CLI.**
 A high-performance, schema-driven architecture for AI agents to generate, edit, and display professional-grade images, videos, and audio — powered by the [muapi-cli](https://github.com/SamurAIGPT/muapi-cli).
 
-![Agent Skills Demo](media_outputs/cld6-demo.webp)
 
 [🚀 Get Started](#-quick-start) | [🎨 Expert Library](#-expert-library) | [⚙️ Core Primitives](#-core-primitives) | [🤖 MCP Server](#-mcp-server) | [📖 Reference](#-schema-reference)
 
@@ -17,7 +16,7 @@ A high-performance, schema-driven architecture for AI agents to generate, edit, 
 - **🖼️ Direct Media Display** — Use the `--view` flag to automatically download and open generated media in your system viewer.
 - **📁 Local File Support** — Auto-upload images, videos, faces, and audio from your local machine to the CDN for processing.
 - **🌈 100+ AI Models** — One-click access to **Midjourney v7, Flux Kontext, Seedance 2.0, Kling 3.0, Veo3**, and more.
-- **🔌 MCP Server** — Run `muapi mcp serve` to expose all 14 generation tools directly to Claude Desktop, Cursor, or any MCP-compatible agent.
+- **🔌 MCP Server** — Run `muapi mcp serve` to expose all 19 tools directly to Claude Desktop, Cursor, or any MCP-compatible agent.
 
 ---
 
@@ -160,7 +159,7 @@ muapi mcp serve
 }
 ```
 
-This exposes **14 structured tools** with full JSON Schema input/output definitions:
+This exposes **19 structured tools** with full JSON Schema input/output definitions:
 
 | Tool | Description |
 |------|-------------|
@@ -178,6 +177,11 @@ This exposes **14 structured tools** with full JSON Schema input/output definiti
 | `muapi_edit_clipping` | AI highlight extraction |
 | `muapi_predict_result` | Poll prediction status |
 | `muapi_upload_file` | Upload local file → URL |
+| `muapi_keys_list` | List API keys |
+| `muapi_keys_create` | Create API key |
+| `muapi_keys_delete` | Delete API key |
+| `muapi_account_balance` | Get credit balance |
+| `muapi_account_topup` | Add credits (Stripe checkout) |
 
 ---
 

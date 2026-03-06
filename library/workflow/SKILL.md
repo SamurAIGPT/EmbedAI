@@ -7,6 +7,16 @@ description: Build, run, and visualize multi-step AI generation workflows. The A
 
 Chain any combination of muapi.ai generation steps into automated pipelines. The AI architect converts your plain-language description into a runnable node graph.
 
+## Prerequisites
+
+Always ensure the `muapi` CLI is up-to-date before running any commands. Reinstall from source at the start of every session:
+
+```bash
+pip install --upgrade /path/to/muapi-cli
+```
+
+Replace `/path/to/muapi-cli` with the actual path to the `muapi-cli` directory in the workspace (the directory containing `pyproject.toml`).
+
 ## Core Operations
 
 1. **Generate** (`generate-workflow.sh`) — AI architect creates a workflow from a description
@@ -29,11 +39,12 @@ As an AI agent, you have the ability to read and understand the purpose of avail
 2. **Match (Internal Reasoning)**: Use your LLM capabilities to analyze the `name`, `category`, and `description` fields of the returned workflows. Find the best match for the user's intent.
 3. **Analyze**: If you find a promising candidate, inspect its structure to ensure it has the necessary nodes and parameters.
    ```bash
-   muapi workflow get <workflow_id> --output-json
+   muapi workflow get <workflow_id>
    ```
-4. **Choose & Confirm**:
-   - If one workflow is a perfect match, proceed to run it.
-   - If multiple workflows are highly relevant, present the options to the user with their descriptions and ask them to confirm which one to use.
+   **CRITICAL RULE**: The output of `muapi workflow get` will include an "API Inputs" table. You MUST read this table to understand what inputs are required.
+4. **Choose & Confirm & Prompt User**:
+   - If one workflow is a perfect match, you MUST ask the user to provide the exact values for the required API inputs before executing it. **Never invent or guess input values (like prompts, URLs, etc.) on your own.**
+   - If multiple workflows are highly relevant, present the options to the user with their descriptions and ask them to confirm which one to use, and also ask for the required inputs.
    - If no workflow matches the user's complex request, offer to **architect** a new one using `muapi workflow create`.
 
 ### Example Agent Reasoning

@@ -9,6 +9,7 @@ SCHEMA_FILE="$(dirname "$0")/../../schema_data.json"
 
 # Defaults
 PROMPT=""
+IMAGE_URL=""
 MODEL="flux-dev"
 WIDTH=1024
 HEIGHT=1024
@@ -28,6 +29,7 @@ if [ -f ".env" ]; then source .env 2>/dev/null || true; fi
 while [[ $# -gt 0 ]]; do
     case $1 in
         --prompt|-p) PROMPT="$2"; shift 2 ;;
+        --image-url) IMAGE_URL="$2"; shift 2 ;;
         --model|-m) MODEL="$2"; shift 2 ;;
         --width) WIDTH="$2"; shift 2 ;;
         --height) HEIGHT="$2"; shift 2 ;;
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
             echo "" >&2
             echo "Options:" >&2
             echo "  --prompt, -p    Text description (required)" >&2
+            echo "  --image-url     Reference image URL for img2img" >&2
             echo "  --model, -m     Model name (default: flux-dev)" >&2
             echo "  --aspect-ratio  1:1, 16:9, 9:16, 4:3, 3:4, 21:9" >&2
             echo "  --resolution    1k, 2k, 4k (for supported models)" >&2
@@ -90,11 +93,20 @@ fi
 PROMPT_JSON=$(echo "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
 PAYLOAD="{\"prompt\": $PROMPT_JSON"
 
+# Add string parameters
+if [ -n "$IMAGE_URL" ]; then
+    if echo "$PARAMS" | grep -w "image_url" >/dev/null; then
+        PAYLOAD="$PAYLOAD, \"image_url\": \"$IMAGE_URL\""
+    elif echo "$PARAMS" | grep -w "images_list" >/dev/null; then
+        PAYLOAD="$PAYLOAD, \"images_list\": [\"$IMAGE_URL\"]"
+    fi
+fi
+
 # Add numeric parameters
 if echo "$PARAMS" | grep -w "num_images" >/dev/null; then PAYLOAD="$PAYLOAD, \"num_images\": $NUM_IMAGES"; fi
 if echo "$PARAMS" | grep -w "width" >/dev/null && [ -z "$SUPPORTS_AR" ]; then PAYLOAD="$PAYLOAD, \"width\": $WIDTH, \"height\": $HEIGHT"; fi
 
-# Add string parameters
+# Add other string parameters
 if [ -n "$SUPPORTS_AR" ]; then PAYLOAD="$PAYLOAD, \"aspect_ratio\": \"${ASPECT_RATIO:-1:1}\""; fi
 if echo "$PARAMS" | grep -w "resolution" >/dev/null; then PAYLOAD="$PAYLOAD, \"resolution\": \"$RESOLUTION\""; fi
 

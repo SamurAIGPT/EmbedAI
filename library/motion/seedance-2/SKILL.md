@@ -1,5 +1,6 @@
 ---
 name: muapi-seedance-2
+version: 0.1.0
 description: Expert Cinema Director skill for Seedance 2.0 (ByteDance) — high-fidelity video generation using technical camera grammar and multimodal references. Supports text-to-video, image-to-video, and video extension.
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: muapi-platform
+version: 0.1.0
 description: Setup and utility scripts for muapi.ai — configure API keys, test connectivity, and poll for async generation results
 ---
 

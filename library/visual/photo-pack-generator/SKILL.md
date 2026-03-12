@@ -1,5 +1,6 @@
 ---
 name: muapi-photo-pack-generator
+version: 0.1.0
 description: Generate a pack of professional or aesthetic photos from a single reference image while preserving the exact identity of the person.
 ---
 

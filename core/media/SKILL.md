@@ -1,5 +1,6 @@
 ---
 name: muapi-media-generation
+version: 0.1.0
 description: Generate AI images, videos, music, and audio from the terminal via muapi.ai — supports 100+ models including Flux, Midjourney v7, Kling 3.0, Veo3, and Suno V5
 ---
 

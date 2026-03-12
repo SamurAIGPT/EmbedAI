@@ -1,5 +1,6 @@
 ---
 name: muapi-workflow
+version: 0.1.0
 description: Build, run, and visualize multi-step AI generation workflows. The AI architect translates natural language descriptions into connected node graphs — chain image generation, video creation, enhancement, and editing into automated pipelines.
 ---
 

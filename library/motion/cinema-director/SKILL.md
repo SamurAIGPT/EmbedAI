@@ -1,5 +1,6 @@
 ---
 name: muapi-cinema-director
+version: 0.1.0
 description: Direct high-fidelity cinematic video with AI — translates creative intent into technical cinematographic directives for Veo3, Kling, and Luma video models via muapi.ai
 ---
 

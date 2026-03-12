@@ -1,5 +1,6 @@
 ---
 name: muapi-media-editing
+version: 0.1.0
 description: Edit and enhance images and videos with AI via muapi.ai — prompt-based editing, upscaling, background removal, face swap, lipsync, video effects, and more
 ---
 

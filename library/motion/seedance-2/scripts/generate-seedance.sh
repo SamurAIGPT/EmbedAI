@@ -13,6 +13,10 @@ VIEW=true
 MODE="t2v"
 IMAGE_URLS=()
 IMAGE_FILES=()
+VIDEO_URLS=()
+VIDEO_FILES=()
+AUDIO_URLS=()
+AUDIO_FILES=()
 EXTEND_REQUEST_ID=""
 ASYNC=false
 JSON_ONLY=false
@@ -35,6 +39,10 @@ while [[ $# -gt 0 ]]; do
         --view) VIEW=true; shift ;;
         --image|--image-url) IMAGE_URLS+=("$2"); shift 2 ;;
         --file|--image-file) IMAGE_FILES+=("$2"); shift 2 ;;
+        --video-url) VIDEO_URLS+=("$2"); shift 2 ;;
+        --video-file) VIDEO_FILES+=("$2"); shift 2 ;;
+        --audio-url) AUDIO_URLS+=("$2"); shift 2 ;;
+        --audio-file) AUDIO_FILES+=("$2"); shift 2 ;;
         --request-id) EXTEND_REQUEST_ID="$2"; shift 2 ;;
         --async) ASYNC=true; shift ;;
         --json) JSON_ONLY=true; shift ;;
@@ -49,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Common Options:"
             echo "  --subject     Scene description (required for t2v; prompt context for i2v)"
-            echo "  --intent      reveal|tense|epic|narrative (default: cinematic)"
+            echo "  --intent      reveal|tense|epic|narrative|product|educational|comedy (default: cinematic)"
             echo "  --aspect      16:9|9:16|4:3|3:4 (default: 16:9)"
             echo "  --duration    5|10|15 in seconds (default: 5)"
             echo "  --quality     basic|high (default: basic)"
@@ -58,8 +66,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --view        Download and open the video (macOS only)"
             echo ""
             echo "Image-to-Video Options (--mode i2v):"
-            echo "  --image URL   Image URL (repeatable, up to 9 images)"
-            echo "  --file PATH   Local image file (auto-uploaded, repeatable)"
+            echo "  --image URL       Image URL (repeatable, up to 9)"
+            echo "  --file PATH       Local image file (auto-uploaded, repeatable)"
+            echo "  --video-url URL   Reference video URL (repeatable, up to 3, for @-system)"
+            echo "  --video-file PATH Local video file (auto-uploaded, repeatable)"
+            echo "  --audio-url URL   Reference audio URL (repeatable, up to 3, for @-system)"
+            echo "  --audio-file PATH Local audio file (auto-uploaded, repeatable)"
             echo ""
             echo "Extend Options (--mode extend):"
             echo "  --request-id  Request ID of the original Seedance 2.0 video"
@@ -99,6 +111,21 @@ case $INTENT in
         MOVEMENT="Smooth tracking shot following subject, natural Steadicam motion."
         LIGHTING="Natural soft light, blue hour tones, practical light sources."
         OPTICS="Standard 50mm, realistic bokeh, minimal distortion."
+        ;;
+    "product")
+        MOVEMENT="Static camera with slow macro orbit, precision product reveal."
+        LIGHTING="Perfect even exposure, specular highlights on product surface."
+        OPTICS="Macro lens, zero distortion, commercial grade clarity."
+        ;;
+    "educational")
+        MOVEMENT="Slow push in, clinical camera movements, no handheld jitter."
+        LIGHTING="Even neutral lighting, high clarity, no dramatic shadows."
+        OPTICS="Standard lens, deep focus, semi-transparent CGI visualization."
+        ;;
+    "comedy")
+        MOVEMENT="Reactive handheld, punchy cuts, exaggerated zooms."
+        LIGHTING="Bright even lighting, warm comedic tone, no harsh shadows."
+        OPTICS="Slight wide angle, expressive framing, snappy focus pulls."
         ;;
     *)
         MOVEMENT="Smooth cinematic pan, balanced stable framing."
@@ -203,17 +230,37 @@ if [ "$MODE" = "t2v" ]; then
 # MODE: i2v — Image-to-Video
 # ============================================================
 elif [ "$MODE" = "i2v" ]; then
-    # Upload any local files
+    # Upload any local image files
     for FPATH in "${IMAGE_FILES[@]}"; do
         URL=$(upload_file "$FPATH")
         IMAGE_URLS+=("$URL")
     done
+    # Upload any local video files
+    for FPATH in "${VIDEO_FILES[@]}"; do
+        URL=$(upload_file "$FPATH")
+        VIDEO_URLS+=("$URL")
+    done
+    # Upload any local audio files
+    for FPATH in "${AUDIO_FILES[@]}"; do
+        URL=$(upload_file "$FPATH")
+        AUDIO_URLS+=("$URL")
+    done
 
-    if [ ${#IMAGE_URLS[@]} -eq 0 ]; then
+    if [ ${#IMAGE_URLS[@]} -eq 0 ] && [ ${#VIDEO_URLS[@]} -eq 0 ]; then
         echo "Error: --image URL or --file PATH is required for i2v mode." >&2; exit 1
     fi
     if [ ${#IMAGE_URLS[@]} -gt 9 ]; then
         echo "Error: Maximum 9 images allowed." >&2; exit 1
+    fi
+    if [ ${#VIDEO_URLS[@]} -gt 3 ]; then
+        echo "Error: Maximum 3 reference videos allowed." >&2; exit 1
+    fi
+    if [ ${#AUDIO_URLS[@]} -gt 3 ]; then
+        echo "Error: Maximum 3 reference audio files allowed." >&2; exit 1
+    fi
+    TOTAL_FILES=$(( ${#IMAGE_URLS[@]} + ${#VIDEO_URLS[@]} + ${#AUDIO_URLS[@]} ))
+    if [ $TOTAL_FILES -gt 12 ]; then
+        echo "Error: Total files cannot exceed 12 (images + videos + audio)." >&2; exit 1
     fi
 
     # Build director brief (motion prompt) — subject is optional for i2v
@@ -231,10 +278,29 @@ elif [ "$MODE" = "i2v" ]; then
     done
     IMAGES_JSON="${IMAGES_JSON}]"
 
-    PROMPT_JSON=$(echo "$DIRECTOR_PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
-    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"images_list\": $IMAGES_JSON, \"aspect_ratio\": \"$ASPECT\", \"duration\": $DURATION, \"quality\": \"$QUALITY\"}"
+    # Build videos_list JSON array
+    VIDEOS_JSON="["
+    for i in "${!VIDEO_URLS[@]}"; do
+        [ $i -gt 0 ] && VIDEOS_JSON="${VIDEOS_JSON},"
+        VIDEOS_JSON="${VIDEOS_JSON}\"${VIDEO_URLS[$i]}\""
+    done
+    VIDEOS_JSON="${VIDEOS_JSON}]"
 
-    [ "$JSON_ONLY" = false ] && echo "Submitting to seedance-v2.0-i2v (${#IMAGE_URLS[@]} image(s))..." >&2
+    # Build audios_list JSON array
+    AUDIOS_JSON="["
+    for i in "${!AUDIO_URLS[@]}"; do
+        [ $i -gt 0 ] && AUDIOS_JSON="${AUDIOS_JSON},"
+        AUDIOS_JSON="${AUDIOS_JSON}\"${AUDIO_URLS[$i]}\""
+    done
+    AUDIOS_JSON="${AUDIOS_JSON}]"
+
+    PROMPT_JSON=$(echo "$DIRECTOR_PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))')
+    PAYLOAD="{\"prompt\": $PROMPT_JSON, \"images_list\": $IMAGES_JSON, \"aspect_ratio\": \"$ASPECT\", \"duration\": $DURATION, \"quality\": \"$QUALITY\""
+    [ ${#VIDEO_URLS[@]} -gt 0 ] && PAYLOAD="${PAYLOAD}, \"videos_list\": $VIDEOS_JSON"
+    [ ${#AUDIO_URLS[@]} -gt 0 ] && PAYLOAD="${PAYLOAD}, \"audios_list\": $AUDIOS_JSON"
+    PAYLOAD="${PAYLOAD}}"
+
+    [ "$JSON_ONLY" = false ] && echo "Submitting to seedance-v2.0-i2v (${#IMAGE_URLS[@]} image(s), ${#VIDEO_URLS[@]} video(s), ${#AUDIO_URLS[@]} audio(s))..." >&2
     SUBMIT=$(curl -s -X POST "${MUAPI_BASE}/seedance-v2.0-i2v" "${HEADERS[@]}" -d "$PAYLOAD")
 
     if echo "$SUBMIT" | jq -e '.error // .detail' >/dev/null 2>&1; then

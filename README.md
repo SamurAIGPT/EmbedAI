@@ -46,7 +46,7 @@ Open Dots gives individuals and developers an inspectable workspace they can run
 ### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python dependency management
-- [Node.js](https://nodejs.org/) (18+) and npm, for the web UI
+- [Node.js](https://nodejs.org/) (20.9+) and npm, for the web UI (required by Next.js 16)
 - [Docker](https://docs.docker.com/get-docker/) (for Postgres)
 - Bash (Git Bash on Windows works fine) to use `scripts/dev.sh`
 - A [Boat API key](https://docs.boat.dev/api-keys) for sandbox creation. If
@@ -77,6 +77,7 @@ Fill in `backend/.env`:
 | `BOAT_API_KEY` | yes | From the Boat dashboard. |
 | `BOAT_BASE_URL` | no | Defaults to `https://boat.dev/api/v1`. |
 | `BOAT_ORG_ID` | see note above | Team/org id (e.g. `team_...`) to attach to sandbox creation so it bills the org instead of your personal account. |
+| `PARALLEL_SEARCH_ENABLED` | no | Set to `true` to add free Parallel web search and page fetching to Claude tasks. Defaults to `false`. See [Optional web search](#optional-web-search). |
 | `TOKEN_ENCRYPTION_KEYS` | yes | Fernet key used to encrypt stored credentials. Generate with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Comma-separate multiple keys to support rotation. |
 | `TELEGRAM_BOT_TOKEN` | only for the bot / Telegram linking | From @BotFather. |
 | `TELEGRAM_BOT_USERNAME` | no | Your bot's `@username` (no `@`), shown as a clickable link in the web UI. Cosmetic only. |
@@ -206,6 +207,21 @@ In the web UI (`http://localhost:3000`):
 5. Check **"Repeat this on a schedule"**, pick Daily and a time a couple of
    minutes out, and click "Create schedule". It appears in the schedules
    list below with its next run time; pause/resume/delete it from there.
+
+### Optional web search
+
+Set `PARALLEL_SEARCH_ENABLED=true` in `backend/.env` and restart the backend
+and bot processes to make [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+available to new Claude task launches, including replies and scheduled runs.
+It connects over HTTP to `https://search.parallel.ai/mcp` and provides
+`web_search` and `web_fetch` without a Parallel account or API key. Anonymous
+search uses Fast mode and is intended for light use, with rate limits.
+
+For example, submit: “Use Parallel to find the latest Python release, then
+fetch its release page and summarize the changes.” Approve the MCP tool calls
+through the existing permission prompts when asked. Claude still needs its
+usual connected account. The setting is off by default and leaves saved MCP
+configuration in place.
 
 ## Scheduling tasks
 

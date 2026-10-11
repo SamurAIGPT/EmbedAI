@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     # team/org is explicitly attached to the request.
     BOAT_ORG_ID : str = ""
 
+    # Opt-in web search and page fetching for Claude tasks, via HTTP MCP.
+    PARALLEL_SEARCH_ENABLED: bool = False
+
     POSTGRES_USER: str = "vadoo"
     POSTGRES_PASSWORD: str = "vadoo"
     POSTGRES_DB: str = "vadoo"

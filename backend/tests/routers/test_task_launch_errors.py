@@ -17,7 +17,7 @@ from app.services import user_credential_service
 
 @pytest.fixture
 def boat_api():
-    state = {"fail_path": None, "launches": 0}
+    state = {"fail_path": None, "launches": 0, "commands": [], "files": {}}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -54,6 +54,7 @@ def boat_api():
         def do_POST(self):
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             if self.path.endswith("/files"):
+                state["files"][data["path"]] = data["content"]
                 if data["path"] == state["fail_path"]:
                     self.failure(503)
                 else:
@@ -66,6 +67,7 @@ def boat_api():
                 assert self.path.endswith("/commands")
                 assert data["detached"] is True
                 state["launches"] += 1
+                state["commands"].append(data)
                 self.respond(200, {
                     "ok": True, "type": "command.started", "success": True,
                     "processId": 1, "pid": 1, "command": data["command"],

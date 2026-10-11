@@ -10,6 +10,19 @@ class ApiError extends Error {
   }
 }
 
+function formatErrorDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (!Array.isArray(detail)) return fallback;
+  const messages = detail.flatMap((issue: unknown) => {
+    if (!issue || typeof issue !== "object" || !("msg" in issue) || typeof issue.msg !== "string") {
+      return [];
+    }
+    const location = "loc" in issue && Array.isArray(issue.loc) ? issue.loc.join(".") : "";
+    return [location ? `${location}: ${issue.msg}` : issue.msg];
+  });
+  return messages.join("; ") || fallback;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -20,7 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail ?? detail;
+      detail = formatErrorDetail(body?.detail, detail);
     } catch {
       // response body wasn't JSON — fall back to statusText
     }

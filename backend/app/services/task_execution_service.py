@@ -120,6 +120,20 @@ def _build_command(
     if template is None:
         raise UnsupportedProviderError(f"Unsupported provider: {provider}")
     base = template.format(prompt=shlex.quote(prompt_text))
+    if provider == "claude" and settings.PARALLEL_SEARCH_ENABLED:
+        # Per-invocation config keeps saved MCP servers and credentials intact.
+        mcp_config = {
+            "mcpServers": {
+                "open-dots-parallel-search": {
+                    "type": "http",
+                    "url": "https://search.parallel.ai/mcp",
+                    "headers": {
+                        "User-Agent": "OpenDots/0.1 (+https://github.com/Anil-matcha/open-dots)"
+                    },
+                }
+            }
+        }
+        base += f" --mcp-config {shlex.quote(json.dumps(mcp_config))}"
     flag = "--resume" if resume else "--session-id"
     return f"{base} {flag} {shlex.quote(session_id)}"
 
@@ -128,6 +142,9 @@ def _finished_values(stdout: str, stderr: str) -> dict:
     try:
         payload = json.loads(stdout)
     except (json.JSONDecodeError, TypeError):
+        return {"status": "failed", "error": stderr or stdout}
+
+    if not isinstance(payload, dict):
         return {"status": "failed", "error": stderr or stdout}
 
     if payload.get("is_error"):
@@ -145,11 +162,16 @@ async def _reload(db: AsyncSession, task_id: int) -> Tasks:
 
 
 async def _is_resume(db: AsyncSession, task: Tasks) -> bool:
-    # A reply shares its session with an earlier task; the first task of a
-    # session creates it with --session-id, later ones --resume it.
+    # Use a recorded process id as evidence of an earlier launch. A task
+    # that failed during setup has no session to resume, so its reply still
+    # needs --session-id.
     result = await db.execute(
         select(
-            exists().where(Tasks.session_id == task.session_id, Tasks.id < task.id)
+            exists().where(
+                Tasks.session_id == task.session_id,
+                Tasks.id < task.id,
+                Tasks.prompt_id.is_not(None),
+            )
         )
     )
     return bool(result.scalar())
@@ -186,6 +208,31 @@ async def create_task(
                 f"Task {parent_task_id} is still {parent.status} — wait for it to finish first"
             )
         session_id = parent.session_id
+
+        # Replies through different finished ancestors still continue the
+        # same conversation. Lock its first task until the queued reply is
+        # committed, so separate API workers cannot both admit a reply.
+        await db.execute(
+            select(Tasks.id)
+            .where(Tasks.session_id == session_id)
+            .order_by(Tasks.id)
+            .limit(1)
+            .with_for_update()
+        )
+        active = (
+            await db.execute(
+                select(Tasks.id, Tasks.status)
+                .where(
+                    Tasks.session_id == session_id,
+                    Tasks.status.in_(ACTIVE_STATUSES),
+                )
+                .limit(1)
+            )
+        ).first()
+        if active is not None:
+            raise ParentTaskActiveError(
+                f"Task {active.id} is still {active.status} — wait for it to finish first"
+            )
 
     task = Tasks(
         user_id=user_id,

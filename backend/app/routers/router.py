@@ -3,6 +3,7 @@ from app.routers.task import router as task_router
 from app.routers.link import router as link_router
 from app.routers.schedule import router as schedule_router
 from app.routers.permission import router as permissions_router
+from app.routers.local import router as local_router
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1")
@@ -11,3 +12,4 @@ router.include_router(task_router)
 router.include_router(link_router)
 router.include_router(permissions_router)
 router.include_router(schedule_router)
+router.include_router(local_router)

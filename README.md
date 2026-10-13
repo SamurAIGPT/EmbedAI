@@ -302,6 +302,12 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
   [frontend/README.md](frontend/README.md) for frontend-specific notes.
 - [scripts/dev.sh](scripts/dev.sh) — one-command dev environment for both.
 
+### Local Claude (experimental)
+
+Optionally run chat-only prompts through your own signed-in `claude` CLI on the
+machine running the backend, with no Boat sandbox. It is off by default and
+only usable from that machine. See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
+
 ## Known limitations
 
 - Sandboxes are never automatically stopped/deleted — repeated `/connect`

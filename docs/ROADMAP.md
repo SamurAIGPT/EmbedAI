@@ -8,14 +8,14 @@ This page separates **shipped** from **planned**. Planned items are not promises
 
 - Ship small, tested vertical slices (backend, UI, persistence, tests, docs).
 - Keep working features (Boat sandboxes, Telegram, GitHub, schedules, permission rules) while adding the local path.
-- Security first: loopback by default, authenticated owner access, workspace-confined files, no silent privilege escalation.
+- Security first: local-machine-only access for host execution, workspace-confined files, no silent privilege escalation.
 
 ## Sprint 1 — core beta (`v0.1.0-beta`)
 
 | ID | Feature | Status |
 |---|---|---|
-| F00 | Verified repo baseline and docs | In progress |
-| F01 | Run Claude CLI locally from the web UI (owner auth) | Planned |
+| F00 | Verified repo baseline and docs | Done |
+| F01 | Run Claude CLI locally from the web UI (loopback access policy, chat-only) | Implemented, awaiting review |
 | F02 | Stream assistant text and status (SSE) | Planned |
 | F03 | Tool timeline and inline approvals | Planned |
 | F04 | Durable agents/threads/events and thread list | Planned |
@@ -26,7 +26,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F09 | First-run onboarding and local storage | Planned |
 | F10 | Installable beta, CI and documentation | Planned |
 
-Beta gate: authenticated owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
+Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
 
 ## Sprint 2 — everyday usefulness (`v0.2.0`)
 

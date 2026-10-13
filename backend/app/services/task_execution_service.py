@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shlex
 import uuid
@@ -12,8 +13,9 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.task import Tasks
 from app.db.session import AsyncSessionLocal
-from app.services import user_credential_service
+from app.services import local_claude_runner, user_credential_service
 from app.services.box_operations import ascii_box_service
+from app.services.local_access_policy import LocalAccessGrant
 from app.services.user_credential_service import CredentialNotFoundError
 
 logger = get_logger(__name__)
@@ -43,6 +45,17 @@ PROVIDER_COMMANDS = {
 
 PERMISSION_HOOK_SETTINGS_PATH = ".claude/settings.json"
 
+# Local runs share the task table but never go through the Boat code paths:
+# the provider is deliberately absent from PROVIDER_COMMANDS, so schedules,
+# Telegram and POST /tasks cannot select it. Only execute_local_task can create
+# one, and it requires a LocalAccessGrant.
+LOCAL_PROVIDER = "claude-local"
+LOCAL_BOX_ID = "local"
+# A local run still "running" this long after its deadline lost its server.
+LOCAL_STALE_GRACE_SECONDS = 60
+
+_local_runs: set[asyncio.Task] = set()
+
 
 class TaskNotFoundError(Exception):
     pass
@@ -57,6 +70,10 @@ class UnsupportedProviderError(Exception):
 
 
 class BoxCommandError(Exception):
+    pass
+
+
+class LocalRuntimeUnavailableError(Exception):
     pass
 
 
@@ -340,19 +357,116 @@ async def execute_task(
     return await start_task(db, task.id)
 
 
-async def get_task(db: AsyncSession, task_id: int) -> Tasks | None:
+async def get_task(
+    db: AsyncSession, task_id: int, *, access: LocalAccessGrant | None = None
+) -> Tasks | None:
+    """Local tasks are invisible here unless the caller holds a grant, so the
+    guest-id endpoints and the Telegram bot cannot read their output."""
     result = await db.execute(select(Tasks).where(Tasks.id == task_id))
-    return result.scalar_one_or_none()
+    task = result.scalar_one_or_none()
+    if task is not None and task.provider == LOCAL_PROVIDER and access is None:
+        return None
+    return task
 
 
 async def list_tasks_for_user(db: AsyncSession, user_id: str) -> list[Tasks]:
     result = await db.execute(
-        select(Tasks).where(Tasks.user_id == user_id).order_by(Tasks.created_at.desc())
+        select(Tasks)
+        .where(Tasks.user_id == user_id, Tasks.provider != LOCAL_PROVIDER)
+        .order_by(Tasks.created_at.desc())
     )
     return list(result.scalars().all())
 
 
+async def list_local_tasks_for_user(
+    db: AsyncSession, user_id: str, *, access: LocalAccessGrant
+) -> list[Tasks]:
+    result = await db.execute(
+        select(Tasks)
+        .where(Tasks.user_id == user_id, Tasks.provider == LOCAL_PROVIDER)
+        .order_by(Tasks.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def execute_local_task(
+    db: AsyncSession,
+    *,
+    access: LocalAccessGrant,
+    user_id: str,
+    prompt_text: str,
+) -> Tasks:
+    """Start a chat-only run on the user's own Claude CLI and return it while
+    it is still running; callers poll the task like any other."""
+    if not isinstance(access, LocalAccessGrant):
+        raise PermissionError("Local execution requires an access grant")
+
+    cli = await local_claude_runner.get_status()
+    if not cli.installed or cli.signed_in is not True:
+        raise LocalRuntimeUnavailableError(
+            cli.error or "Claude CLI is not ready for local use."
+        )
+
+    task = Tasks(
+        user_id=user_id,
+        provider=LOCAL_PROVIDER,
+        box_id=LOCAL_BOX_ID,
+        prompt_text=prompt_text,
+        status="running",
+        session_id=str(uuid.uuid4()),
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+
+    run = asyncio.create_task(_run_local_task(task.id))
+    _local_runs.add(run)
+    run.add_done_callback(_local_runs.discard)
+    return task
+
+
+def _local_run_values(output: local_claude_runner.RunOutput) -> dict:
+    if output.timed_out:
+        return {
+            "status": "failed",
+            "error": f"Timed out after {settings.LOCAL_TASK_TIMEOUT_SECONDS} seconds",
+        }
+    if output.output_truncated:
+        return {"status": "failed", "error": "Claude produced more output than allowed"}
+    return _finished_values(output.stdout, output.stderr)
+
+
+async def _run_local_task(task_id: int) -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            task = await _reload(db, task_id)
+            try:
+                output = await local_claude_runner.run_prompt(
+                    task.prompt_text, task.session_id
+                )
+                values = _local_run_values(output)
+            except local_claude_runner.ClaudeCliUnavailable as exc:
+                values = {"status": "failed", "error": str(exc)}
+            except Exception:
+                logger.exception("local task crashed", task_id=task_id)
+                values = {"status": "failed", "error": "Local run failed unexpectedly"}
+
+            # Conditional so a task already failed by the stale sweep stays so.
+            await db.execute(
+                update(Tasks)
+                .where(Tasks.id == task_id, Tasks.status == "running")
+                .values(**values)
+            )
+            await db.commit()
+    except Exception:
+        logger.exception("could not record local task result", task_id=task_id)
+
+
 async def sync_task_status(db: AsyncSession, task: Tasks) -> Tasks:
+    if task.provider == LOCAL_PROVIDER:
+        # Run in this process and recorded by _run_local_task; no box to ask.
+        return await _reload(db, task.id)
+
     if task.status == "waiting_approval":
         # Blocked inside a permission hook call, answered by a different
         # request (web or Telegram) — nothing to ask the sandbox here, just
@@ -426,8 +540,28 @@ async def sync_active_tasks() -> None:
         )
         await db.commit()
 
+        await db.execute(
+            update(Tasks)
+            .where(
+                Tasks.provider == LOCAL_PROVIDER,
+                Tasks.status == "running",
+                Tasks.updated_at
+                < now
+                - timedelta(
+                    seconds=settings.LOCAL_TASK_TIMEOUT_SECONDS
+                    + LOCAL_STALE_GRACE_SECONDS
+                ),
+            )
+            .values(
+                status="failed",
+                error="Local run was interrupted (the server stopped while it was running)",
+            )
+        )
+        await db.commit()
+
         queued = await db.execute(
             select(Tasks.id).where(
+                Tasks.provider != LOCAL_PROVIDER,
                 Tasks.status == "queued",
                 Tasks.created_at < now - timedelta(seconds=QUEUED_RECOVERY_SECONDS),
             )
@@ -443,7 +577,9 @@ async def sync_active_tasks() -> None:
 
         launched = await db.execute(
             select(Tasks).where(
-                Tasks.status.in_(LAUNCHED_STATUSES), Tasks.prompt_id.is_not(None)
+                Tasks.provider != LOCAL_PROVIDER,
+                Tasks.status.in_(LAUNCHED_STATUSES),
+                Tasks.prompt_id.is_not(None),
             )
         )
         for task in launched.scalars().all():

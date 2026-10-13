@@ -19,7 +19,7 @@ Next.js web UI (frontend/)        Telegram bot (backend/app/telegram_bot.py)
 
 - **Backend:** FastAPI, SQLAlchemy models (`task`, `schedule`, `user_sandbox`, `user_credential`, `permission_rule`, `permission_ask`, `link_code`), Alembic migrations, background loop for schedules and task sync.
 - **Frontend:** Next.js, components for connecting Claude/GitHub/Telegram and submitting tasks.
-- **Identity:** guest or Telegram id stored in the browser; no owner authentication yet.
+- **Identity:** guest or Telegram id stored in the browser; no owner authentication yet. The optional local Claude path (off by default) is instead restricted to requests from the machine itself by `local_access_policy`, and runs chat-only through the user's own `claude` CLI.
 
 See [README](../README.md), [backend/README.md](../backend/README.md) and [frontend/README.md](../frontend/README.md) for details.
 

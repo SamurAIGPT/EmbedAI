@@ -5,6 +5,7 @@ import { ConnectTelegram } from "@/components/ConnectTelegram";
 import { ConnectClaude } from "@/components/ConnectClaude";
 import { ConnectGitHub } from "@/components/ConnectGitHub";
 import { SubmitTask } from "@/components/SubmitTask";
+import { LocalClaude } from "@/components/LocalClaude";
 
 const STORAGE_KEY = "vadoo_user_id";
 
@@ -43,6 +44,8 @@ export default function Home() {
           <p className="text-center text-sm text-zinc-500">Loading…</p>
         ) : (
           <>
+            <LocalClaude />
+
             <ConnectTelegram userId={userId} onLinked={handleLinked} onReset={handleReset} />
 
             {userId ? (

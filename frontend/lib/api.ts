@@ -111,6 +111,15 @@ export type Task = {
   updated_at: string;
 };
 
+export type LocalStatus = {
+  // LOCAL_EXECUTION_ENABLED on the backend.
+  enabled: boolean;
+  // Enabled, allowed for this browser, and the Claude CLI is installed and signed in.
+  available: boolean;
+  reason: string | null;
+  cli_version: string | null;
+};
+
 export type PermissionAsk = {
   id: number;
   task_id: number;
@@ -175,6 +184,19 @@ export const api = {
     }),
 
   getTask: (taskId: number) => request<Task>(`/tasks/${taskId}`),
+
+  getLocalStatus: () => request<LocalStatus>("/local/status"),
+
+  createLocalTask: (userId: string, promptText: string) =>
+    request<Task>("/local/tasks", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, prompt_text: promptText }),
+    }),
+
+  getLocalTask: (taskId: number) => request<Task>(`/local/tasks/${taskId}`),
+
+  listLocalTasks: (userId: string) =>
+    request<Task[]>(`/local/tasks?user_id=${encodeURIComponent(userId)}`),
 
   getPendingAsk: (taskId: number) =>
     request<PermissionAsk | null>(`/permissions/ask/task/${taskId}`),

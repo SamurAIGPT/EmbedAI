@@ -37,11 +37,28 @@ class Settings(BaseSettings):
     # production). No trailing slash.
     PERMISSION_HOOK_BASE_URL: str
 
+    # Run Claude through the user's own locally installed, signed-in CLI
+    # instead of a Boat sandbox. Off by default so existing deployments are
+    # unaffected; see app/services/local_access_policy.py for who may use it.
+    LOCAL_EXECUTION_ENABLED: bool = False
+    # Host header values accepted for local execution requests (comma-separated).
+    LOCAL_ALLOWED_HOSTS: str = "localhost,127.0.0.1,[::1]"
+    # Full path to the real `claude` executable. Leave empty to auto-detect.
+    LOCAL_CLAUDE_CLI_PATH: str = ""
+    # Working directory for local runs. Empty means ~/.open-dots/local.
+    LOCAL_WORKSPACE_ROOT: str = ""
+    LOCAL_TASK_TIMEOUT_SECONDS: int = 300
+    LOCAL_MAX_OUTPUT_BYTES: int = 1_000_000
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 
     @property
     def FRONTEND_ORIGIN_LIST(self) -> list[str]:
         return [origin.strip() for origin in self.FRONTEND_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def LOCAL_ALLOWED_HOST_LIST(self) -> list[str]:
+        return [host.strip().lower() for host in self.LOCAL_ALLOWED_HOSTS.split(",") if host.strip()]
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:

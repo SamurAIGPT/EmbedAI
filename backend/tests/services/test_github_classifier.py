@@ -60,7 +60,7 @@ def test_repeated_dash_c_config_flags_before_subcommand() -> None:
     # Regression: exactly the pattern that broke in practice — setting a
     # per-repo git identity inline before the real subcommand.
     command = (
-        "git -c user.email=aiaccount@vadoo.tv -c user.name=aiaccount "
+        "git -c user.email=test@example.com -c user.name=test-user "
         "commit -m 'test commit'"
     )
     assert classify_bash_command(command) == ("create", "github", "git.commit")

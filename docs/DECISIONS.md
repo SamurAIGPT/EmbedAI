@@ -24,3 +24,12 @@ Format: decision, evidence, rejected alternative, consequence, date.
 - **Rejected:** a mandatory owner token for every route (breaks existing guest and Telegram users); no check at all (any website or tunnel could start a process on the machine).
 - **Consequence:** Another program or user on the same machine can use the feature. The policy sits behind an interface so a launcher-issued token can replace it for a desktop build.
 - **Date:** 2026-10-13
+
+
+## D-004 — Local run events are in memory; storage and replay come later
+
+- **Decision:** F02 streams a local run's text to the browser as server-sent events. The events (`turn.started`, `text.delta`, `turn.completed`, `turn.failed`, `runtime.status`) use one envelope, `{run_id, seq, type, data, ts}`, with `seq` counting from 1 per run. They are kept only in memory while a run is live, plus a short time after it ends. There is no event table, no migration and no `Last-Event-ID` replay. A listener that connects late first receives the text so far as one `text.delta` with `mode: "replace"`, then live `mode: "append"` deltas. The task row (`task.result`, `task.error`, status) stays the record of the outcome and is saved before the terminal event is sent.
+- **Evidence:** Replay and durable events need the thread/turn model (F04) and cancellation (F05) to be designed first; adding a table now would fix a schema before those exist. The existing task endpoint already returns the latest status and final answer after a reconnect.
+- **Rejected:** persisting every event now (premature schema); relying on the stream for the outcome (a dropped connection could then look like success).
+- **Consequence:** After a server restart, or when a different worker serves the request, a stream can only report the saved task state, and the UI falls back to polling the task. Live streaming therefore supports one backend process. The envelope already carries `run_id` and `seq`, so F04 can store events and add replay without changing what clients receive.
+- **Date:** 2026-10-13

@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +45,15 @@ _APP_SECRET_ENV = (
 )
 
 _STATUS_TIMEOUT_SECONDS = 20
+
+# stream-json repeats the answer (deltas, snapshots, final result) and adds
+# bookkeeping events, so the raw stream is allowed to be larger than the text
+# it carries. The text itself is capped separately, at LOCAL_MAX_OUTPUT_BYTES.
+RAW_STREAM_SIZE_FACTOR = 8
+
+# Return True to stop the run (the process tree is killed and the run is
+# reported as having produced too much output).
+LineHandler = Callable[[bytes], bool | None]
 
 
 class ClaudeCliUnavailable(Exception):
@@ -132,9 +142,14 @@ def run_blocking(
     cwd: Path,
     timeout_seconds: float,
     max_output_bytes: int,
+    on_stdout_line: LineHandler | None = None,
 ) -> RunOutput:
     """Run a process to completion with a time limit and an output cap,
-    killing its whole process tree if either is exceeded."""
+    killing its whole process tree if either is exceeded.
+
+    With `on_stdout_line`, stdout is handed over one line at a time, as it
+    arrives (split on raw bytes at b"\n", a trailing b"\r" dropped), and is not
+    kept in the returned `RunOutput`."""
     popen_kwargs: dict = {}
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -173,9 +188,48 @@ def run_blocking(
                 return
             chunks.append(chunk)
 
+    def drain_lines(stream) -> None:
+        total = 0
+        pending = b""
+
+        def handle(line: bytes) -> bool:
+            try:
+                return bool(on_stdout_line(line.removesuffix(b"\r")))
+            except Exception:
+                return False  # a faulty handler must not end the run
+
+        while True:
+            # read1 returns what is available; read(n) would wait for n bytes
+            # and defeat streaming.
+            chunk = stream.read1(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_output_bytes:
+                state["truncated"] = True
+                _kill_tree(proc)
+                return
+            pending += chunk
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                if handle(line):
+                    state["truncated"] = True
+                    _kill_tree(proc)
+                    return
+        if pending and handle(pending):
+            state["truncated"] = True
+            _kill_tree(proc)
+
     timer = threading.Timer(timeout_seconds, on_timeout)
+    stdout_reader = (
+        threading.Thread(target=drain_lines, args=(proc.stdout,))
+        if on_stdout_line is not None
+        else threading.Thread(
+            target=drain, args=(proc.stdout, stdout_chunks), kwargs={"fatal_on_overflow": True}
+        )
+    )
     readers = [
-        threading.Thread(target=drain, args=(proc.stdout, stdout_chunks), kwargs={"fatal_on_overflow": True}),
+        stdout_reader,
         threading.Thread(target=drain, args=(proc.stderr, stderr_chunks), kwargs={"fatal_on_overflow": False}),
     ]
     timer.start()
@@ -212,7 +266,9 @@ def build_args(executable: Path, session_id: str) -> list[str]:
         str(executable),
         "-p",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
         "--session-id",
         session_id,
         *LOCKDOWN_ARGS,
@@ -264,7 +320,9 @@ async def get_status() -> CliStatus:
     return await run_in_threadpool(_status_blocking)
 
 
-def _run_blocking(prompt: str, session_id: str) -> RunOutput:
+def _run_blocking(
+    prompt: str, session_id: str, on_stdout_line: LineHandler | None
+) -> RunOutput:
     executable = resolve_claude_executable()
     if executable is None:
         raise ClaudeCliUnavailable("Claude CLI not found.")
@@ -273,9 +331,12 @@ def _run_blocking(prompt: str, session_id: str) -> RunOutput:
         stdin_text=prompt,
         cwd=workspace_dir(),
         timeout_seconds=settings.LOCAL_TASK_TIMEOUT_SECONDS,
-        max_output_bytes=settings.LOCAL_MAX_OUTPUT_BYTES,
+        max_output_bytes=settings.LOCAL_MAX_OUTPUT_BYTES * RAW_STREAM_SIZE_FACTOR,
+        on_stdout_line=on_stdout_line,
     )
 
 
-async def run_prompt(prompt: str, session_id: str) -> RunOutput:
-    return await run_in_threadpool(_run_blocking, prompt, session_id)
+async def run_prompt(
+    prompt: str, session_id: str, on_stdout_line: LineHandler | None = None
+) -> RunOutput:
+    return await run_in_threadpool(_run_blocking, prompt, session_id, on_stdout_line)

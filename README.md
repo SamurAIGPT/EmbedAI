@@ -306,7 +306,7 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
 
 Optionally run chat-only prompts through your own signed-in `claude` CLI on the
 machine running the backend, with no Boat sandbox. It is off by default and
-only usable from that machine. See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
+only usable from that machine. The answer streams into the page as it is written. See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
 
 ## Known limitations
 

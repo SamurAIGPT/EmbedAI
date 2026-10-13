@@ -1,4 +1,8 @@
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -13,6 +17,8 @@ from app.services.local_access_policy import (
     get_local_access_policy,
     require_local_access,
 )
+from app.services.local_run_hub import RUNTIME_STATUS, RunEvent, format_sse, stream_frames
+from app.services.local_run_hub import hub as run_hub
 from app.services.task_execution_service import LocalRuntimeUnavailableError
 
 router = APIRouter(
@@ -84,3 +90,38 @@ async def get_local_task(
     if task is None or task.provider != task_execution_service.LOCAL_PROVIDER:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _frames_from_task(task) -> AsyncIterator[str]:
+    """Answer for a run this process is not tracking (finished a while ago,
+    started before a restart, or on another worker): the task row says what
+    happened, and a run that is still marked running is reported as not live
+    so the client polls instead of waiting."""
+    now = datetime.now(UTC).isoformat()
+    if task.status in task_execution_service.FINISHED_STATUSES:
+        event_type, data = task_execution_service.terminal_event_for(task)
+        yield format_sse(RunEvent(task.id, 1, event_type, data, now))
+    else:
+        yield format_sse(RunEvent(task.id, 0, RUNTIME_STATUS, {"state": "not_live"}, now))
+
+
+@router.get("/tasks/{task_id}/events")
+async def stream_local_task_events(
+    task_id: int,
+    access: LocalAccessGrant = Depends(require_local_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Server-sent events for one local run. Streams are live only: nothing is
+    stored or replayed, so after a disconnect read GET /local/tasks/{id}.
+    Closing the stream never stops the run."""
+    task = await task_execution_service.get_task(db, task_id, access=access)
+    if task is None or task.provider != task_execution_service.LOCAL_PROVIDER:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    subscription = run_hub.subscribe(task_id)
+    frames = _frames_from_task(task) if subscription is None else stream_frames(subscription)
+    return StreamingResponse(
+        frames,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )

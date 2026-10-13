@@ -70,4 +70,4 @@ Web UI (desktop wrapper later)      Telegram (optional)
 7. Storage migrations are additive. Existing task, schedule and credential data is preserved.
 8. Host CLI execution runs natively on loopback. Containers cannot see host CLI logins automatically, so Docker isolation is a separate, later feature.
 
-This section describes intent, not shipped behavior.
+This section describes intent, not shipped behavior. One deliberate gap today: local runs stream their text over server-sent events from memory only (F02), so rule 2's storage and `Last-Event-ID` replay are not implemented yet; they arrive with threads and resume in F04/F05 ([D-004](DECISIONS.md)).

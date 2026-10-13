@@ -114,3 +114,112 @@ async def test_run_prompt_without_a_cli_raises(monkeypatch):
     monkeypatch.setattr(runner, "resolve_claude_executable", lambda: None)
     with pytest.raises(runner.ClaudeCliUnavailable):
         await runner.run_prompt("hi", "sid")
+
+
+def run_lines(script: str, *, tmp_path: Path, handler, timeout=10, cap=100_000):
+    return runner.run_blocking(
+        [sys.executable, "-c", script],
+        stdin_text=None,
+        cwd=tmp_path,
+        timeout_seconds=timeout,
+        max_output_bytes=cap,
+        on_stdout_line=handler,
+    )
+
+
+def test_streamed_lines_arrive_while_the_process_is_still_running(tmp_path):
+    script = (
+        "import sys, time\n"
+        "print('first', flush=True)\n"
+        "time.sleep(1.5)\n"
+        "print('second', flush=True)\n"
+    )
+    arrivals = []
+    out = run_lines(
+        script, tmp_path=tmp_path, handler=lambda line: arrivals.append((line, time.monotonic()))
+    )
+    finished = time.monotonic()
+    assert [line for line, _ in arrivals] == [b"first", b"second"]
+    assert finished - arrivals[0][1] > 1.0, "first line was held back until the process ended"
+    assert out.stdout == "" and out.exit_code == 0
+
+
+def test_lines_are_split_on_bytes_with_crlf_and_a_final_unterminated_line(tmp_path):
+    script = "import sys; sys.stdout.buffer.write(b'a\\r\\nb\\n\\nlast')"
+    lines = []
+    run_lines(script, tmp_path=tmp_path, handler=lines.append)
+    assert lines == [b"a", b"b", b"", b"last"]
+
+
+def test_a_multibyte_character_split_across_writes_is_intact(tmp_path):
+    script = (
+        "import sys, time\n"
+        "data = 'héllo ✓\\n'.encode('utf-8')\n"
+        "sys.stdout.buffer.write(data[:2]); sys.stdout.buffer.flush()\n"
+        "time.sleep(0.3)\n"
+        "sys.stdout.buffer.write(data[2:]); sys.stdout.buffer.flush()\n"
+    )
+    lines = []
+    run_lines(script, tmp_path=tmp_path, handler=lines.append)
+    assert lines == ["héllo ✓".encode("utf-8")]
+
+
+def test_a_handler_can_stop_the_run_and_it_is_reported_as_too_much_output(tmp_path):
+    script = "import time\nwhile True:\n    print('x', flush=True)\n    time.sleep(0.01)\n"
+    started = time.monotonic()
+    out = run_lines(script, tmp_path=tmp_path, handler=lambda line: True, timeout=30)
+    assert out.output_truncated and not out.timed_out
+    assert time.monotonic() - started < 20
+
+
+def test_a_failing_handler_does_not_end_the_run(tmp_path):
+    seen = []
+
+    def handler(line):
+        seen.append(line)
+        raise RuntimeError("bug in the handler")
+
+    out = run_lines("print('a'); print('b')", tmp_path=tmp_path, handler=handler)
+    assert seen == [b"a", b"b"] and out.exit_code == 0
+
+
+def test_streamed_output_over_the_raw_cap_stops_the_process(tmp_path):
+    script = "import sys\nwhile True:\n    sys.stdout.write('x' * 10000 + '\\n')\n    sys.stdout.flush()\n"
+    out = run_lines(script, tmp_path=tmp_path, handler=lambda line: False, cap=50_000, timeout=30)
+    assert out.output_truncated and not out.timed_out
+
+
+def test_timeout_in_line_mode_still_kills_the_whole_tree(tmp_path):
+    marker = tmp_path / "orphan.txt"
+    child = f"import time; time.sleep(2.5); open(r'{marker}', 'w').write('alive')"
+    script = (
+        "import subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "print('started', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    lines = []
+    started = time.monotonic()
+    out = run_lines(script, tmp_path=tmp_path, handler=lines.append, timeout=1)
+    assert out.timed_out and lines == [b"started"]
+    assert time.monotonic() - started < 20
+    time.sleep(4)
+    assert not marker.exists(), "grandchild survived the kill"
+
+
+def test_stderr_is_still_collected_in_line_mode(tmp_path):
+    out = run_lines(
+        "import sys; sys.stderr.write('oops'); print('ok')",
+        tmp_path=tmp_path, handler=lambda line: None,
+    )
+    assert out.stderr == "oops"
+
+
+def test_build_args_asks_for_a_partial_message_stream_and_keeps_the_lockdown():
+    args = runner.build_args(Path("claude.exe"), "sid-1")
+    assert args[args.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in args and "--include-partial-messages" in args
+    assert args[args.index("--tools") + 1] == ""
+    assert args[args.index("--permission-mode") + 1] == "dontAsk"
+    for flag in ("--strict-mcp-config", "--disable-slash-commands"):
+        assert flag in args

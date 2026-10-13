@@ -16,6 +16,14 @@ from app.db.session import AsyncSessionLocal
 from app.services import local_claude_runner, user_credential_service
 from app.services.box_operations import ascii_box_service
 from app.services.local_access_policy import LocalAccessGrant
+from app.services.local_claude_stream import StreamNormalizer
+from app.services.local_run_hub import (
+    TEXT_DELTA,
+    TURN_COMPLETED,
+    TURN_FAILED,
+    TURN_STARTED,
+)
+from app.services.local_run_hub import hub as run_hub
 from app.services.user_credential_service import CredentialNotFoundError
 
 logger = get_logger(__name__)
@@ -53,6 +61,7 @@ LOCAL_PROVIDER = "claude-local"
 LOCAL_BOX_ID = "local"
 # A local run still "running" this long after its deadline lost its server.
 LOCAL_STALE_GRACE_SECONDS = 60
+LOCAL_MAX_ERROR_CHARS = 2000
 
 _local_runs: set[asyncio.Task] = set()
 
@@ -419,37 +428,105 @@ async def execute_local_task(
     await db.commit()
     await db.refresh(task)
 
+    # Registered before the run starts so a stream opened right after this
+    # call returns already finds it.
+    run_hub.start(task.id)
     run = asyncio.create_task(_run_local_task(task.id))
     _local_runs.add(run)
     run.add_done_callback(_local_runs.discard)
     return task
 
 
-def _local_run_values(output: local_claude_runner.RunOutput) -> dict:
+def _clip_error(message: str) -> str:
+    message = message.strip()
+    if len(message) > LOCAL_MAX_ERROR_CHARS:
+        return message[:LOCAL_MAX_ERROR_CHARS] + "…"
+    return message
+
+
+def _local_run_values(
+    normalizer: StreamNormalizer, output: local_claude_runner.RunOutput
+) -> dict:
+    """What to record for a finished local run. Whatever text Claude had
+    streamed is kept even when the run failed, so a partial answer survives."""
+    streamed = normalizer.text
+    final = normalizer.final
+    stderr = output.stderr.strip()
+
+    error: str | None = None
     if output.timed_out:
-        return {
-            "status": "failed",
-            "error": f"Timed out after {settings.LOCAL_TASK_TIMEOUT_SECONDS} seconds",
-        }
-    if output.output_truncated:
-        return {"status": "failed", "error": "Claude produced more output than allowed"}
-    return _finished_values(output.stdout, output.stderr)
+        error = f"Timed out after {settings.LOCAL_TASK_TIMEOUT_SECONDS} seconds"
+    elif output.output_truncated or normalizer.over_limit:
+        error = "Claude produced more output than allowed"
+    elif final is None:
+        if stderr:
+            error = stderr
+        elif output.exit_code not in (0, None):
+            error = f"Claude exited with code {output.exit_code}"
+        else:
+            error = "Claude ended without a result"
+    elif final.is_error:
+        error = final.text or stderr or "Claude reported an error"
+    elif final.permission_denied:
+        error = "Claude tried to use a tool, which is turned off for local chat"
+
+    if error is not None:
+        values: dict = {"status": "failed", "error": _clip_error(error)}
+        if streamed:
+            values["result"] = streamed
+        return values
+
+    # Prefer the CLI's own final text; if it sent none, keep what was streamed
+    # rather than replacing it with nothing. An empty answer stays empty.
+    if final is not None and final.text and final.text.strip():
+        text = final.text
+    else:
+        text = streamed
+    return {"status": "succeeded", "result": text}
+
+
+def terminal_event_for(task: Tasks) -> tuple[str, dict]:
+    """The terminal event that matches what the database actually records."""
+    if task.status == "succeeded":
+        return TURN_COMPLETED, {"status": "succeeded", "result": task.result or ""}
+    return TURN_FAILED, {
+        "status": task.status if task.status in FINISHED_STATUSES else "failed",
+        "error": task.error or "The run ended unexpectedly",
+        "result": task.result or "",
+    }
 
 
 async def _run_local_task(task_id: int) -> None:
+    loop = asyncio.get_running_loop()
+    run_hub.start(task_id)
+    normalizer = StreamNormalizer(max_text_bytes=settings.LOCAL_MAX_OUTPUT_BYTES)
+
+    def on_line(line: bytes) -> bool:
+        # Runs on the runner's reader thread; the hub is only touched on the
+        # event loop, in order.
+        for chunk in normalizer.feed(line):
+            loop.call_soon_threadsafe(
+                run_hub.publish, task_id, TEXT_DELTA, {"text": chunk, "mode": "append"}
+            )
+        return normalizer.over_limit
+
+    terminal: tuple[str, dict] | None = None
     try:
         async with AsyncSessionLocal() as db:
             task = await _reload(db, task_id)
+            run_hub.publish(task_id, TURN_STARTED)
             try:
                 output = await local_claude_runner.run_prompt(
-                    task.prompt_text, task.session_id
+                    task.prompt_text, task.session_id, on_line
                 )
-                values = _local_run_values(output)
+                values = _local_run_values(normalizer, output)
             except local_claude_runner.ClaudeCliUnavailable as exc:
                 values = {"status": "failed", "error": str(exc)}
             except Exception:
                 logger.exception("local task crashed", task_id=task_id)
                 values = {"status": "failed", "error": "Local run failed unexpectedly"}
+                if normalizer.text:
+                    values["result"] = normalizer.text
 
             # Conditional so a task already failed by the stale sweep stays so.
             await db.execute(
@@ -458,8 +535,21 @@ async def _run_local_task(task_id: int) -> None:
                 .values(**values)
             )
             await db.commit()
+            # Announce what the database now says, never what we meant to write.
+            terminal = terminal_event_for(await _reload(db, task_id))
     except Exception:
         logger.exception("could not record local task result", task_id=task_id)
+    finally:
+        if terminal is None:
+            terminal = (
+                TURN_FAILED,
+                {
+                    "status": "failed",
+                    "error": "Could not record the result of this run",
+                    "result": normalizer.text,
+                },
+            )
+        run_hub.publish(task_id, *terminal)
 
 
 async def sync_task_status(db: AsyncSession, task: Tasks) -> Tasks:

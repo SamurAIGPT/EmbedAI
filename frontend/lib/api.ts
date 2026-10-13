@@ -23,6 +23,67 @@ function formatErrorDetail(detail: unknown, fallback: string): string {
   return messages.join("; ") || fallback;
 }
 
+// --- Server-sent events (live local runs) ---
+// Reads them from a fetch() body; EventSource is not used because it cannot
+// report an HTTP error status.
+
+export type RunEvent = {
+  run_id: number;
+  seq: number;
+  type: string;
+  data: Record<string, unknown>;
+  ts: string;
+};
+
+function parseBlock(block: string): RunEvent | null {
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line === "" || line.startsWith(":")) continue; // blank or keep-alive comment
+    const colon = line.indexOf(":");
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? "" : line.slice(colon + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "data") data.push(value);
+  }
+  if (data.length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(data.join("\n"));
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as RunEvent).type === "string" &&
+      (parsed as RunEvent).data &&
+      typeof (parsed as RunEvent).data === "object"
+    ) {
+      return parsed as RunEvent;
+    }
+  } catch {
+    // a frame that is not valid JSON is skipped, not fatal
+  }
+  return null;
+}
+
+// Feed it decoded text in any chunking (a frame, half a frame, "\r\n" split
+// across chunks); it calls onEvent once per complete frame.
+export function createSseParser(onEvent: (event: RunEvent) => void) {
+  let buffer = "";
+  return {
+    push(chunk: string) {
+      buffer = (buffer + chunk).replace(/\r\n/g, "\n");
+      // A trailing "\r" may be the first half of "\r\n": keep it for later.
+      const heldBack = buffer.endsWith("\r") ? "\r" : "";
+      if (heldBack) buffer = buffer.slice(0, -1);
+      buffer = buffer.replace(/\r/g, "\n");
+      const blocks = buffer.split("\n\n");
+      buffer = (blocks.pop() ?? "") + heldBack;
+      for (const block of blocks) {
+        const event = parseBlock(block);
+        if (event) onEvent(event);
+      }
+    },
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -197,6 +258,34 @@ export const api = {
 
   listLocalTasks: (userId: string) =>
     request<Task[]>(`/local/tasks?user_id=${encodeURIComponent(userId)}`),
+
+  // Live events for one local run. Resolves when the stream ends for any
+  // reason, so the caller must then read the task to learn the real outcome.
+  // A dropped connection rejects; it is never a success.
+  streamLocalTask: async (
+    taskId: number,
+    onEvent: (event: RunEvent) => void,
+    signal?: AbortSignal
+  ): Promise<void> => {
+    // No Content-Type header: this is a plain GET and should stay a simple
+    // cross-origin request.
+    const res = await fetch(`${API_BASE}/local/tasks/${taskId}/events`, {
+      headers: { Accept: "text/event-stream" },
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new ApiError(res.status, res.statusText || "Could not open the live stream");
+    }
+    const parser = createSseParser(onEvent);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.push(decoder.decode());
+  },
 
   getPendingAsk: (taskId: number) =>
     request<PermissionAsk | null>(`/permissions/ask/task/${taskId}`),

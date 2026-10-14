@@ -10,6 +10,6 @@ Shipped capabilities of the current prototype. Planned work is in [ROADMAP.md](R
 - Encrypted credential storage; sandbox, task, permission and schedule records in PostgreSQL (default), or in a local SQLite file when `DATABASE_BACKEND=sqlite` (experimental; see [SETUP.md](SETUP.md#database)).
 - Guest web mode without Telegram, optionally linked to a Telegram identity via link codes.
 
-- **Local Claude (experimental, off by default):** run a chat-only prompt through your own signed-in `claude` CLI on the same machine, from the web UI, with the answer appearing as Claude writes it. Claude has no tools in this mode (no files, no commands). Only usable from the machine running the backend. See [SETUP.md](SETUP.md#local-claude-experimental).
+- **Local Claude (experimental, off by default):** run a prompt through your own signed-in `claude` CLI on the same machine, from the web UI, with the answer appearing as Claude writes it. Chat-only by default. With `LOCAL_TOOLS_ENABLED=true` Claude can read and write files in its workspace folder and run commands, shown as a timeline, and each call it would ask about waits for your Allow or Deny in the page. Only usable from the machine running the backend. See [SETUP.md](SETUP.md#local-claude-experimental).
 
 Limitations: see "Known limitations" in the [README](../README.md).

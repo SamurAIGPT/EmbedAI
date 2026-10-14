@@ -23,6 +23,15 @@ TEXT_DELTA = "text.delta"
 TURN_COMPLETED = "turn.completed"
 TURN_FAILED = "turn.failed"
 RUNTIME_STATUS = "runtime.status"
+TOOL_STARTED = "tool.started"
+TOOL_COMPLETED = "tool.completed"
+APPROVAL_REQUESTED = "approval.requested"
+APPROVAL_RESOLVED = "approval.resolved"
+
+# Events a stream that connects late is given again, so the tool timeline is
+# not lost on a page refresh (bounded; everything else is live-only).
+REPLAYED_TYPES = {TOOL_STARTED, TOOL_COMPLETED}
+MAX_REPLAYED_EVENTS = 200
 
 TERMINAL_TYPES = {TURN_COMPLETED, TURN_FAILED}
 
@@ -82,6 +91,7 @@ class _Run:
     run_id: int
     seq: int = 0
     text_parts: list[str] = field(default_factory=list)
+    replay: list[RunEvent] = field(default_factory=list)
     terminal: RunEvent | None = None
     subscribers: set[Subscription] = field(default_factory=set)
     cleanup: asyncio.TimerHandle | None = None
@@ -108,6 +118,8 @@ class RunHub:
         event = RunEvent(run_id, run.seq, event_type, dict(data or {}), _now())
         if event_type == TEXT_DELTA:
             run.text_parts.append(str(event.data.get("text", "")))
+        if event_type in REPLAYED_TYPES and len(run.replay) < MAX_REPLAYED_EVENTS:
+            run.replay.append(event)
         if event.terminal:
             run.terminal = event
         for subscriber in list(run.subscribers):
@@ -123,7 +135,7 @@ class RunHub:
         run = self._runs.get(run_id)
         if run is None:
             return None
-        initial: list[RunEvent] = []
+        initial: list[RunEvent] = list(run.replay)
         text = "".join(run.text_parts)
         if text:
             initial.append(

@@ -36,6 +36,42 @@ test('falls back for empty or unusable validation details', async () => {
   }
 });
 
+test('answerLocalApproval posts the decision to that one approval and nothing else', async () => {
+  let request = null;
+  globalThis.fetch = async (url, init) => {
+    request = { url: String(url), init };
+    return new Response(JSON.stringify({ status: 'recorded', decision: 'deny' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  await api.answerLocalApproval(7, 'abc/../def', 'deny');
+  assert.ok(request.url.endsWith('/local/tasks/7/approvals/abc%2F..%2Fdef'));
+  assert.equal(request.init.method, 'POST');
+  assert.deepEqual(JSON.parse(request.init.body), { decision: 'deny' });
+});
+
+test('a question that is no longer waiting surfaces as a 404 ApiError', async () => {
+  rejectWith({ detail: 'That request is no longer waiting for an answer' }, 404, 'Not Found');
+  await assert.rejects(api.answerLocalApproval(1, 'x', 'allow'), error => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 404);
+    return true;
+  });
+});
+
+test('listLocalApprovals reads the pending questions for one run', async () => {
+  let requested = '';
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return new Response(JSON.stringify([{ id: 'a', task_id: 3, tool: 'Bash', summary: 'ls', input: { command: 'ls' }, created_at: 'now' }]), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const approvals = await api.listLocalApprovals(3);
+  assert.ok(requested.endsWith('/local/tasks/3/approvals'));
+  assert.equal(approvals[0].tool, 'Bash');
+});
+
 test('getProviders reads /providers and returns the boat status', async () => {
   let requested = '';
   globalThis.fetch = async (url) => {

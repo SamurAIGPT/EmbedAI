@@ -7,9 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.schemas.local import LocalStatusResponse, LocalTaskCreateRequest
+from app.schemas.local import (
+    LocalApprovalAnswer,
+    LocalApprovalResponse,
+    LocalStatusResponse,
+    LocalTaskCreateRequest,
+)
 from app.schemas.task import TaskResponse
 from app.services import local_claude_runner, task_execution_service
+from app.services.local_approval_broker import ApprovalNotFound
+from app.services.local_approval_broker import broker as approval_broker
 from app.services.local_access_policy import (
     LocalAccessDenied,
     LocalAccessGrant,
@@ -49,6 +56,7 @@ async def local_status(
         available=ready,
         reason=None if ready else cli.error,
         cli_version=cli.version,
+        tools_enabled=settings.LOCAL_TOOLS_ENABLED,
     )
 
 
@@ -90,6 +98,44 @@ async def get_local_task(
     if task is None or task.provider != task_execution_service.LOCAL_PROVIDER:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _local_task_or_404(db: AsyncSession, task_id: int, access: LocalAccessGrant):
+    task = await task_execution_service.get_task(db, task_id, access=access)
+    if task is None or task.provider != task_execution_service.LOCAL_PROVIDER:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.get("/tasks/{task_id}/approvals", response_model=list[LocalApprovalResponse])
+async def list_local_approvals(
+    task_id: int,
+    access: LocalAccessGrant = Depends(require_local_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tool calls this run is waiting for a person to allow or deny."""
+    await _local_task_or_404(db, task_id, access)
+    return approval_broker.list_pending(task_id)
+
+
+@router.post("/tasks/{task_id}/approvals/{approval_id}")
+async def answer_local_approval(
+    task_id: int,
+    approval_id: str,
+    payload: LocalApprovalAnswer,
+    access: LocalAccessGrant = Depends(require_local_access),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow or deny one tool call. The first answer wins; the tool runs with
+    exactly the input that `list_local_approvals` showed."""
+    await _local_task_or_404(db, task_id, access)
+    try:
+        approval_broker.answer(task_id, approval_id, payload.decision)
+    except ApprovalNotFound:
+        raise HTTPException(
+            status_code=404, detail="That request is no longer waiting for an answer"
+        )
+    return {"status": "recorded", "decision": payload.decision}
 
 
 async def _frames_from_task(task) -> AsyncIterator[str]:

@@ -1,8 +1,13 @@
-"""Runs the user's own `claude` CLI on this machine, chat-only.
+"""Runs the user's own `claude` CLI on this machine.
 
-Every run is launched with all built-in tools, MCP servers and skills turned
-off, because approvals for local tool use do not exist yet. If a flag is
-missing the CLI refuses to start; there is no fallback to an unrestricted run.
+By default a run is chat-only: all built-in tools, MCP servers and skills are
+turned off. If a flag is missing the CLI refuses to start; there is no fallback
+to an unrestricted run.
+
+With tools on (`LOCAL_TOOLS_ENABLED`, a `RunControl` passed in) the CLI gets a
+fixed set of tools in permission mode `default` and asks this app, over its
+stdin/stdout, before each call it would prompt a person about. No run ever
+skips permissions or pre-approves anything.
 """
 
 import json
@@ -12,6 +17,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,11 +37,28 @@ LOCKDOWN_ARGS = [
     "dontAsk",
 ]
 
-_NPM_SHIM_SUFFIXES = {".cmd", ".bat", ".ps1"}
+# With tools on, the CLI asks this app (over stdin/stdout) before every tool
+# call it would otherwise prompt for in a terminal, and waits for the answer.
+# Only these tools exist: no web access, sub-agents, notebooks or MCP.
+TOOL_NAMES = "Read,Write,Edit,Glob,Grep,Bash"
+TOOLS_ARGS = [
+    "--input-format",
+    "stream-json",
+    "--permission-prompt-tool",
+    "stdio",
+    "--permission-mode",
+    "default",
+    "--tools",
+    TOOL_NAMES,
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+]
+
+_NPM_SHIM_SUFFIXES ={".cmd", ".bat", ".ps1"}
 _NPM_REAL_BINARY = Path("node_modules") / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
 
-# App secrets that must never reach a child process, even though the chat-only
-# lockdown leaves it nothing to read them with.
+# App secrets that must never reach a child process. Chat-only runs have no
+# tool to read them with, but with tools on an approved shell command could.
 _APP_SECRET_ENV = (
     "BOAT_API_KEY",
     "TOKEN_ENCRYPTION_KEYS",
@@ -58,6 +81,94 @@ LineHandler = Callable[[bytes], bool | None]
 
 class ClaudeCliUnavailable(Exception):
     pass
+
+
+class RunControl:
+    """Lets the caller talk to a running process: write lines to its stdin,
+    close stdin, and pause the run's time limit while a human decides.
+
+    Passing one to `run_blocking` keeps stdin open after the first message
+    (the CLI reads approval answers from it) instead of closing it.
+    All methods are safe to call from any thread and never raise.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._proc: subprocess.Popen | None = None
+        self._stdin_closed = False
+        self._timeout_seconds = 0.0
+        self._on_timeout: Callable[[], None] | None = None
+        self._timer: threading.Timer | None = None
+        self._deadline = 0.0
+        self._pauses = 0
+        self._remaining = 0.0
+        self._finished = False
+
+    def _attach(self, proc: subprocess.Popen, timeout_seconds: float, on_timeout) -> None:
+        with self._lock:
+            self._proc = proc
+            self._timeout_seconds = timeout_seconds
+            self._on_timeout = on_timeout
+            self._start_timer(timeout_seconds)
+
+    def _start_timer(self, seconds: float) -> None:
+        self._deadline = time.monotonic() + seconds
+        self._timer = threading.Timer(seconds, self._on_timeout)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def send(self, line: str) -> bool:
+        """Write one line to the process. False if it can no longer be written."""
+        with self._lock:
+            proc = self._proc
+            if proc is None or proc.stdin is None or self._stdin_closed:
+                return False
+            try:
+                proc.stdin.write((line.rstrip("\n") + "\n").encode("utf-8"))
+                proc.stdin.flush()
+                return True
+            except (BrokenPipeError, OSError, ValueError):
+                return False
+
+    def close_stdin(self) -> None:
+        with self._lock:
+            self._close_stdin_locked()
+
+    def _close_stdin_locked(self) -> None:
+        proc = self._proc
+        if proc is None or proc.stdin is None or self._stdin_closed:
+            return
+        self._stdin_closed = True
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+
+    def pause_deadline(self) -> None:
+        """Stop the clock (nested calls are counted). Waiting for a person is
+        not Claude running too long; the wait has its own limit."""
+        with self._lock:
+            if self._finished:
+                return
+            self._pauses += 1
+            if self._pauses == 1 and self._timer is not None:
+                self._timer.cancel()
+                self._remaining = max(self._deadline - time.monotonic(), 0.0)
+
+    def resume_deadline(self) -> None:
+        with self._lock:
+            if self._finished or self._pauses == 0:
+                return
+            self._pauses -= 1
+            if self._pauses == 0:
+                self._start_timer(self._remaining)
+
+    def _finish(self) -> None:
+        with self._lock:
+            self._finished = True
+            if self._timer is not None:
+                self._timer.cancel()
+            self._close_stdin_locked()
 
 
 @dataclass
@@ -143,13 +254,18 @@ def run_blocking(
     timeout_seconds: float,
     max_output_bytes: int,
     on_stdout_line: LineHandler | None = None,
+    control: RunControl | None = None,
 ) -> RunOutput:
     """Run a process to completion with a time limit and an output cap,
     killing its whole process tree if either is exceeded.
 
     With `on_stdout_line`, stdout is handed over one line at a time, as it
     arrives (split on raw bytes at b"\n", a trailing b"\r" dropped), and is not
-    kept in the returned `RunOutput`."""
+    kept in the returned `RunOutput`.
+
+    With `control`, `stdin_text` is sent as one line and stdin stays open so
+    the caller can keep writing; the caller (or the end of the run) closes it,
+    and the time limit is owned by `control` so it can be paused."""
     popen_kwargs: dict = {}
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -220,7 +336,7 @@ def run_blocking(
             state["truncated"] = True
             _kill_tree(proc)
 
-    timer = threading.Timer(timeout_seconds, on_timeout)
+    timer = None if control is not None else threading.Timer(timeout_seconds, on_timeout)
     stdout_reader = (
         threading.Thread(target=drain_lines, args=(proc.stdout,))
         if on_stdout_line is not None
@@ -232,19 +348,29 @@ def run_blocking(
         stdout_reader,
         threading.Thread(target=drain, args=(proc.stderr, stderr_chunks), kwargs={"fatal_on_overflow": False}),
     ]
-    timer.start()
+    if control is not None:
+        control._attach(proc, timeout_seconds, on_timeout)
+    else:
+        timer.start()
     for reader in readers:
         reader.start()
     try:
-        try:
+        if control is not None:
             if stdin_text is not None:
-                proc.stdin.write(stdin_text.encode("utf-8"))
-            proc.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass
+                control.send(stdin_text)
+        else:
+            try:
+                if stdin_text is not None:
+                    proc.stdin.write(stdin_text.encode("utf-8"))
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
         proc.wait()
     finally:
-        timer.cancel()
+        if control is not None:
+            control._finish()
+        else:
+            timer.cancel()
         # A killed child's grandchildren could still hold the pipes open.
         for reader in readers:
             reader.join(timeout=5)
@@ -260,19 +386,27 @@ def run_blocking(
     )
 
 
-def build_args(executable: Path, session_id: str) -> list[str]:
+def build_args(executable: Path, session_id: str, *, tools: bool = False) -> list[str]:
     # The prompt goes in on stdin, never on the command line.
-    return [
+    common = [
         str(executable),
         "-p",
-        "--output-format",
-        "stream-json",
         "--verbose",
         "--include-partial-messages",
         "--session-id",
         session_id,
-        *LOCKDOWN_ARGS,
     ]
+    if not tools:
+        return [*common, "--output-format", "stream-json", *LOCKDOWN_ARGS]
+    return [*common, "--output-format", "stream-json", *TOOLS_ARGS]
+
+
+def user_message_line(prompt: str) -> str:
+    """The prompt as the one stream-json message a tools run starts with."""
+    return json.dumps(
+        {"type": "user", "message": {"role": "user", "content": prompt}},
+        ensure_ascii=False,
+    )
 
 
 def _status_blocking() -> CliStatus:
@@ -321,22 +455,38 @@ async def get_status() -> CliStatus:
 
 
 def _run_blocking(
-    prompt: str, session_id: str, on_stdout_line: LineHandler | None
+    prompt: str,
+    session_id: str,
+    on_stdout_line: LineHandler | None,
+    control: RunControl | None,
 ) -> RunOutput:
     executable = resolve_claude_executable()
     if executable is None:
         raise ClaudeCliUnavailable("Claude CLI not found.")
+    tools = control is not None
+    args = (
+        build_args(executable, session_id, tools=True)
+        if tools
+        else build_args(executable, session_id)
+    )
     return run_blocking(
-        build_args(executable, session_id),
-        stdin_text=prompt,
+        args,
+        stdin_text=user_message_line(prompt) if tools else prompt,
         cwd=workspace_dir(),
         timeout_seconds=settings.LOCAL_TASK_TIMEOUT_SECONDS,
         max_output_bytes=settings.LOCAL_MAX_OUTPUT_BYTES * RAW_STREAM_SIZE_FACTOR,
         on_stdout_line=on_stdout_line,
+        control=control,
     )
 
 
 async def run_prompt(
-    prompt: str, session_id: str, on_stdout_line: LineHandler | None = None
+    prompt: str,
+    session_id: str,
+    on_stdout_line: LineHandler | None = None,
+    control: RunControl | None = None,
 ) -> RunOutput:
-    return await run_in_threadpool(_run_blocking, prompt, session_id, on_stdout_line)
+    """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
+    then asks over stdin/stdout before each tool call, and the caller answers
+    through `control`."""
+    return await run_in_threadpool(_run_blocking, prompt, session_id, on_stdout_line, control)

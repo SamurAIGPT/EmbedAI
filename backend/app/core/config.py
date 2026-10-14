@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     LOCAL_WORKSPACE_ROOT: str = ""
     LOCAL_TASK_TIMEOUT_SECONDS: int = 300
     LOCAL_MAX_OUTPUT_BYTES: int = 1_000_000
+    # Let local Claude use tools (read/write files, run commands) in its
+    # workspace. Every tool call the CLI would ask about waits for a human
+    # Allow/Deny in the web UI. Off by default: runs stay chat-only.
+    LOCAL_TOOLS_ENABLED: bool = False
+    # An approval nobody answers within this time is denied.
+    LOCAL_APPROVAL_TIMEOUT_SECONDS: int = 300
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 

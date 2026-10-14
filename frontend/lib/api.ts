@@ -179,6 +179,21 @@ export type LocalStatus = {
   available: boolean;
   reason: string | null;
   cli_version: string | null;
+  // LOCAL_TOOLS_ENABLED: Claude may use tools, each call waiting for Allow/Deny.
+  // Absent on a backend older than this feature, which means chat only.
+  tools_enabled?: boolean;
+};
+
+// A tool call local Claude is waiting for a person to allow or deny.
+export type LocalApproval = {
+  id: string;
+  task_id: number;
+  tool: string;
+  // One line naming what the call acts on (a command, a file path).
+  summary: string;
+  // The exact input the tool will run with if allowed.
+  input: Record<string, unknown>;
+  created_at: string;
 };
 
 export type Providers = {
@@ -265,6 +280,16 @@ export const api = {
 
   listLocalTasks: (userId: string) =>
     request<Task[]>(`/local/tasks?user_id=${encodeURIComponent(userId)}`),
+
+  listLocalApprovals: (taskId: number) =>
+    request<LocalApproval[]>(`/local/tasks/${taskId}/approvals`),
+
+  // 404 means the question is no longer waiting (answered, expired or the run ended).
+  answerLocalApproval: (taskId: number, approvalId: string, decision: "allow" | "deny") =>
+    request<{ status: string; decision: string }>(
+      `/local/tasks/${taskId}/approvals/${encodeURIComponent(approvalId)}`,
+      { method: "POST", body: JSON.stringify({ decision }) }
+    ),
 
   // Live events for one local run. Resolves when the stream ends for any
   // reason, so the caller must then read the task to learn the real outcome.

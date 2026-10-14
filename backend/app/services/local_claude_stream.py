@@ -15,6 +15,50 @@ import json
 from dataclasses import dataclass, field
 
 
+RESULT_PREVIEW_CHARS = 1000
+SUMMARY_CHARS = 300
+
+
+@dataclass
+class ToolEvent:
+    """Something about tools the stream said: `tool_started`, `tool_completed`,
+    `approval_requested`, `approval_cancelled` or `control_unsupported`."""
+
+    kind: str
+    data: dict
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _result_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
+def summarize_tool(name: str, tool_input: dict) -> str:
+    """One line saying what a tool call does, for the timeline. The approval
+    card shows the full input; this is only a label."""
+    key = {
+        "Bash": "command",
+        "Read": "file_path",
+        "Write": "file_path",
+        "Edit": "file_path",
+        "Glob": "pattern",
+        "Grep": "pattern",
+    }.get(name)
+    value = tool_input.get(key) if key else None
+    return _clip(value, SUMMARY_CHARS) if isinstance(value, str) else name
+
+
 @dataclass
 class FinalResult:
     """The CLI's own end-of-turn report (the `result` event)."""
@@ -41,10 +85,17 @@ class StreamNormalizer:
     _current_message: str | None = None
     _messages_with_deltas: set[str] = field(default_factory=set)
     _snapshot_seen: dict[str, str] = field(default_factory=dict)
+    _tool_events: list[ToolEvent] = field(default_factory=list)
+    _tools_started: set[str] = field(default_factory=set)
 
     @property
     def text(self) -> str:
         return "".join(self._text_parts)
+
+    def take_tool_events(self) -> list[ToolEvent]:
+        """Tool activity and approval requests seen since the last call."""
+        events, self._tool_events = self._tool_events, []
+        return events
 
     def feed(self, raw: bytes | str) -> list[str]:
         """Returns the text chunks (possibly none) this line adds."""
@@ -55,10 +106,98 @@ class StreamNormalizer:
         if kind == "stream_event":
             return self._stream_event(event)
         if kind == "assistant":
+            self._tool_uses(event)
             return self._assistant(event)
-        if kind == "result":
+        if kind == "user":
+            self._tool_results(event)
+        elif kind == "control_request":
+            self._control_request(event)
+        elif kind == "control_cancel_request":
+            request_id = event.get("request_id")
+            if isinstance(request_id, str):
+                self._tool_events.append(ToolEvent("approval_cancelled", {"request_id": request_id}))
+        elif kind == "result":
             self._result(event)
         return []
+
+    def _tool_uses(self, event: dict) -> None:
+        if event.get("parent_tool_use_id"):
+            return
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            tool_use_id = block.get("id")
+            name = block.get("name")
+            if not isinstance(tool_use_id, str) or not isinstance(name, str):
+                continue
+            if tool_use_id in self._tools_started:
+                continue  # the same call can appear in more than one snapshot
+            self._tools_started.add(tool_use_id)
+            tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
+            self._tool_events.append(
+                ToolEvent(
+                    "tool_started",
+                    {
+                        "tool_use_id": tool_use_id,
+                        "tool": name,
+                        "summary": summarize_tool(name, tool_input),
+                    },
+                )
+            )
+
+    def _tool_results(self, event: dict) -> None:
+        if event.get("parent_tool_use_id"):
+            return
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_use_id = block.get("tool_use_id")
+            if not isinstance(tool_use_id, str):
+                continue
+            self._tool_events.append(
+                ToolEvent(
+                    "tool_completed",
+                    {
+                        "tool_use_id": tool_use_id,
+                        "is_error": bool(block.get("is_error")),
+                        "preview": _clip(_result_text(block.get("content")), RESULT_PREVIEW_CHARS),
+                    },
+                )
+            )
+
+    def _control_request(self, event: dict) -> None:
+        request = event.get("request")
+        request_id = event.get("request_id")
+        if not isinstance(request, dict) or not isinstance(request_id, str):
+            return
+        if request.get("subtype") != "can_use_tool":
+            # Any other question from the CLI is unknown to us; it is answered
+            # with a refusal by the caller rather than silently ignored.
+            self._tool_events.append(ToolEvent("control_unsupported", {"request_id": request_id}))
+            return
+        tool_input = request.get("input")
+        name = request.get("tool_name")
+        self._tool_events.append(
+            ToolEvent(
+                "approval_requested",
+                {
+                    "request_id": request_id,
+                    "tool": name if isinstance(name, str) else "unknown",
+                    "tool_use_id": request.get("tool_use_id")
+                    if isinstance(request.get("tool_use_id"), str)
+                    else None,
+                    "input": tool_input if isinstance(tool_input, dict) else {},
+                },
+            )
+        )
 
     def _decode(self, raw: bytes | str) -> dict | None:
         try:

@@ -74,7 +74,7 @@ Fill in `backend/.env`:
 
 | Var | Required | Notes |
 |---|---|---|
-| `BOAT_API_KEY` | no (optional provider) | From the Boat dashboard. Leave empty to run without Boat (for example with only local Claude); anything that needs a Boat sandbox then answers "Boat is not configured". Without Boat the app is chat-only for now: local Claude cannot use tools or files, and schedules, Telegram tasks and GitHub push need Boat. If set, `HOOK_TOKEN` and `PERMISSION_HOOK_BASE_URL` are also required. |
+| `BOAT_API_KEY` | no (optional provider) | From the Boat dashboard. Leave empty to run without Boat (for example with only local Claude); anything that needs a Boat sandbox then answers "Boat is not configured". Without Boat the app is chat-only unless you enable local tools (`LOCAL_TOOLS_ENABLED`, see [SETUP.md](docs/SETUP.md#tools-and-approvals-local-claude)); schedules, Telegram tasks and GitHub push need Boat. If set, `HOOK_TOKEN` and `PERMISSION_HOOK_BASE_URL` are also required. |
 | `BOAT_BASE_URL` | no | Defaults to `https://boat.dev/api/v1`. |
 | `BOAT_ORG_ID` | see note above | Team/org id (e.g. `team_...`) to attach to sandbox creation so it bills the org instead of your personal account. |
 | `PARALLEL_SEARCH_ENABLED` | no | Set to `true` to add free Parallel web search and page fetching to Claude tasks. Defaults to `false`. See [Optional web search](#optional-web-search). |
@@ -306,9 +306,13 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
 
 ### Local Claude (experimental)
 
-Optionally run chat-only prompts through your own signed-in `claude` CLI on the
+Optionally run prompts through your own signed-in `claude` CLI on the
 machine running the backend, with no Boat sandbox. It is off by default and
-only usable from that machine. The answer streams into the page as it is written. See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
+only usable from that machine. The answer streams into the page as it is written.
+It is chat-only unless you set `LOCAL_TOOLS_ENABLED=true`, which lets Claude
+read and write files in its workspace folder and run commands, each call waiting
+for your Allow or Deny in the page (an allowed command runs as you, with no
+sandbox). See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
 
 ## Known limitations
 

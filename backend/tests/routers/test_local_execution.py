@@ -69,6 +69,7 @@ async def test_disabled_flag_refuses_everything(db_session, user_id, monkeypatch
     assert created.status_code == 403
     assert status.json() == {
         "enabled": False, "available": False, "reason": None, "cli_version": None,
+        "tools_enabled": False,
     }
 
 
@@ -109,7 +110,15 @@ async def test_status_reports_ready_cli(db_session, ready_cli):
         status = await client.get("/api/v1/local/status")
     assert status.json() == {
         "enabled": True, "available": True, "reason": None, "cli_version": "9.9.9",
+        "tools_enabled": False,
     }
+
+
+async def test_status_reports_whether_tools_are_on(db_session, ready_cli, monkeypatch):
+    monkeypatch.setattr(settings, "LOCAL_TOOLS_ENABLED", True)
+    async with client_for(local_app(db_session)) as client:
+        status = await client.get("/api/v1/local/status")
+    assert status.json()["tools_enabled"] is True
 
 
 async def test_status_explains_a_signed_out_cli(db_session, monkeypatch):

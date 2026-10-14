@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, LocalStatus, RunEvent, Task } from "@/lib/api";
+import { api, ApiError, LocalApproval, LocalStatus, RunEvent, Task } from "@/lib/api";
 import { Button, ErrorText } from "./Card";
 
 // Local runs belong to whoever uses this machine's browser, not to a guest or
@@ -25,9 +25,64 @@ function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-// Runs Claude through the user's own signed-in CLI on this machine. Chat only:
-// Claude has no tools here, so it can answer but cannot touch files or run
-// commands. Hidden entirely unless the backend enables it.
+// One tool call in a run, as shown in the timeline.
+type ToolStep = {
+  id: string;
+  tool: string;
+  summary: string;
+  state: "running" | "done" | "error";
+  preview: string;
+};
+
+// A value is shown exactly as it will be used, so a person approves what runs:
+// strings verbatim (a command, file contents), anything else as JSON.
+function formatInput(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function ApprovalCard({
+  approval,
+  disabled,
+  onAnswer,
+}: {
+  approval: LocalApproval;
+  disabled: boolean;
+  onAnswer: (decision: "allow" | "deny") => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-amber-400 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
+      <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+        Claude wants to use <span className="font-mono">{approval.tool}</span>. It will not run
+        until you allow it.
+      </p>
+      <dl className="space-y-1">
+        {Object.entries(approval.input).map(([key, value]) => (
+          <div key={key}>
+            <dt className="text-xs text-zinc-500">{key}</dt>
+            <dd>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                {formatInput(value)}
+              </pre>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex gap-2">
+        <Button onClick={() => onAnswer("allow")} disabled={disabled}>
+          Allow
+        </Button>
+        <Button onClick={() => onAnswer("deny")} disabled={disabled}>
+          Deny
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Runs Claude through the user's own signed-in CLI on this machine. With tools
+// off (the default) it is chat only. With tools on, Claude can read and write
+// files in its workspace and run commands, and every call it would ask about
+// waits here for Allow or Deny. Hidden entirely unless the backend enables it.
 //
 // The answer appears as Claude writes it (server-sent events). The stream is
 // only a view: the outcome shown for a run always comes from the saved task,
@@ -37,6 +92,10 @@ export function LocalClaude() {
   const [status, setStatus] = useState<LocalStatus | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [liveText, setLiveText] = useState<Record<number, string>>({});
+  const [steps, setSteps] = useState<Record<number, ToolStep[]>>({});
+  const [approvals, setApprovals] = useState<Record<number, LocalApproval[]>>({});
+  const [answering, setAnswering] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,13 +106,32 @@ export function LocalClaude() {
   const upsert = (task: Task) =>
     setTasks((prev) => [task, ...prev.filter((t) => t.id !== task.id)].sort((a, b) => b.id - a.id));
 
-  const clearLive = (taskId: number) =>
+  const clearLive = (taskId: number) => {
     setLiveText((prev) => {
       if (!(taskId in prev)) return prev;
       const next = { ...prev };
       delete next[taskId];
       return next;
     });
+    // A finished run waits for nothing. The timeline stays for this page visit.
+    setApprovals((prev) => {
+      if (!(taskId in prev)) return prev;
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+  };
+
+  // The endpoint is the source of truth for what is waiting; events only say
+  // that it is worth asking again.
+  const refreshApprovals = async (taskId: number) => {
+    try {
+      const pending = await api.listLocalApprovals(taskId);
+      setApprovals((prev) => ({ ...prev, [taskId]: pending }));
+    } catch {
+      // transient, or an older backend without approvals
+    }
+  };
 
   const stopPolling = (taskId: number) => {
     const handle = pollers.current.get(taskId);
@@ -70,6 +148,8 @@ export function LocalClaude() {
         if (!ACTIVE_STATUSES.includes(updated.status)) {
           stopPolling(taskId);
           clearLive(taskId);
+        } else {
+          void refreshApprovals(taskId);
         }
       } catch {
         // transient — keep polling
@@ -88,9 +168,57 @@ export function LocalClaude() {
       // until the saved task is read right after the stream closes.
       const finalText = asText(event.data.result);
       if (finalText) setLiveText((prev) => ({ ...prev, [taskId]: finalText }));
+    } else if (event.type === "tool.started") {
+      const id = asText(event.data.tool_use_id);
+      if (!id) return;
+      const step: ToolStep = {
+        id,
+        tool: asText(event.data.tool) || "tool",
+        summary: asText(event.data.summary),
+        state: "running",
+        preview: "",
+      };
+      // A replayed event may already be known: keep one entry per call.
+      setSteps((prev) => {
+        const list = prev[taskId] ?? [];
+        return list.some((s) => s.id === id) ? prev : { ...prev, [taskId]: [...list, step] };
+      });
+    } else if (event.type === "tool.completed") {
+      const id = asText(event.data.tool_use_id);
+      const failed = event.data.is_error === true;
+      const preview = asText(event.data.preview);
+      setSteps((prev) => ({
+        ...prev,
+        [taskId]: (prev[taskId] ?? []).map((s) =>
+          s.id === id ? { ...s, state: failed ? "error" : "done", preview } : s
+        ),
+      }));
+    } else if (event.type === "approval.requested" || event.type === "approval.resolved") {
+      void refreshApprovals(taskId);
     }
     // turn.started and runtime.status need no display: a stream that ends
     // early is handled by reading the task and polling.
+  };
+
+  const answerApproval = async (
+    taskId: number,
+    approvalId: string,
+    decision: "allow" | "deny"
+  ) => {
+    setApprovalError(null);
+    setAnswering(approvalId);
+    try {
+      await api.answerLocalApproval(taskId, approvalId, decision);
+    } catch (err) {
+      // 404: it was answered elsewhere, expired, or the run ended. Not an error
+      // worth showing; the refresh below removes the card.
+      if (!(err instanceof ApiError && err.status === 404)) {
+        setApprovalError(err instanceof ApiError ? err.message : "Could not send your answer.");
+      }
+    } finally {
+      setAnswering(null);
+      await refreshApprovals(taskId);
+    }
   };
 
   // Shows the answer as it arrives. Whatever ends the stream (finished, lagged,
@@ -99,6 +227,8 @@ export function LocalClaude() {
     if (followers.current.has(taskId)) return;
     const controller = new AbortController();
     followers.current.set(taskId, controller);
+    // A page opened while Claude is already waiting must show the question.
+    void refreshApprovals(taskId);
     api
       .streamLocalTask(taskId, (event) => applyEvent(taskId, event), controller.signal)
       .catch(() => {
@@ -173,14 +303,66 @@ export function LocalClaude() {
     const live = liveText[task.id];
     const answer = active && live !== undefined ? live : task.result;
 
+    const taskSteps = steps[task.id] ?? [];
+    const pending = approvals[task.id] ?? [];
+
+    const timeline = taskSteps.length > 0 && (
+      <ul className="mb-3 space-y-1">
+        {taskSteps.map((step) => (
+          <li key={step.id} className="text-xs" title={step.preview || undefined}>
+            <span
+              className={
+                step.state === "error"
+                  ? "text-red-600 dark:text-red-400"
+                  : step.state === "done"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-amber-600 dark:text-amber-400"
+              }
+            >
+              {step.state === "running" ? "…" : step.state === "done" ? "✓" : "✗"}
+            </span>{" "}
+            <span className="font-mono text-zinc-700 dark:text-zinc-300">{step.tool}</span>{" "}
+            <span className="break-all text-zinc-500">{step.summary}</span>
+          </li>
+        ))}
+      </ul>
+    );
+
+    const questions = pending.length > 0 && (
+      <div className="mb-3 space-y-2">
+        {pending.map((approval) => (
+          <ApprovalCard
+            key={approval.id}
+            approval={approval}
+            disabled={answering === approval.id}
+            onAnswer={(decision) => answerApproval(task.id, approval.id, decision)}
+          />
+        ))}
+        <ErrorText message={approvalError} />
+      </div>
+    );
+
     if (active && !answer) {
-      return <p className="text-xs text-zinc-500">Waiting for Claude…</p>;
+      return (
+        <>
+          {timeline}
+          {questions}
+          {pending.length === 0 && <p className="text-xs text-zinc-500">Waiting for Claude…</p>}
+        </>
+      );
     }
     if (task.status === "succeeded" && !answer?.trim()) {
-      return <p className="text-xs text-zinc-500">Claude returned an empty response.</p>;
+      return (
+        <>
+          {timeline}
+          <p className="text-xs text-zinc-500">Claude returned an empty response.</p>
+        </>
+      );
     }
     return (
       <>
+        {timeline}
+        {questions}
         {answer && (
           <pre className="whitespace-pre-wrap break-words text-xs text-zinc-700 dark:text-zinc-300">
             {answer}
@@ -218,8 +400,9 @@ export function LocalClaude() {
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">
-            Runs on this computer with your own signed-in Claude CLI. Chat only: Claude cannot use
-            tools, read files or run commands here yet.
+            {status.tools_enabled
+              ? "Runs on this computer with your own signed-in Claude CLI. Claude can read and write files in its workspace folder and run commands, but it asks first: nothing it is unsure about runs until you press Allow."
+              : "Runs on this computer with your own signed-in Claude CLI. Chat only: Claude cannot use tools, read files or run commands here. Set LOCAL_TOOLS_ENABLED=true in backend/.env to let it ask to."}
           </p>
           <textarea
             value={prompt}

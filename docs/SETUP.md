@@ -50,7 +50,7 @@ Tested on Windows with PostgreSQL 17 in Docker (`postgres:17-alpine`); the code 
 
 ## Local Claude (experimental)
 
-Runs Claude through the `claude` CLI already installed and signed in on the machine that runs the backend, instead of a Boat sandbox. It is **chat-only**: tools, MCP servers and skills are all disabled, so Claude can answer but cannot read files or run commands. The answer streams into the page as Claude writes it; there is no conversation history beyond a list of past answers yet.
+Runs Claude through the `claude` CLI already installed and signed in on the machine that runs the backend, instead of a Boat sandbox. By default it is **chat-only**: tools, MCP servers and skills are all disabled, so Claude can answer but cannot read files or run commands. With `LOCAL_TOOLS_ENABLED=true` it can also use tools, each one waiting for your approval (see [Tools and approvals](#tools-and-approvals-local-claude)). The answer streams into the page as Claude writes it; there is no conversation history beyond a list of past answers yet.
 
 1. Install Claude Code and sign in (`claude auth login`).
 2. In `backend/.env` set `LOCAL_EXECUTION_ENABLED=true` and restart the backend. Optionally set `LOCAL_CLAUDE_CLI_PATH` to the full path of the real `claude` executable (on Windows the npm `claude.cmd` shim is resolved to the real `claude.exe` automatically) and `LOCAL_WORKSPACE_ROOT` (default `~/.open-dots/local`).
@@ -58,9 +58,23 @@ Runs Claude through the `claude` CLI already installed and signed in on the mach
 
 Who can use it: only requests that come from this machine, with a `localhost`, `127.0.0.1` or `[::1]` Host header, no proxy or tunnel headers, and a browser Origin listed in `FRONTEND_ORIGINS` (for example, opening the UI at `http://127.0.0.1:3000` requires adding that origin). Anything else, including schedules, Telegram and the older task endpoints, is refused. There is no password or token: anyone who can already run programs as you on this machine can use it. Do not enable it on a shared or publicly reachable server.
 
-Settings: `LOCAL_EXECUTION_ENABLED` (default `false`), `LOCAL_ALLOWED_HOSTS`, `LOCAL_CLAUDE_CLI_PATH`, `LOCAL_WORKSPACE_ROOT`, `LOCAL_TASK_TIMEOUT_SECONDS` (default 300), `LOCAL_MAX_OUTPUT_BYTES` (default 1000000; the limit on the answer text, and the raw CLI stream may be up to 8 times larger).
+Settings: `LOCAL_EXECUTION_ENABLED` (default `false`), `LOCAL_TOOLS_ENABLED` (default `false`), `LOCAL_APPROVAL_TIMEOUT_SECONDS` (default 300), `LOCAL_ALLOWED_HOSTS`, `LOCAL_CLAUDE_CLI_PATH`, `LOCAL_WORKSPACE_ROOT`, `LOCAL_TASK_TIMEOUT_SECONDS` (default 300), `LOCAL_MAX_OUTPUT_BYTES` (default 1000000; the limit on the answer text, and the raw CLI stream may be up to 8 times larger).
 
 Streaming: the page opens a server-sent-events stream (`GET /api/v1/local/tasks/{id}/events`) for each run and shows the text as it arrives; the final result and any error always come from the saved task. Closing or refreshing the tab does not stop a run (it ends or times out on its own), and reopening the page shows the answer so far. Streams are held in memory, so live streaming needs a single backend process; with several workers, or after a restart, the page falls back to polling the saved task. Nothing is replayed after a disconnect.
+
+### Tools and approvals (local Claude)
+
+Set `LOCAL_TOOLS_ENABLED=true` in `backend/.env` and restart the backend. Claude can then use six tools in its workspace folder (`LOCAL_WORKSPACE_ROOT`, default `~/.open-dots/local/workspace`): `Read`, `Write`, `Edit`, `Glob`, `Grep` and `Bash`. There is no web access, no sub-agents and no MCP servers.
+
+How it works: the page shows each tool call as a step in a timeline. When the CLI would ask a person before running something, the run stops and the page shows a card with the tool and its exact input (the full command, the file path and the new contents) and **Allow** and **Deny** buttons. Nothing runs until you press Allow, and what runs is exactly what the card showed. Deny, an unanswered question (`LOCAL_APPROVAL_TIMEOUT_SECONDS`, default 300) or a run that ends all count as a refusal; Claude is told and carries on. There is no "always allow". A request too large to be shown in full (over 50000 characters) is refused rather than approved unseen. Time spent waiting for you does not count towards `LOCAL_TASK_TIMEOUT_SECONDS`.
+
+What you must know before turning it on:
+
+- Once you press Allow, a command runs **as you, on this computer, without a sandbox**. Read the command before approving. This is the same trust you give the Claude CLI in a terminal.
+- The CLI, not this app, decides which calls ask. In its default mode it asks for writes, for anything outside the workspace folder, and for commands it does not recognise as read-only. A few read-only commands (for example `echo` and `ls`) and reads inside the workspace run without asking, and permission rules in your own Claude settings are not turned off by this app, so a rule there that allows something will let it run unasked. Tested with Claude Code 2.1.232: a write inside the workspace, a read of `C:\Windows\win.ini` and `python -c ...` each asked; denying each stopped it.
+- Approvals and the timeline live in memory, like the answer stream (single backend process). The timeline is shown while you keep the page open and is not saved; the saved task keeps only the answer. If the backend restarts during a run, the run ends as interrupted.
+- Each local task is a new conversation. Threads and resuming come later.
+- Anyone who can already reach the local routes (see "Who can use it") can approve, because there is no password. Keep it off shared machines.
 
 Tested on Windows with Claude Code 2.1.232. The code is written for Windows, macOS and Linux (OS-specific parts are guarded in `local_claude_runner.py`: the npm `claude.cmd` shim, `taskkill` versus `killpg`, console-window flags), but macOS and Linux have not been run yet.
 

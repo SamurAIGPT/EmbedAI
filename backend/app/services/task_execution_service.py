@@ -17,9 +17,12 @@ from app.db.transactions import begin_write, release_snapshot
 from app.services import local_claude_runner, user_credential_service
 from app.services.box_operations import ascii_box_service
 from app.services.local_access_policy import LocalAccessGrant
-from app.services.local_claude_stream import StreamNormalizer
+from app.services.local_approval_broker import broker as approval_broker
+from app.services.local_claude_stream import StreamNormalizer, ToolEvent
 from app.services.local_run_hub import (
     TEXT_DELTA,
+    TOOL_COMPLETED,
+    TOOL_STARTED,
     TURN_COMPLETED,
     TURN_FAILED,
     TURN_STARTED,
@@ -412,8 +415,9 @@ async def execute_local_task(
     user_id: str,
     prompt_text: str,
 ) -> Tasks:
-    """Start a chat-only run on the user's own Claude CLI and return it while
-    it is still running; callers poll the task like any other."""
+    """Start a run on the user's own Claude CLI (chat-only, or with tools that
+    wait for approval when LOCAL_TOOLS_ENABLED) and return it while it is still
+    running; callers poll the task like any other."""
     if not isinstance(access, LocalAccessGrant):
         raise PermissionError("Local execution requires an access grant")
 
@@ -452,10 +456,16 @@ def _clip_error(message: str) -> str:
 
 
 def _local_run_values(
-    normalizer: StreamNormalizer, output: local_claude_runner.RunOutput
+    normalizer: StreamNormalizer,
+    output: local_claude_runner.RunOutput,
+    *,
+    tools: bool = False,
 ) -> dict:
     """What to record for a finished local run. Whatever text Claude had
-    streamed is kept even when the run failed, so a partial answer survives."""
+    streamed is kept even when the run failed, so a partial answer survives.
+
+    With tools on, a refused tool call is not a failure: the person said no (or
+    did not answer) and Claude carried on, so the run's own result decides."""
     streamed = normalizer.text
     final = normalizer.final
     stderr = output.stderr.strip()
@@ -474,7 +484,7 @@ def _local_run_values(
             error = "Claude ended without a result"
     elif final.is_error:
         error = final.text or stderr or "Claude reported an error"
-    elif final.permission_denied:
+    elif final.permission_denied and not tools:
         error = "Claude tried to use a tool, which is turned off for local chat"
 
     if error is not None:
@@ -503,10 +513,50 @@ def terminal_event_for(task: Tasks) -> tuple[str, dict]:
     }
 
 
+def _handle_tool_event(
+    task_id: int, event: ToolEvent, control: local_claude_runner.RunControl
+) -> None:
+    """Runs on the event loop. Publishes tool activity, and turns the CLI's
+    questions into approvals a person answers in the UI."""
+    data = event.data
+    if event.kind == "tool_started":
+        run_hub.publish(task_id, TOOL_STARTED, data)
+    elif event.kind == "tool_completed":
+        run_hub.publish(task_id, TOOL_COMPLETED, data)
+    elif event.kind == "approval_requested":
+        approval_broker.request(
+            task_id,
+            data["request_id"],
+            data["tool"],
+            data["input"],
+            lambda payload: control.send(json.dumps(payload, ensure_ascii=False)),
+            on_open=control.pause_deadline,
+            on_close=control.resume_deadline,
+        )
+    elif event.kind == "approval_cancelled":
+        approval_broker.cancel_request(task_id, data["request_id"])
+    elif event.kind == "control_unsupported":
+        # A question this app does not know how to ask a person: say no.
+        control.send(
+            json.dumps(
+                {
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "error",
+                        "request_id": data["request_id"],
+                        "error": "Not supported by this app.",
+                    },
+                }
+            )
+        )
+
+
 async def _run_local_task(task_id: int) -> None:
     loop = asyncio.get_running_loop()
     run_hub.start(task_id)
     normalizer = StreamNormalizer(max_text_bytes=settings.LOCAL_MAX_OUTPUT_BYTES)
+    tools = settings.LOCAL_TOOLS_ENABLED
+    control = local_claude_runner.RunControl() if tools else None
 
     def on_line(line: bytes) -> bool:
         # Runs on the runner's reader thread; the hub is only touched on the
@@ -515,6 +565,12 @@ async def _run_local_task(task_id: int) -> None:
             loop.call_soon_threadsafe(
                 run_hub.publish, task_id, TEXT_DELTA, {"text": chunk, "mode": "append"}
             )
+        if control is not None:
+            for event in normalizer.take_tool_events():
+                loop.call_soon_threadsafe(_handle_tool_event, task_id, event, control)
+            if normalizer.final is not None:
+                # The turn is over; closing stdin lets the CLI exit.
+                control.close_stdin()
         return normalizer.over_limit
 
     terminal: tuple[str, dict] | None = None
@@ -526,10 +582,11 @@ async def _run_local_task(task_id: int) -> None:
             await release_snapshot(db)
             run_hub.publish(task_id, TURN_STARTED)
             try:
+                extra = {"control": control} if control is not None else {}
                 output = await local_claude_runner.run_prompt(
-                    task.prompt_text, task.session_id, on_line
+                    task.prompt_text, task.session_id, on_line, **extra
                 )
-                values = _local_run_values(normalizer, output)
+                values = _local_run_values(normalizer, output, tools=tools)
             except local_claude_runner.ClaudeCliUnavailable as exc:
                 values = {"status": "failed", "error": str(exc)}
             except Exception:
@@ -550,6 +607,8 @@ async def _run_local_task(task_id: int) -> None:
     except Exception:
         logger.exception("could not record local task result", task_id=task_id)
     finally:
+        # Questions still open when the run ends can no longer matter.
+        approval_broker.cancel_run(task_id)
         if terminal is None:
             terminal = (
                 TURN_FAILED,
@@ -644,9 +703,10 @@ async def sync_active_tasks() -> None:
         )
         await db.commit()
 
-        await db.execute(
-            update(Tasks)
-            .where(
+        # A run this process is still driving is not stale, however long it has
+        # waited for a person to answer an approval.
+        stale = await db.execute(
+            select(Tasks.id).where(
                 Tasks.provider == LOCAL_PROVIDER,
                 Tasks.status == "running",
                 Tasks.updated_at
@@ -656,6 +716,11 @@ async def sync_active_tasks() -> None:
                     + LOCAL_STALE_GRACE_SECONDS
                 ),
             )
+        )
+        stale_ids = [i for i in stale.scalars().all() if not run_hub.is_live(i)]
+        await db.execute(
+            update(Tasks)
+            .where(Tasks.id.in_(stale_ids), Tasks.status == "running")
             .values(
                 status="failed",
                 error="Local run was interrupted (the server stopped while it was running)",

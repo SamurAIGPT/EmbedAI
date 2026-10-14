@@ -17,7 +17,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F00 | Verified repo baseline and docs | Done |
 | F01 | Run Claude CLI locally from the web UI (loopback access policy, chat-only) | Done |
 | F02 | Stream assistant text and status (SSE) | Implemented, awaiting review |
-| F03 | Tool timeline and inline approvals | Planned |
+| F03 | Tool timeline and inline approvals | Implemented (opt-in, in memory), awaiting review |
 | F04 | Durable agents/threads/events and thread list | Planned |
 | F05 | Stop, restart and resume | Planned |
 | F06 | Multiple named agents with dedicated workspaces | Planned |

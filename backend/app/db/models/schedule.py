@@ -1,16 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Identity, Integer, String, Text, func
+from sqlalchemy import Boolean, Identity, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import BigIntPK, UTCDateTime
 
 
 class Schedule(Base):
     __tablename__ = "schedule"
 
     id: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
+        BigIntPK, Identity(always=True), primary_key=True
     )
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
@@ -20,10 +21,10 @@ class Schedule(Base):
     timezone: Mapped[str] = mapped_column(String, nullable=False, default="UTC")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     next_run_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        UTCDateTime, nullable=False, index=True
     )
     last_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime, nullable=True
     )
     # Why the most recent occurrence was skipped (late, or previous run still
     # active). Failures after a run starts are recorded on its Tasks row.
@@ -37,13 +38,13 @@ class Schedule(Base):
     # Soft delete so Tasks.schedule_id keeps pointing at the schedule that
     # produced it.
     deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UTCDateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime,
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,

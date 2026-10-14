@@ -33,3 +33,12 @@ Format: decision, evidence, rejected alternative, consequence, date.
 - **Rejected:** persisting every event now (premature schema); relying on the stream for the outcome (a dropped connection could then look like success).
 - **Consequence:** After a server restart, or when a different worker serves the request, a stream can only report the saved task state, and the UI falls back to polling the task. Live streaming therefore supports one backend process. The envelope already carries `run_id` and `seq`, so F04 can store events and add replay without changing what clients receive.
 - **Date:** 2026-10-13
+
+
+## D-005 — SQLite is an opt-in second database; PostgreSQL stays the default
+
+- **Decision:** The backend can use a local SQLite file (`DATABASE_BACKEND=sqlite`, file `SQLITE_PATH`, default `~/.open-dots/open-dots.db`) alongside PostgreSQL. With `DATABASE_BACKEND` empty it uses PostgreSQL exactly as before. A new SQLite file is created from a frozen schema baseline stamped at the current Alembic revision, because the existing PostgreSQL migration chain alters constraints and uses `now()` defaults that SQLite cannot run; later migrations run on both. Models use dialect-aware types (integer identity key and a UTC datetime type on SQLite) that compile to the same PostgreSQL DDL as before, which a snapshot test checks.
+- **Evidence:** A trial run of the existing test suite on SQLite passed once these two type differences were handled, and a copy of a development PostgreSQL database into SQLite preserved every row, id and timestamp. Concurrency, not schema, is the remaining risk: SQLite has no row locks, so the permission-approval polling, reply admission and schedule claiming need dedicated work before SQLite can be recommended.
+- **Rejected:** inferring SQLite from missing `POSTGRES_*` values (those have defaults that match docker-compose, so an existing setup may have none and would silently move to an empty database); making SQLite the default now (the Boat permission flow is not safe on it yet); removing PostgreSQL (existing data, Boat and Telegram deployments).
+- **Consequence:** Two databases to test; tests run on either (`DATABASE_BACKEND=sqlite uv run pytest` uses a temporary file, never the user's database). The default can be revisited, with notice, once concurrency is hardened and a tested data-migration tool exists.
+- **Date:** 2026-10-14

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Starts the whole stack for local development: Postgres (docker), migrations,
+# Starts the whole stack for local development: the database (SQLite, or Postgres in
+# docker when configured), migrations,
 # the FastAPI app, the Telegram bot, and the web UI. Works under bash on
 # Linux/macOS and Git Bash on Windows.
 #
@@ -60,19 +61,36 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
-echo "==> Starting Postgres (docker compose)"
-docker compose up -d
+# Which database to use. This mirrors Settings.DATABASE_KIND in
+# backend/app/core/config.py: SQLite only when DATABASE_BACKEND=sqlite is set;
+# otherwise PostgreSQL, as before, so an existing setup never changes database.
+db_backend="$(printf '%s' "${DATABASE_BACKEND:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$db_backend" in
+  sqlite) USE_POSTGRES=0 ;;
+  ""|postgres|postgresql) USE_POSTGRES=1 ;;
+  *)
+    echo "DATABASE_BACKEND must be sqlite, postgres or empty (got: $db_backend)." >&2
+    exit 1
+    ;;
+esac
 
-echo "==> Waiting for Postgres to be healthy"
-POSTGRES_CONTAINER="$(docker compose ps -q postgres)"
-for _ in $(seq 1 30); do
-  status="$(docker inspect --format='{{.State.Health.Status}}' "$POSTGRES_CONTAINER" 2>/dev/null || echo "starting")"
-  [ "$status" = "healthy" ] && break
-  sleep 1
-done
-if [ "$status" != "healthy" ]; then
-  echo "Postgres did not become healthy in time." >&2
-  exit 1
+if [ "$USE_POSTGRES" -eq 1 ]; then
+  echo "==> Starting Postgres (docker compose)"
+  docker compose up -d
+
+  echo "==> Waiting for Postgres to be healthy"
+  POSTGRES_CONTAINER="$(docker compose ps -q postgres)"
+  for _ in $(seq 1 30); do
+    status="$(docker inspect --format='{{.State.Health.Status}}' "$POSTGRES_CONTAINER" 2>/dev/null || echo "starting")"
+    [ "$status" = "healthy" ] && break
+    sleep 1
+  done
+  if [ "$status" != "healthy" ]; then
+    echo "Postgres did not become healthy in time." >&2
+    exit 1
+  fi
+else
+  echo "==> Using SQLite (no Docker needed)"
 fi
 
 echo "==> Installing backend dependencies (uv sync)"

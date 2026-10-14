@@ -47,7 +47,7 @@ Open Dots gives individuals and developers an inspectable workspace they can run
 
 - [uv](https://docs.astral.sh/uv/) for Python dependency management
 - [Node.js](https://nodejs.org/) (20.9+) and npm, for the web UI (required by Next.js 16)
-- [Docker](https://docs.docker.com/get-docker/) (for Postgres)
+- [Docker](https://docs.docker.com/get-docker/) (for Postgres; not needed with the experimental SQLite option, see `DATABASE_BACKEND` below)
 - Bash (Git Bash on Windows works fine) to use `scripts/dev.sh`
 - A [Boat API key](https://docs.boat.dev/api-keys) for sandbox creation. If
   it belongs to a personal account that also has an org/team on a paid plan,
@@ -85,6 +85,8 @@ Fill in `backend/.env`:
 | `HOOK_TOKEN` | yes | Shared secret the permission hook's caller (the sandbox) must present, so only your backend's own sandboxes can submit permission decisions. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 | `PERMISSION_HOOK_BASE_URL` | yes | The public URL from the ngrok-or-similar prerequisite above, no trailing slash — e.g. `https://your-tunnel.ngrok-free.app`. Baked into each sandbox's `.claude/settings.json` at task start. |
 | `POSTGRES_*` | no | Defaults match `backend/docker-compose.yml`. |
+| `DATABASE_BACKEND` | no | Empty (the default) means PostgreSQL. Set `sqlite` to use a local SQLite file instead (experimental, no Docker). An existing setup never changes database unless you set this. See [docs/SETUP.md](docs/SETUP.md#database). |
+| `SQLITE_PATH` | no | SQLite file when `DATABASE_BACKEND=sqlite`. Defaults to `~/.open-dots/open-dots.db`. |
 
 The web UI (`frontend/`) has its own `.env.example` — `scripts/dev.sh` copies
 it to `.env.local` automatically on first run. Copy it yourself if you're

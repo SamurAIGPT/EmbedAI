@@ -2,11 +2,24 @@
 
 The authoritative quick start is the [README](../README.md#quick-start). Summary:
 
-**Prerequisites:** `uv`, Node.js 20.9+ with npm, Docker (for Postgres), Bash (Git Bash on Windows), a Boat API key, and optionally a Telegram bot token.
+**Prerequisites:** `uv`, Node.js 20.9+ with npm, Docker (for Postgres; not needed with the experimental SQLite option), Bash (Git Bash on Windows), a Boat API key, and optionally a Telegram bot token.
 
 **Run:** configure `backend/.env` from `backend/.env.example` and `frontend/.env` from `frontend/.env.example`, then start the stack with `scripts/dev.sh`.
 
 Component-specific details: [backend/README.md](../backend/README.md), [frontend/README.md](../frontend/README.md).
+
+## Database
+
+**PostgreSQL is the default** and is what the Docker setup above starts. Nothing changes for an existing installation.
+
+**SQLite (experimental, opt-in):** one local file, no Docker. Set `DATABASE_BACKEND=sqlite` in `backend/.env` (optionally `SQLITE_PATH`; the default is `~/.open-dots/open-dots.db`), then run `uv run alembic upgrade head` (or `scripts/dev.sh`, which skips Docker for SQLite). A new SQLite file is created from a frozen baseline of the current schema and stamped at the current revision; an existing file is upgraded like any other. A SQLite file that is not one this app created (tables but no version table, an empty version table, missing app tables, or not a SQLite file at all) is refused and left byte-for-byte unchanged.
+
+What to know before using SQLite:
+
+- The database holds encrypted credentials. The file is created readable only by you on Linux and macOS; on Windows it lives in your profile folder. Keep it out of synced or shared folders. Back it up while the app is stopped, or with SQLite's backup command; do not copy the file while the app is running.
+- It runs in WAL mode with foreign keys on and a 5 second busy timeout. Writers take turns, so several processes (API, bot, scheduler) can share the file, but the concurrency handling is still being hardened: the Boat permission-approval flow (a sandbox waiting on an approval) is known to fail with `database is locked` on SQLite, and reply admission and schedule claiming have not been rebuilt without PostgreSQL row locks yet. Use PostgreSQL for Boat sandboxes and schedules for now; SQLite is suitable for trying the local Claude path.
+- There is no tool yet to copy existing PostgreSQL data into SQLite. A trial copy of a development database kept all rows, ids and timestamps, but a supported migration tool with backup and rollback is planned.
+- Tested on Windows only. The code avoids OS-specific behaviour (paths use forward slashes in the database URL, POSIX file modes are applied only where they exist) but Linux and macOS runs are still to do.
 
 ## Local Claude (experimental)
 

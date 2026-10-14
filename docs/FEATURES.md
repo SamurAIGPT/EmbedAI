@@ -7,7 +7,7 @@ Shipped capabilities of the current prototype. Planned work is in [ROADMAP.md](R
 - Approval prompts for risky actions (file writes, shell commands, Git pushes) with remembered permission rules and a Git command classifier.
 - Continue completed tasks in the same Claude conversation from the web UI.
 - Schedule recurring prompts with failure tracking; results reported to Telegram-linked users.
-- Encrypted credential storage; sandbox, task, permission and schedule records in PostgreSQL.
+- Encrypted credential storage; sandbox, task, permission and schedule records in PostgreSQL (default), or in a local SQLite file when `DATABASE_BACKEND=sqlite` (experimental; see [SETUP.md](SETUP.md#database)).
 - Guest web mode without Telegram, optionally linked to a Telegram identity via link codes.
 
 - **Local Claude (experimental, off by default):** run a chat-only prompt through your own signed-in `claude` CLI on the same machine, from the web UI, with the answer appearing as Claude writes it. Claude has no tools in this mode (no files, no commands). Only usable from the machine running the backend. See [SETUP.md](SETUP.md#local-claude-experimental).

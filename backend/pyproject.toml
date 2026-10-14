@@ -18,6 +18,7 @@ dependencies = [
     "structlog>=26.1.0",
     "apscheduler>=3.11,<4",
     "tzdata>=2026.4",
+    "aiosqlite>=0.20",
 ]
 
 [tool.fastapi]

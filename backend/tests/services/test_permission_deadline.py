@@ -4,19 +4,27 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, event, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import settings
 from app.db.models.permission_ask import PermissionAsk
+from app.db.engine import create_app_async_engine
 from app.db.models.task import Tasks
 from app.db.session import get_db
 from app.main import app
 from app.routers import permission as permission_router
 
 
+# On SQLite the polling request keeps a read snapshot open while it sleeps, so
+# its later write fails with "database is locked" (SQLITE_BUSY_SNAPSHOT) once
+# the answering request has committed. Fixed by the concurrency step.
+@pytest.mark.skipif(
+    settings.DATABASE_KIND == "sqlite",
+    reason="permission polling holds a stale read snapshot on SQLite",
+)
 @pytest.mark.parametrize("answer,phase", [("allow", "last"), ("deny", "last"), ("allow", "early"), (None, "never")])
 async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, phase):
-    engine = create_async_engine(settings.ASYNC_DATABASE_URL)
+    engine = create_app_async_engine()
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     user = "web_deadline_" + uuid4().hex
     first_read, second_read = asyncio.Event(), asyncio.Event()

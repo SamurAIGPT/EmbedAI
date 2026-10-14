@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -11,6 +14,15 @@ class Settings(BaseSettings):
 
     # Opt-in web search and page fetching for Claude tasks, via HTTP MCP.
     PARALLEL_SEARCH_ENABLED: bool = False
+
+    # Which database to use: "sqlite" or "postgres". Empty means PostgreSQL, as
+    # it always has, so no existing setup changes database unless this is set.
+    # (Deliberately not inferred from the POSTGRES_* values: they all have
+    # defaults that match docker-compose, so a setup with none of them in .env
+    # is still a PostgreSQL setup.)
+    DATABASE_BACKEND: str = ""
+    # SQLite database file. Empty means ~/.open-dots/open-dots.db.
+    SQLITE_PATH: str = ""
 
     POSTGRES_USER: str = "vadoo"
     POSTGRES_PASSWORD: str = "vadoo"
@@ -60,13 +72,44 @@ class Settings(BaseSettings):
     def LOCAL_ALLOWED_HOST_LIST(self) -> list[str]:
         return [host.strip().lower() for host in self.LOCAL_ALLOWED_HOSTS.split(",") if host.strip()]
 
+    @field_validator("DATABASE_BACKEND")
+    @classmethod
+    def _check_database_backend(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value == "postgresql":
+            value = "postgres"
+        if value not in ("", "sqlite", "postgres"):
+            raise ValueError('DATABASE_BACKEND must be "sqlite", "postgres" or empty')
+        return value
+
+    @property
+    def DATABASE_KIND(self) -> str:
+        """"sqlite" only when DATABASE_BACKEND says so; PostgreSQL otherwise."""
+        return "sqlite" if self.DATABASE_BACKEND == "sqlite" else "postgres"
+
+    @property
+    def SQLITE_FILE(self) -> Path:
+        if self.SQLITE_PATH.strip():
+            return Path(self.SQLITE_PATH).expanduser()
+        return Path.home() / ".open-dots" / "open-dots.db"
+
     @property
     def ASYNC_DATABASE_URL(self) -> str:
+        if self.DATABASE_KIND == "sqlite":
+            return self._sqlite_url("sqlite+aiosqlite")
         return self._database_url("postgresql+asyncpg")
 
     @property
     def SYNC_DATABASE_URL(self) -> str:
+        if self.DATABASE_KIND == "sqlite":
+            return self._sqlite_url("sqlite")
         return self._database_url("postgresql+psycopg2")
+
+    def _sqlite_url(self, driver: str) -> str:
+        # as_posix: forward slashes work for SQLite on every OS.
+        return URL.create(driver, database=self.SQLITE_FILE.as_posix()).render_as_string(
+            hide_password=False
+        )
 
     def _database_url(self, driver: str) -> str:
         return URL.create(

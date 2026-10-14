@@ -2,7 +2,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     ForeignKey,
     Identity,
     String,
@@ -13,6 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import BigIntPK, UTCDateTime
 
 
 class Tasks(Base):
@@ -26,7 +26,7 @@ class Tasks(Base):
     )
 
     id: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
+        BigIntPK, Identity(always=True), primary_key=True
     )
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
@@ -42,20 +42,20 @@ class Tasks(Base):
         BigInteger, ForeignKey("schedule.id", name="fk_task_schedule_id_schedule"), nullable=True, index=True
     )
     scheduled_for: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime, nullable=True
     )
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Set once schedule_service.report_finished_runs has notified the user
     # about this run (only set for scheduled tasks; manual tasks stay NULL).
     reported_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime, nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UTCDateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime,
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,

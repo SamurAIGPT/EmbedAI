@@ -110,6 +110,13 @@ async def wait_for_database_lock_waiters(sessions, application, count, requests)
             await asyncio.sleep(0.01)
 
 
+# Proves the PostgreSQL row lock (it connects with PostgreSQL server_settings and
+# watches lock waiters). SQLite has no row locks; its admission test arrives
+# with the concurrency step.
+@pytest.mark.skipif(
+    settings.DATABASE_KIND != "postgres",
+    reason="asserts PostgreSQL row-lock behaviour",
+)
 @pytest.mark.parametrize("independent", [False, True], ids=["distinct-finished-ancestors", "independent-conversation"])
 async def test_reply_admission_is_atomic_across_transactions(
     monkeypatch, conversation_boat_api, independent

@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Identity, Index, String, func
+from sqlalchemy import Identity, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import BigIntPK, UTCDateTime
 
 
 class PermissionRule(Base):
@@ -14,12 +15,12 @@ class PermissionRule(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     bucket: Mapped[str] = mapped_column(String, nullable=False, index=True)
     connector: Mapped[str | None] = mapped_column(String, nullable=True)
     tool: Mapped[str | None] = mapped_column(String, nullable=True)
     decision: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UTCDateTime, server_default=func.now(), nullable=False
     )

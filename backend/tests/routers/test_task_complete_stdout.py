@@ -73,7 +73,7 @@ def boat_api():
                 raise AssertionError(self.path)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
     worker.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}", state

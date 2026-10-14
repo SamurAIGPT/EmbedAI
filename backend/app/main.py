@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info(f"Database in use: {settings.DATABASE_DESCRIPTION}")
     jobs = [
         asyncio.create_task(
             run_every(BACKGROUND_INTERVAL_SECONDS, schedule_service.poll_due_schedules)

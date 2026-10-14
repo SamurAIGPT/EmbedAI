@@ -103,3 +103,11 @@ def test_sqlite_path_round_trips(tmp_path, name):
 def test_tilde_in_the_path_is_expanded():
     path = build(SQLITE_PATH="~/somewhere/x.db").SQLITE_FILE
     assert path == Path.home() / "somewhere" / "x.db"
+
+
+def test_database_description_names_the_file_and_never_the_password(tmp_path):
+    sqlite = build(DATABASE_BACKEND="sqlite", SQLITE_PATH=str(tmp_path / "x.db"))
+    assert "SQLite file" in sqlite.DATABASE_DESCRIPTION and "x.db" in sqlite.DATABASE_DESCRIPTION
+    postgres = build(POSTGRES_PASSWORD="hunter2", POSTGRES_HOST="db.example", POSTGRES_PORT=5433)
+    assert postgres.DATABASE_DESCRIPTION == "PostgreSQL vadoo@db.example:5433/vadoo"
+    assert "hunter2" not in postgres.DATABASE_DESCRIPTION

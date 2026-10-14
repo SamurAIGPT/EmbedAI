@@ -74,6 +74,17 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def boat_settings(monkeypatch):
+    """Boat is optional, so backend/.env may leave these empty (or hold a real
+    key). Tests must not depend on that: they run against fake Boat servers and
+    never need, or should see, a real key. A test that wants Boat unconfigured
+    sets BOAT_API_KEY to "" itself."""
+    monkeypatch.setattr(settings, "BOAT_API_KEY", "test-boat-key")
+    monkeypatch.setattr(settings, "HOOK_TOKEN", "test-hook-token")
+    monkeypatch.setattr(settings, "PERMISSION_HOOK_BASE_URL", "http://hook.test")
+
+
 @pytest.fixture
 def user_id() -> str:
     return "test-user-1"

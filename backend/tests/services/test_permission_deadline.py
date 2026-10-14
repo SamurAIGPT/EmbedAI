@@ -41,6 +41,9 @@ async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, ph
     # Keep the actual two-poll request/answer flow; reduce only its configured wall-clock budget.
     monkeypatch.setattr(permission_router, "ASK_POLL_TIMEOUT_SECONDS", 0.4)
     monkeypatch.setattr(permission_router, "ASK_POLL_INTERVAL_SECONDS", 0.2)
+    # The hook rejects every request when HOOK_TOKEN is empty (Boat is optional),
+    # so the test must not depend on what backend/.env happens to contain.
+    monkeypatch.setattr(settings, "HOOK_TOKEN", "test-hook-token")
     hook = None
     try:
         async with sessions() as db:

@@ -95,6 +95,16 @@ class Settings(BaseSettings):
         return "sqlite" if self.DATABASE_BACKEND == "sqlite" else "postgres"
 
     @property
+    def DATABASE_DESCRIPTION(self) -> str:
+        """Which database is in use, for logs and messages (never the password)."""
+        if self.DATABASE_KIND == "sqlite":
+            return f"SQLite file {self.SQLITE_FILE}"
+        return (
+            f"PostgreSQL {self.POSTGRES_USER}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}"
+            f"/{self.POSTGRES_DB}"
+        )
+
+    @property
     def SQLITE_FILE(self) -> Path:
         if self.SQLITE_PATH.strip():
             return Path(self.SQLITE_PATH).expanduser()
@@ -110,6 +120,12 @@ class Settings(BaseSettings):
     def SYNC_DATABASE_URL(self) -> str:
         if self.DATABASE_KIND == "sqlite":
             return self._sqlite_url("sqlite")
+        return self._database_url("postgresql+psycopg2")
+
+    @property
+    def POSTGRES_SYNC_URL(self) -> str:
+        """The PostgreSQL URL from the POSTGRES_* values, whatever database is
+        selected (the SQLite copy tool reads from it)."""
         return self._database_url("postgresql+psycopg2")
 
     def _sqlite_url(self, driver: str) -> str:

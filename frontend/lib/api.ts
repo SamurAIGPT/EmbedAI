@@ -181,6 +181,11 @@ export type LocalStatus = {
   cli_version: string | null;
 };
 
+export type Providers = {
+  // Boat sandboxes: needs BOAT_API_KEY on the backend. `reason` says why it is off.
+  boat: { enabled: boolean; reason: string | null };
+};
+
 export type PermissionAsk = {
   id: number;
   task_id: number;
@@ -245,6 +250,8 @@ export const api = {
     }),
 
   getTask: (taskId: number) => request<Task>(`/tasks/${taskId}`),
+
+  getProviders: () => request<Providers>("/providers"),
 
   getLocalStatus: () => request<LocalStatus>("/local/status"),
 

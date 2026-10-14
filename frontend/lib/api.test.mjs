@@ -35,3 +35,17 @@ test('falls back for empty or unusable validation details', async () => {
     await assert.rejects(api.getTask(1), { message: 'Unprocessable Entity' });
   }
 });
+
+test('getProviders reads /providers and returns the boat status', async () => {
+  let requested = '';
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return new Response(JSON.stringify({ boat: { enabled: false, reason: 'BOAT_API_KEY is not set in backend/.env' } }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const providers = await api.getProviders();
+  assert.ok(requested.endsWith('/providers'));
+  assert.equal(providers.boat.enabled, false);
+  assert.match(providers.boat.reason, /BOAT_API_KEY/);
+});

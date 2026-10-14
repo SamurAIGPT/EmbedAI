@@ -72,10 +72,21 @@ function statusColor(status: Task["status"]) {
 export function SubmitTask({
   userId,
   boxId,
+  step = 4,
+  blockedReason = null,
+  showComposer = true,
 }: {
   userId: string;
   boxId: string | null;
+  step?: number;
+  // false hides the new-task box and schedule option entirely (Boat is off, so
+  // they could never work); true shows them, disabled until Claude is connected.
+  showComposer?: boolean;
+  // Shown instead of the composer's usual hint when submitting is not possible.
+  blockedReason?: string | null;
 }) {
+  // History is always readable; only sending needs a sandbox signed in to Claude.
+  const canSubmit = Boolean(boxId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [composer, setComposer] = useState("");
@@ -335,19 +346,29 @@ export function SubmitTask({
   };
 
   return (
-    <Card step={4} title="Submit a task" disabled={!boxId}>
+    <Card step={step} title={canSubmit ? "Submit a task" : "Task history"}>
       <div className="space-y-3">
+        {!canSubmit && (
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {blockedReason ?? "Connect Claude above to submit new tasks."} Your earlier tasks
+            stay readable below.
+          </p>
+        )}
+        {showComposer && (
+        <>
         <textarea
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
           placeholder='e.g. "create a webpage that says hello"'
           rows={3}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          disabled={!canSubmit}
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
         />
         <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
           <input
             type="checkbox"
             checked={scheduleEnabled}
+            disabled={!canSubmit}
             onChange={(e) => setScheduleEnabled(e.target.checked)}
           />
           Repeat this on a schedule
@@ -394,7 +415,7 @@ export function SubmitTask({
           </div>
         )}
 
-        <Button onClick={submitNew} disabled={composerBusy || !composer.trim()}>
+        <Button onClick={submitNew} disabled={!canSubmit || composerBusy || !composer.trim()}>
           {composerBusy
             ? scheduleEnabled
               ? "Creating…"
@@ -404,6 +425,8 @@ export function SubmitTask({
               : "Submit task"}
         </Button>
         <ErrorText message={composerError} />
+        </>
+        )}
 
         {schedules.length > 0 && (
           <ul className="space-y-2 pt-2">
@@ -527,7 +550,7 @@ export function SubmitTask({
                         <p className="text-xs text-zinc-500">Working…</p>
                       )}
 
-                      {!active && (
+                      {!active && showComposer && (
                         <div className="mt-3 space-y-2">
                           <textarea
                             value={replyDrafts[task.id] ?? ""}
@@ -536,12 +559,15 @@ export function SubmitTask({
                             }
                             placeholder="Reply in this conversation…"
                             rows={2}
-                            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                            disabled={!canSubmit}
+                            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
                           />
                           <Button
                             onClick={() => submitReply(task)}
                             disabled={
-                              replyBusy[task.id] || !(replyDrafts[task.id] ?? "").trim()
+                              !canSubmit ||
+                              replyBusy[task.id] ||
+                              !(replyDrafts[task.id] ?? "").trim()
                             }
                           >
                             {replyBusy[task.id] ? "Sending…" : "Reply"}

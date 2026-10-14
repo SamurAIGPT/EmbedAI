@@ -7,7 +7,9 @@ from sqlalchemy import URL
 
 class Settings(BaseSettings):
     BOAT_BASE_URL : str = "https://boat.dev/api/v1"
-    BOAT_API_KEY : str
+    # Boat is optional. Empty means no Boat sandboxes: the app starts without
+    # it and anything that needs a sandbox answers "Boat is not configured".
+    BOAT_API_KEY : str = ""
     # Boat bills sandbox creation to the caller's personal account unless a
     # team/org is explicitly attached to the request.
     BOAT_ORG_ID : str = ""
@@ -42,12 +44,13 @@ class Settings(BaseSettings):
     FRONTEND_ORIGINS: str = "http://localhost:3000"
     
     # A secret token that the webhook will require to be present in the request header. This is to prevent unauthorized requests from the public internet.
-    HOOK_TOKEN: str
+    # Only used by Boat sandboxes; empty disables the permission hook endpoint.
+    HOOK_TOKEN: str = ""
 
     # Public URL the sandbox can reach to call back into this backend for
     # permission checks (an ngrok tunnel in dev, the real deployed URL in
-    # production). No trailing slash.
-    PERMISSION_HOOK_BASE_URL: str
+    # production). No trailing slash. Only needed with Boat.
+    PERMISSION_HOOK_BASE_URL: str = ""
 
     # Run Claude through the user's own locally installed, signed-in CLI
     # instead of a Boat sandbox. Off by default so existing deployments are
@@ -67,6 +70,10 @@ class Settings(BaseSettings):
     @property
     def FRONTEND_ORIGIN_LIST(self) -> list[str]:
         return [origin.strip() for origin in self.FRONTEND_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def BOAT_ENABLED(self) -> bool:
+        return bool(self.BOAT_API_KEY.strip())
 
     @property
     def LOCAL_ALLOWED_HOST_LIST(self) -> list[str]:

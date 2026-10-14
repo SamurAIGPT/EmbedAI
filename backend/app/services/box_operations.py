@@ -15,6 +15,10 @@ from boat_sdk.models.prompt_request import PromptRequest
 from app.core.config import settings
 
 
+class BoatNotConfigured(RuntimeError):
+    """Raised when a Boat sandbox is needed but BOAT_API_KEY is not set."""
+
+
 class ASCIIBoxService:
     """Service for interacting with the Boat sandbox API.
     This service provides methods to create, retrieve, stop, resume, and delete
@@ -24,6 +28,10 @@ class ASCIIBoxService:
     """
 
     def _configuration(self) -> Configuration:
+        if not settings.BOAT_ENABLED:
+            raise BoatNotConfigured(
+                "Boat sandboxes are not configured (BOAT_API_KEY is empty)."
+            )
         return Configuration(
             host=settings.BOAT_BASE_URL,
             access_token=settings.BOAT_API_KEY,

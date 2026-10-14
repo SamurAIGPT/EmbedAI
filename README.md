@@ -74,7 +74,7 @@ Fill in `backend/.env`:
 
 | Var | Required | Notes |
 |---|---|---|
-| `BOAT_API_KEY` | yes | From the Boat dashboard. |
+| `BOAT_API_KEY` | no (optional provider) | From the Boat dashboard. Leave empty to run without Boat (for example with only local Claude); anything that needs a Boat sandbox then answers "Boat is not configured". Without Boat the app is chat-only for now: local Claude cannot use tools or files, and schedules, Telegram tasks and GitHub push need Boat. If set, `HOOK_TOKEN` and `PERMISSION_HOOK_BASE_URL` are also required. |
 | `BOAT_BASE_URL` | no | Defaults to `https://boat.dev/api/v1`. |
 | `BOAT_ORG_ID` | see note above | Team/org id (e.g. `team_...`) to attach to sandbox creation so it bills the org instead of your personal account. |
 | `PARALLEL_SEARCH_ENABLED` | no | Set to `true` to add free Parallel web search and page fetching to Claude tasks. Defaults to `false`. See [Optional web search](#optional-web-search). |
@@ -82,8 +82,8 @@ Fill in `backend/.env`:
 | `TELEGRAM_BOT_TOKEN` | only for the bot / Telegram linking | From @BotFather. |
 | `TELEGRAM_BOT_USERNAME` | no | Your bot's `@username` (no `@`), shown as a clickable link in the web UI. Cosmetic only. |
 | `FRONTEND_ORIGINS` | no | Comma-separated origins allowed to call the API from a browser. Defaults to `http://localhost:3000`. |
-| `HOOK_TOKEN` | yes | Shared secret the permission hook's caller (the sandbox) must present, so only your backend's own sandboxes can submit permission decisions. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
-| `PERMISSION_HOOK_BASE_URL` | yes | The public URL from the ngrok-or-similar prerequisite above, no trailing slash — e.g. `https://your-tunnel.ngrok-free.app`. Baked into each sandbox's `.claude/settings.json` at task start. |
+| `HOOK_TOKEN` | only with Boat | Shared secret the permission hook's caller (the sandbox) must present, so only your backend's own sandboxes can submit permission decisions. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `PERMISSION_HOOK_BASE_URL` | only with Boat | The public URL from the ngrok-or-similar prerequisite above, no trailing slash — e.g. `https://your-tunnel.ngrok-free.app`. Baked into each sandbox's `.claude/settings.json` at task start. |
 | `POSTGRES_*` | no | Defaults match `backend/docker-compose.yml`. |
 | `DATABASE_BACKEND` | no | Empty (the default) means PostgreSQL. Set `sqlite` to use a local SQLite file instead (experimental, no Docker). An existing setup never changes database unless you set this. See [docs/SETUP.md](docs/SETUP.md#database). |
 | `SQLITE_PATH` | no | SQLite file when `DATABASE_BACKEND=sqlite`. Defaults to `~/.open-dots/open-dots.db`. |

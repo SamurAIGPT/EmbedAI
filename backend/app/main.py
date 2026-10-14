@@ -1,14 +1,16 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.routers.router import router as app_router
 from app.services import schedule_service, task_execution_service
+from app.services.box_operations import BoatNotConfigured
 
 BACKGROUND_INTERVAL_SECONDS = 30
 
@@ -44,5 +46,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(BoatNotConfigured)
+async def boat_not_configured_handler(request: Request, exc: BoatNotConfigured):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
 
 app.include_router(app_router)

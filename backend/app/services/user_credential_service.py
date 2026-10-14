@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import crypto
 from app.db.models.user_credential import UserCredential
+from app.db.transactions import begin_write, release_snapshot
 from app.services.box_operations import ascii_box_service
 
 
@@ -32,6 +33,7 @@ async def save_token(
 ) -> UserCredential:
     ciphertext = crypto.encrypt(plaintext)
 
+    await begin_write(db)  # read-then-write: lock first so two saves cannot interleave
     record = await _get_row(db, user_id, provider)
     if record is None:
         record = UserCredential(
@@ -57,7 +59,10 @@ async def get_decrypted(
     if record is None:
         return None
 
-    return crypto.decrypt(record.ciphertext), record.file_path
+    decrypted = crypto.decrypt(record.ciphertext), record.file_path
+    # Every caller goes on to talk to a sandbox; do not hold a snapshot meanwhile.
+    await release_snapshot(db)
+    return decrypted
 
 
 class CredentialNotFoundError(Exception):

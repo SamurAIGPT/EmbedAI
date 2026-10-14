@@ -11,6 +11,7 @@ import json
 logger = get_logger(__name__)
 
 from app.db.session import get_db, AsyncSessionLocal
+from app.db.transactions import release_snapshot
 
 from app.schemas.sandbox import (
     SandboxCreateRequest,
@@ -317,6 +318,7 @@ async def submit_auth_login(
     sandbox_record = await user_sandbox_service.get_by_box_id(db, box_id)
     if sandbox_record is None:
         raise HTTPException(status_code=404, detail="Sandbox not found")
+    await release_snapshot(db)  # the login below can take tens of seconds
 
     try:
         credential_content = await run_in_threadpool(

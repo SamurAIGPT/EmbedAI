@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.task import Tasks
 from app.db.session import AsyncSessionLocal
+from app.db.transactions import begin_write, release_snapshot
 from app.services import local_claude_runner, user_credential_service
 from app.services.box_operations import ascii_box_service
 from app.services.local_access_policy import LocalAccessGrant
@@ -222,6 +223,9 @@ async def create_task(
     if parent_task_id is None:
         session_id = str(uuid.uuid4())
     else:
+        # SQLite has no row locks, so take the write lock before the checks
+        # below: a second reply then waits and sees this one (a clean 409).
+        await begin_write(db)
         parent = await get_task(db, parent_task_id)
         if parent is None or parent.user_id != user_id:
             raise TaskNotFoundError(f"Parent task {parent_task_id} not found")
@@ -298,6 +302,7 @@ async def start_task(db: AsyncSession, task_id: int) -> Tasks:
             session_id=task.session_id,
             resume=await _is_resume(db, task),
         )
+        await release_snapshot(db)  # the box calls below are slow
         await _ensure_box_running(task.box_id)
         await user_credential_service.inject_credential_into_box(
             db, box_id=task.box_id, user_id=task.user_id, provider=task.provider
@@ -308,6 +313,7 @@ async def start_task(db: AsyncSession, task_id: int) -> Tasks:
             )
         except CredentialNotFoundError:
             pass
+        await release_snapshot(db)
         await _write_permission_hook_config(task.box_id, task.user_id, task.id)
     except ApiException as exc:
         error = BoxCommandError(
@@ -323,6 +329,7 @@ async def start_task(db: AsyncSession, task_id: int) -> Tasks:
         await db.commit()
         raise
 
+    await release_snapshot(db)
     try:
         started = await run_in_threadpool(
             ascii_box_service.run_command,
@@ -514,6 +521,9 @@ async def _run_local_task(task_id: int) -> None:
     try:
         async with AsyncSessionLocal() as db:
             task = await _reload(db, task_id)
+            # The run can take minutes: hold no transaction (and so no stale
+            # snapshot) while it works; the result is written afterwards.
+            await release_snapshot(db)
             run_hub.publish(task_id, TURN_STARTED)
             try:
                 output = await local_claude_runner.run_prompt(
@@ -553,6 +563,10 @@ async def _run_local_task(task_id: int) -> None:
 
 
 async def sync_task_status(db: AsyncSession, task: Tasks) -> Tasks:
+    # Callers often keep one session across polls; drop any older snapshot so
+    # the reads below see current data and the writes cannot hit a stale one.
+    await release_snapshot(db)
+
     if task.provider == LOCAL_PROVIDER:
         # Run in this process and recorded by _run_local_task; no box to ask.
         return await _reload(db, task.id)
@@ -666,15 +680,17 @@ async def sync_active_tasks() -> None:
                 logger.exception("failed to start queued task", task_id=task_id)
 
         launched = await db.execute(
-            select(Tasks).where(
+            select(Tasks.id).where(
                 Tasks.provider != LOCAL_PROVIDER,
                 Tasks.status.in_(LAUNCHED_STATUSES),
                 Tasks.prompt_id.is_not(None),
             )
         )
-        for task in launched.scalars().all():
+        # Ids only: a rollback after one failure expires every loaded row, and
+        # each task is read fresh anyway after the previous one's slow calls.
+        for task_id in launched.scalars().all():
             try:
-                await sync_task_status(db, task)
+                await sync_task_status(db, await _reload(db, task_id))
             except Exception:
                 await db.rollback()
-                logger.exception("failed to sync task status", task_id=task.id)
+                logger.exception("failed to sync task status", task_id=task_id)

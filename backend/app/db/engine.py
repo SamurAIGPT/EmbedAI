@@ -16,6 +16,10 @@ from app.core.config import settings
 # How long a writer waits for another writer before "database is locked".
 SQLITE_BUSY_TIMEOUT_MS = 5000
 
+# Connection execution option that makes the next SQLite transaction start with
+# BEGIN IMMEDIATE (see app/db/transactions.py).
+SQLITE_BEGIN_OPTION = "sqlite_begin"
+
 
 def is_sqlite(url: str) -> bool:
     return make_url(url).get_backend_name() == "sqlite"
@@ -54,7 +58,11 @@ def configure_sqlite(engine: Engine) -> None:
 
     @event.listens_for(engine, "begin")
     def _on_begin(connection):
-        connection.exec_driver_sql("BEGIN")
+        # A write transaction (app/db/transactions.begin_write) takes the write
+        # lock up front, so it waits for other writers instead of failing later
+        # when it tries to upgrade from a read.
+        immediate = connection.get_execution_options().get(SQLITE_BEGIN_OPTION) == "IMMEDIATE"
+        connection.exec_driver_sql("BEGIN IMMEDIATE" if immediate else "BEGIN")
 
 
 def create_app_async_engine(url: str | None = None, **kwargs) -> AsyncEngine:

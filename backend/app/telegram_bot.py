@@ -17,6 +17,7 @@ from telegram.ext import (
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
+from app.db.transactions import release_snapshot
 from app.services import (
     auth_flow_service,
     link_service,
@@ -203,6 +204,7 @@ async def _poll_task(bot, chat_id: int, task_id: int) -> None:
         for _ in range(POLL_ATTEMPTS):
             if task is None or task.status not in task_execution_service.ACTIVE_STATUSES:
                 break
+            await release_snapshot(db)  # do not hold a snapshot while waiting
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
             task = await task_execution_service.sync_task_status(db, task)
 

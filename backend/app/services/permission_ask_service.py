@@ -2,12 +2,13 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.permission_ask import PermissionAsk
 from app.db.models.permission_rule import PermissionRule
 from app.db.models.task import Tasks
+from app.db.transactions import begin_write
 
 AskDecision = Literal["allow", "deny"]
 
@@ -36,6 +37,7 @@ async def create_ask(
     Returns:
         PermissionAsk: The newly created, still-pending ask row.
     """
+    await begin_write(db)
     ask = PermissionAsk(
         task_id=task_id,
         user_id=user_id,
@@ -46,9 +48,11 @@ async def create_ask(
     )
     db.add(ask)
 
-    task = await db.get(Tasks, task_id)
-    if task is not None:
-        task.status = "waiting_approval"
+    # A plain UPDATE (no read first), so it cannot lose a race with another
+    # writer; it does nothing when the task row does not exist.
+    await db.execute(
+        update(Tasks).where(Tasks.id == task_id).values(status="waiting_approval")
+    )
 
     await db.commit()
     await db.refresh(ask)
@@ -67,9 +71,11 @@ async def _reload_ask(db: AsyncSession, ask_id: int) -> PermissionAsk | None:
 async def _resume_task(db: AsyncSession, task_id: int) -> None:
     """Take a task out of waiting_approval once its ask is resolved, however
     it was resolved (answered or expired)."""
-    task = await db.get(Tasks, task_id)
-    if task is not None and task.status == "waiting_approval":
-        task.status = "running"
+    await db.execute(
+        update(Tasks)
+        .where(Tasks.id == task_id, Tasks.status == "waiting_approval")
+        .values(status="running")
+    )
 
 
 async def get_pending_ask_for_task(db: AsyncSession, task_id: int) -> PermissionAsk | None:
@@ -105,16 +111,26 @@ async def answer_ask(
     Returns:
         PermissionAsk: The now-answered ask row.
     """
+    # Claim the answer with one conditional UPDATE: of two answers arriving at
+    # once (web and Telegram), exactly one wins, on every database.
+    await begin_write(db)
+    claimed = await db.execute(
+        update(PermissionAsk)
+        .where(PermissionAsk.id == ask_id, PermissionAsk.status == "pending")
+        .values(
+            status="answered",
+            decision=decision,
+            always=always,
+            answered_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session=False)
+    )
     ask = await _reload_ask(db, ask_id)
     if ask is None:
         raise ValueError(f"PermissionAsk {ask_id} not found")
-    if ask.status != "pending":
+    if claimed.rowcount != 1:
+        await db.commit()  # already resolved; nothing to write, release the transaction
         return ask
-
-    ask.status = "answered"
-    ask.decision = decision
-    ask.always = always
-    ask.answered_at = datetime.now(UTC)
 
     if always:
         # Written at the same specificity the ask was captured at. This only
@@ -169,19 +185,35 @@ async def poll_for_answer(
     elapsed = 0.0
     while elapsed < timeout_seconds:
         ask = await _reload_ask(db, ask_id)
-        if ask is None or ask.status == "expired":
+        status = ask.status if ask is not None else None
+        decision = ask.decision if ask is not None else None
+        # End the read transaction before waiting. Otherwise it would hold an
+        # old snapshot (on SQLite the next read would not see the answer and a
+        # later write would fail) and a connection for up to the whole timeout.
+        await db.commit()
+        if ask is None or status == "expired":
             return "deny"
-        if ask.status == "answered":
-            return cast(AskDecision, ask.decision)
+        if status == "answered":
+            return cast(AskDecision, decision)
 
         await asyncio.sleep(interval_seconds)
         elapsed += interval_seconds
 
+    # Out of time. Expire the ask only if it is still pending: an answer that
+    # landed in the meantime wins (one conditional UPDATE, no read-then-write).
+    await begin_write(db)
+    expired = await db.execute(
+        update(PermissionAsk)
+        .where(PermissionAsk.id == ask_id, PermissionAsk.status == "pending")
+        .values(status="expired")
+        .execution_options(synchronize_session=False)
+    )
     ask = await _reload_ask(db, ask_id)
-    if ask is not None and ask.status == "answered":
-        return cast(AskDecision, ask.decision)
-    if ask is not None and ask.status == "pending":
-        ask.status = "expired"
+    if expired.rowcount == 1 and ask is not None:
         await _resume_task(db, ask.task_id)
-        await db.commit()
+    answered = ask is not None and ask.status == "answered"
+    decision = ask.decision if ask is not None else None
+    await db.commit()
+    if answered:
+        return cast(AskDecision, decision)
     return "deny"

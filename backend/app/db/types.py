@@ -14,10 +14,15 @@ nowhere else:
 
 from datetime import UTC
 
-from sqlalchemy import BigInteger, DateTime, Integer
+from sqlalchemy import JSON, BigInteger, DateTime, Integer
 from sqlalchemy.types import TypeDecorator
 
 BigIntPK = BigInteger().with_variant(Integer, "sqlite")
+
+# JSON stored as TEXT on SQLite and JSON on PostgreSQL. Python None is stored
+# as SQL NULL (not the JSON value null), so "no value" has one representation.
+# Values are replaced whole, never mutated in place.
+JSONValue = JSON(none_as_null=True)
 
 
 class UTCDateTime(TypeDecorator):

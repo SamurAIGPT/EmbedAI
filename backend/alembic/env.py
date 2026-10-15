@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.db.base import Base
 from app.db.engine import create_app_sync_engine, is_sqlite, prepare_sqlite_file
 from app.db.sqlite_baseline import BASELINE_REVISION, create_baseline, sqlite_file_state
-from app.db.models import UserSandbox, UserCredential, Tasks, LinkCode, Schedule, PermissionRule,PermissionAsk # noqa: F401
+from app.db.models import UserSandbox, UserCredential, Tasks, LinkCode, Schedule, PermissionRule, PermissionAsk, Thread, Turn, Event, Approval # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

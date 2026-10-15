@@ -1,0 +1,576 @@
+"""Persistence for durable threads, turns, events and approvals (F04, slice 1).
+
+This is the data layer only. It knows nothing about Claude or any other
+provider, and it starts no processes. The recorder, adapters and endpoints
+(slices 2 and 3) are built on top of it.
+
+Every public function is one transaction: it takes the write lock first
+(`begin_write`, so on SQLite writers queue instead of failing on a stale
+snapshot), does its statements, and commits. When it returns, what it wrote is
+in the database, which is what lets a caller broadcast afterwards ("store
+before broadcast"). Every state change that must not race is one conditional
+UPDATE; the caller learns whether it won from the return value.
+
+Event payloads, so adapters and readers agree:
+
+    turn.started        {"prompt_text"}
+    assistant.message   {"text", "incomplete"?}
+    tool.started        {"call_id", "name", "input"}
+    tool.completed      {"call_id", "ok", "output", "truncated"}
+    approval.requested  {"approval_id", "tool", "kind", "summary", "input"}
+    approval.resolved   {"approval_id", "status"}
+    turn.completed / turn.failed / turn.cancelled / turn.interrupted
+    session.reset
+
+`type` is free text: a new type needs no migration.
+"""
+
+import secrets
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import Approval, Event, Thread, Turn
+from app.db.models.thread import SESSION_STATES
+from app.db.transactions import begin_write
+
+TITLE_MAX_CHARS = 60
+# A tool result longer than this is cut, and the event says so.
+TOOL_OUTPUT_CAP = 100_000
+# Statuses a run may finish a turn with. `interrupted` is only ever set by the
+# sweep, never by the run itself.
+FINISH_STATUSES = ("succeeded", "failed", "cancelled")
+DECISIONS = ("allowed", "denied")
+
+
+class ThreadNotFound(Exception):
+    pass
+
+
+class ThreadBusy(Exception):
+    """A turn is already running in this thread."""
+
+
+class TurnNotRunning(Exception):
+    pass
+
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def make_title(prompt: str) -> str:
+    text = " ".join(prompt.split())
+    if len(text) <= TITLE_MAX_CHARS:
+        return text
+    return text[: TITLE_MAX_CHARS - 1].rstrip() + "…"
+
+
+def cap_tool_output(output: str) -> tuple[str, bool]:
+    """The output to store and whether it was cut."""
+    if len(output) <= TOOL_OUTPUT_CAP:
+        return output, False
+    return output[:TOOL_OUTPUT_CAP], True
+
+
+def _check(value: str, allowed: tuple[str, ...], what: str) -> None:
+    if value not in allowed:
+        raise ValueError(f"{what} must be one of {', '.join(allowed)} (got {value!r})")
+
+
+# --- reads ---------------------------------------------------------------------
+
+
+async def get_thread(db: AsyncSession, thread_id: int) -> Thread | None:
+    return await db.get(Thread, thread_id)
+
+
+async def list_threads(
+    db: AsyncSession, owner_id: str, *, include_archived: bool = False, limit: int = 100
+) -> list[Thread]:
+    query = select(Thread).where(Thread.owner_id == owner_id)
+    if not include_archived:
+        query = query.where(Thread.archived_at.is_(None))
+    query = query.order_by(Thread.updated_at.desc(), Thread.id.desc()).limit(limit)
+    return list((await db.execute(query)).scalars())
+
+
+async def list_turns(db: AsyncSession, thread_id: int) -> list[Turn]:
+    query = select(Turn).where(Turn.thread_id == thread_id).order_by(Turn.seq)
+    return list((await db.execute(query)).scalars())
+
+
+async def list_events(
+    db: AsyncSession, thread_id: int, *, after: int = 0, limit: int = 500
+) -> list[Event]:
+    """Stored events with seq > after, ascending. This is what a stream reads."""
+    query = (
+        select(Event)
+        .where(Event.thread_id == thread_id, Event.seq > after)
+        .order_by(Event.seq)
+        .limit(limit)
+    )
+    return list((await db.execute(query)).scalars())
+
+
+async def list_approvals(
+    db: AsyncSession, thread_id: int, *, status: str | None = None
+) -> list[Approval]:
+    query = select(Approval).where(Approval.thread_id == thread_id)
+    if status is not None:
+        query = query.where(Approval.status == status)
+    return list((await db.execute(query.order_by(Approval.created_at, Approval.id))).scalars())
+
+
+def history_items(events: list[Event]) -> list[dict]:
+    """A thread's stored events as an ordered history: the prompt, each
+    assistant message, and each tool call with its result joined by call_id.
+
+    A usable history for a provider that keeps no session of its own, not a
+    lossless record: tool output is capped, and a call with no completion (the
+    turn was interrupted) has output None."""
+    items: list[dict] = []
+    calls: dict[str, dict] = {}
+    for event in sorted(events, key=lambda e: e.seq):
+        data = event.data or {}
+        if event.type == "turn.started":
+            items.append({"role": "user", "text": data.get("prompt_text", ""), "turn_id": event.turn_id})
+        elif event.type == "assistant.message":
+            items.append(
+                {
+                    "role": "assistant",
+                    "text": data.get("text", ""),
+                    "incomplete": bool(data.get("incomplete")),
+                    "turn_id": event.turn_id,
+                }
+            )
+        elif event.type == "tool.started":
+            item = {
+                "role": "tool",
+                "call_id": data.get("call_id"),
+                "name": data.get("name"),
+                "input": data.get("input"),
+                "output": None,
+                "ok": None,
+                "truncated": False,
+                "turn_id": event.turn_id,
+            }
+            items.append(item)
+            if item["call_id"] is not None:
+                calls[item["call_id"]] = item
+        elif event.type == "tool.completed":
+            item = calls.get(data.get("call_id"))
+            if item is None:  # a completion whose start was never stored
+                item = {
+                    "role": "tool",
+                    "call_id": data.get("call_id"),
+                    "name": None,
+                    "input": None,
+                    "turn_id": event.turn_id,
+                }
+                items.append(item)
+            item["output"] = data.get("output")
+            item["ok"] = data.get("ok")
+            item["truncated"] = bool(data.get("truncated"))
+    return items
+
+
+# --- threads and events ----------------------------------------------------------
+
+
+async def _next_seq(db: AsyncSession, thread_id: int) -> int:
+    """Hand out the thread's next event number. The UPDATE takes the thread
+    row's write lock, which is held until the transaction commits, so two
+    writers cannot interleave: commit order is seq order."""
+    result = await db.execute(
+        update(Thread)
+        .where(Thread.id == thread_id)
+        # updated_at is set here, with microseconds: the database's own now() has
+        # one-second resolution on SQLite, which would tie busy threads.
+        .values(last_seq=Thread.last_seq + 1, updated_at=utcnow())
+        .returning(Thread.last_seq)
+        .execution_options(synchronize_session=False)
+    )
+    seq = result.scalar_one_or_none()
+    if seq is None:
+        raise ThreadNotFound(thread_id)
+    return seq
+
+
+async def _add_event(
+    db: AsyncSession, thread_id: int, type_: str, data: dict | None, turn_id: int | None
+) -> Event:
+    event = Event(
+        thread_id=thread_id,
+        turn_id=turn_id,
+        seq=await _next_seq(db, thread_id),
+        type=type_,
+        data=data or {},
+    )
+    db.add(event)
+    await db.flush()
+    return event
+
+
+async def create_thread(
+    db: AsyncSession,
+    *,
+    owner_id: str,
+    provider: str,
+    model: str | None = None,
+    provider_session_id: str | None = None,
+    session_state: str = "new",
+    provider_state: dict | None = None,
+    title: str | None = None,
+) -> Thread:
+    if not provider.strip():
+        raise ValueError("provider is required")
+    _check(session_state, SESSION_STATES, "session_state")
+    await begin_write(db)
+    now = utcnow()
+    thread = Thread(
+        owner_id=owner_id,
+        created_at=now,
+        updated_at=now,
+        title=title,
+        provider=provider,
+        model=model,
+        provider_session_id=provider_session_id,
+        session_state=session_state,
+        provider_state=provider_state,
+    )
+    db.add(thread)
+    await db.flush()
+    await db.commit()
+    return thread
+
+
+async def set_session_state(
+    db: AsyncSession, thread_id: int, state: str, *, expected: str | None = None
+) -> bool:
+    """Change the session state; with `expected`, only if the thread is still in
+    that state. True if a row changed."""
+    _check(state, SESSION_STATES, "session_state")
+    await begin_write(db)
+    query = update(Thread).where(Thread.id == thread_id)
+    if expected is not None:
+        query = query.where(Thread.session_state == expected)
+    result = await db.execute(query.values(session_state=state).execution_options(synchronize_session=False))
+    await db.commit()
+    return result.rowcount == 1
+
+
+async def append_event(
+    db: AsyncSession,
+    thread_id: int,
+    type_: str,
+    data: dict | None = None,
+    *,
+    turn_id: int | None = None,
+) -> Event:
+    """Store one event with the thread's next seq and commit."""
+    await begin_write(db)
+    event = await _add_event(db, thread_id, type_, data, turn_id)
+    await db.commit()
+    return event
+
+
+# --- turns -------------------------------------------------------------------
+
+
+async def start_turn(
+    db: AsyncSession, thread_id: int, prompt_text: str, *, owner_instance: str | None = None
+) -> Turn:
+    """Start the thread's next turn and store its `turn.started` event.
+
+    The returned turn carries the `owner_token` that only the run holds. Raises
+    ThreadBusy if a turn is already running (the database refuses a second one),
+    ThreadNotFound if the thread does not exist."""
+    await begin_write(db)
+    thread = (
+        await db.execute(select(Thread).where(Thread.id == thread_id).with_for_update())
+    ).scalar_one_or_none()
+    if thread is None:
+        await db.rollback()
+        raise ThreadNotFound(thread_id)
+    last = (
+        await db.execute(select(func.coalesce(func.max(Turn.seq), 0)).where(Turn.thread_id == thread_id))
+    ).scalar_one()
+    now = utcnow()
+    turn = Turn(
+        thread_id=thread_id,
+        seq=last + 1,
+        prompt_text=prompt_text,
+        status="running",
+        owner_token=secrets.token_urlsafe(24),
+        owner_instance=owner_instance,
+        heartbeat_at=now,
+        started_at=now,
+    )
+    db.add(turn)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ThreadBusy(thread_id) from exc
+    if thread.title is None:
+        thread.title = make_title(prompt_text) or None
+    await _add_event(db, thread_id, "turn.started", {"prompt_text": prompt_text}, turn.id)
+    await db.commit()
+    return turn
+
+
+async def heartbeat(db: AsyncSession, turn_id: int, owner_token: str) -> bool:
+    """Refresh the lease. False means the run no longer owns the turn: it must
+    stop (kill its child and write nothing more)."""
+    await begin_write(db)
+    result = await db.execute(
+        update(Turn)
+        .where(Turn.id == turn_id, Turn.status == "running", Turn.owner_token == owner_token)
+        .values(heartbeat_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return result.rowcount == 1
+
+
+async def finish_turn(
+    db: AsyncSession,
+    turn_id: int,
+    owner_token: str,
+    *,
+    status: str,
+    result: str | None = None,
+    error: str | None = None,
+    error_code: str | None = None,
+    model: str | None = None,
+    usage: dict | None = None,
+    event_type: str | None = None,
+    event_data: dict | None = None,
+) -> bool:
+    """Finish a turn the caller owns, store its terminal event and cancel any
+    approval still open, all in one transaction. False (and nothing written)
+    if the caller no longer owns the turn."""
+    _check(status, FINISH_STATUSES, "status")
+    await begin_write(db)
+    updated = await db.execute(
+        update(Turn)
+        .where(Turn.id == turn_id, Turn.status == "running", Turn.owner_token == owner_token)
+        .values(
+            status=status,
+            result=result,
+            error=error,
+            error_code=error_code,
+            model=model,
+            usage=usage,
+            finished_at=utcnow(),
+        )
+        .returning(Turn.thread_id)
+        .execution_options(synchronize_session=False)
+    )
+    thread_id = updated.scalar_one_or_none()
+    if thread_id is None:
+        await db.rollback()
+        return False
+    await _cancel_open_approvals(db, thread_id, turn_id)
+    if event_type:
+        await _add_event(db, thread_id, event_type, event_data, turn_id)
+    await db.commit()
+    return True
+
+
+async def interrupt_turn(db: AsyncSession, turn_id: int, *, stale_before: datetime) -> bool:
+    """Mark a running turn `interrupted` if its heartbeat is older than
+    `stale_before`: one atomic update, so only one caller can win. The winner
+    cancels the turn's open approvals and stores `turn.interrupted`, in the same
+    transaction. Nothing is resumed or replayed."""
+    await begin_write(db)
+    updated = await db.execute(
+        update(Turn)
+        .where(Turn.id == turn_id, Turn.status == "running", Turn.heartbeat_at < stale_before)
+        .values(status="interrupted", finished_at=utcnow(), error_code="interrupted")
+        .returning(Turn.thread_id)
+        .execution_options(synchronize_session=False)
+    )
+    thread_id = updated.scalar_one_or_none()
+    if thread_id is None:
+        await db.rollback()
+        return False
+    await _cancel_open_approvals(db, thread_id, turn_id)
+    await _add_event(db, thread_id, "turn.interrupted", {"reason": "lease_expired"}, turn_id)
+    await db.commit()
+    return True
+
+
+async def interrupt_stale_turns(db: AsyncSession, *, stale_after: timedelta) -> list[int]:
+    """Interrupt every running turn whose heartbeat is older than `stale_after`.
+    Returns the ids this call interrupted (a turn another caller interrupted
+    first is not listed)."""
+    cutoff = utcnow() - stale_after
+    stale = list(
+        (
+            await db.execute(
+                select(Turn.id).where(Turn.status == "running", Turn.heartbeat_at < cutoff)
+            )
+        ).scalars()
+    )
+    await db.rollback()  # end the read transaction before each write one
+    interrupted = []
+    for turn_id in stale:
+        if await interrupt_turn(db, turn_id, stale_before=cutoff):
+            interrupted.append(turn_id)
+    return interrupted
+
+
+# --- approvals ---------------------------------------------------------------
+
+
+def _turn_is_running():
+    """A correlated test, inside the same statement, that the approval's turn is
+    still running."""
+    return exists().where(Turn.id == Approval.turn_id, Turn.status == "running")
+
+
+async def create_approval(
+    db: AsyncSession,
+    *,
+    thread_id: int,
+    turn_id: int,
+    request_id: str,
+    tool: str,
+    input: dict,
+    summary: str | None = None,
+    kind: str | None = None,
+) -> Approval:
+    """Record a question about one tool call and its `approval.requested` event.
+    Raises TurnNotRunning if the turn is not running."""
+    await begin_write(db)
+    running = (
+        await db.execute(
+            select(Turn.id).where(Turn.id == turn_id, Turn.thread_id == thread_id, Turn.status == "running")
+        )
+    ).scalar_one_or_none()
+    if running is None:
+        await db.rollback()
+        raise TurnNotRunning(turn_id)
+    approval = Approval(
+        id=uuid4().hex,
+        thread_id=thread_id,
+        turn_id=turn_id,
+        request_id=request_id,
+        tool=tool,
+        input=input,
+        summary=summary,
+        kind=kind,
+        status="pending",
+    )
+    db.add(approval)
+    await db.flush()
+    await _add_event(
+        db,
+        thread_id,
+        "approval.requested",
+        {"approval_id": approval.id, "tool": tool, "kind": kind, "summary": summary, "input": input},
+        turn_id,
+    )
+    await db.commit()
+    return approval
+
+
+async def decide_approval(db: AsyncSession, approval_id: str, decision: str) -> bool:
+    """The person's decision. One statement: it wins only if the approval is
+    still pending AND its turn is still running. False means nothing changed
+    (decided already, cancelled, or the turn is no longer running) and the
+    caller must answer 409 and authorize nothing."""
+    _check(decision, DECISIONS, "decision")
+    await begin_write(db)
+    updated = await db.execute(
+        update(Approval)
+        .where(Approval.id == approval_id, Approval.status == "pending", _turn_is_running())
+        .values(status=decision, decided_at=utcnow())
+        .returning(Approval.thread_id, Approval.turn_id)
+        .execution_options(synchronize_session=False)
+    )
+    row = updated.one_or_none()
+    if row is None:
+        await db.rollback()
+        return False
+    thread_id, turn_id = row
+    await _add_event(db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": decision}, turn_id)
+    await db.commit()
+    return True
+
+
+async def expire_approval(db: AsyncSession, approval_id: str) -> bool:
+    """Nobody answered in time. Expiry authorizes nothing, so it does not need
+    the turn to be running; it only needs the approval to still be pending."""
+    await begin_write(db)
+    updated = await db.execute(
+        update(Approval)
+        .where(Approval.id == approval_id, Approval.status == "pending")
+        .values(status="expired", decided_at=utcnow())
+        .returning(Approval.thread_id, Approval.turn_id)
+        .execution_options(synchronize_session=False)
+    )
+    row = updated.one_or_none()
+    if row is None:
+        await db.rollback()
+        return False
+    thread_id, turn_id = row
+    await _add_event(db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": "expired"}, turn_id)
+    await db.commit()
+    return True
+
+
+async def mark_allow_delivered(db: AsyncSession, approval_id: str, owner_token: str) -> bool:
+    """Called by the owning run immediately before it writes an Allow to the
+    provider. One statement that re-checks, atomically, that the allow is still
+    undelivered and that the turn is still running under this owner_token. The
+    run may send the Allow only if this returns True; otherwise it has lost the
+    turn and must stop."""
+    await begin_write(db)
+    owned = exists().where(
+        Turn.id == Approval.turn_id, Turn.status == "running", Turn.owner_token == owner_token
+    )
+    result = await db.execute(
+        update(Approval)
+        .where(
+            Approval.id == approval_id,
+            Approval.status == "allowed",
+            Approval.delivered_at.is_(None),
+            owned,
+        )
+        .values(delivered_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return result.rowcount == 1
+
+
+async def _cancel_open_approvals(db: AsyncSession, thread_id: int, turn_id: int) -> None:
+    """Cancel the turn's approvals that authorize nothing yet: pending ones, and
+    allowed ones that were never delivered. Part of the caller's transaction.
+    Each is a conditional update, so it cannot undo a delivered Allow."""
+    open_now = and_(
+        Approval.turn_id == turn_id,
+        or_(
+            Approval.status == "pending",
+            and_(Approval.status == "allowed", Approval.delivered_at.is_(None)),
+        ),
+    )
+    ids = list((await db.execute(select(Approval.id).where(open_now).order_by(Approval.created_at, Approval.id))).scalars())
+    for approval_id in ids:
+        result = await db.execute(
+            update(Approval)
+            .where(Approval.id == approval_id, open_now)
+            .values(status="cancelled", decided_at=utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount == 1:
+            await _add_event(
+                db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": "cancelled"}, turn_id
+            )
+

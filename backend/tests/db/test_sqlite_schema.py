@@ -83,7 +83,7 @@ def test_an_empty_file_is_initialised(tmp_path):
     path.write_bytes(b"")
     result = run_alembic(path, "upgrade", "head")
     assert result.returncode == 0, result.stderr
-    assert version_of(path) == BASELINE_REVISION
+    assert version_of(path) in run_alembic(path, "heads").stdout  # baseline, then every later revision
 
 
 # --- refusing a database that is not ours ---------------------------------------

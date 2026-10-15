@@ -9,20 +9,32 @@ import shutil
 import sqlite3
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
-from app.db.sqlite_baseline import BASELINE_REVISION
 from tests.db.schema_description import describe
 from tests.db.sqlite_helpers import BACKEND_DIR, run_alembic
 from app.db.engine import create_app_sync_engine
 
 SCRATCH_REVISION = "5c0ffee00001"
 
+
+def real_head() -> str:
+    """The newest real revision. The scratch revision is stacked on top of it,
+    so this keeps working as real migrations are added."""
+    config = Config(str(BACKEND_DIR / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
+REAL_HEAD = real_head()
+
 SCRATCH_MIGRATION = f'''"""scratch migration for tests"""
 import sqlalchemy as sa
 from alembic import op
 
 revision = "{SCRATCH_REVISION}"
-down_revision = "{BASELINE_REVISION}"
+down_revision = "{REAL_HEAD}"
 branch_labels = None
 depends_on = None
 
@@ -82,8 +94,8 @@ def schema_of(path):
 def test_a_later_migration_upgrades_and_downgrades_on_sqlite(tmp_path, scratch_ini):
     database = tmp_path / "app.db"
 
-    # Start where a new SQLite database starts: the baseline, with a row in it.
-    first = run_alembic(database, "upgrade", BASELINE_REVISION, ini=scratch_ini)
+    # Start from the newest real revision, with a row in the database.
+    first = run_alembic(database, "upgrade", REAL_HEAD, ini=scratch_ini)
     assert first.returncode == 0, first.stderr
     at_baseline = schema_of(database)
     connection = sqlite3.connect(database)
@@ -110,10 +122,10 @@ def test_a_later_migration_upgrades_and_downgrades_on_sqlite(tmp_path, scratch_i
     assert foreign_key_problems == []
     assert {k: v for k, v in upgraded.items() if k not in ("scratch_thing",)}.keys() == at_baseline.keys()
 
-    # Downgrade: back to exactly the baseline schema, data intact.
+    # Downgrade: back to exactly the schema it started from, data intact.
     down = run_alembic(database, "downgrade", "-1", ini=scratch_ini)
     assert down.returncode == 0, down.stderr
-    assert version_of(database) == BASELINE_REVISION
+    assert version_of(database) == REAL_HEAD
     assert schema_of(database) == at_baseline
     connection = sqlite3.connect(database)
     assert connection.execute("SELECT prompt_text FROM task").fetchall() == [("keep me",)]
@@ -126,7 +138,7 @@ def test_a_later_migration_upgrades_and_downgrades_on_sqlite(tmp_path, scratch_i
 
 
 def test_the_scratch_chain_also_starts_from_an_empty_database(tmp_path, scratch_ini):
-    """`upgrade head` on a brand new file goes baseline, then the later revision."""
+    """`upgrade head` on a brand new file goes baseline, the real revisions, then the later one."""
     database = tmp_path / "fresh.db"
     result = run_alembic(database, "upgrade", "head", ini=scratch_ini)
     assert result.returncode == 0, result.stderr

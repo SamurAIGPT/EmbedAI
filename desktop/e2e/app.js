@@ -120,4 +120,4 @@ async function launchApp({ dataDir, env = {}, mode = "start", viaScript = false 
   return app;
 }
 
-module.exports = { launchApp, alive, waitUntil, backendPid, paths, sleep };
+module.exports = { freePort, launchApp, alive, waitUntil, backendPid, paths, sleep };

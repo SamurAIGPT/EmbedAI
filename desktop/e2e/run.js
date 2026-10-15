@@ -5,7 +5,8 @@
 //   npm run e2e -- lifecycle     start, token, single instance, quit, hard kill
 //   npm run e2e -- scripts       `npm run start` and `npm run dev` themselves
 //   npm run e2e -- failures      a damaged key, a key that opens nothing, no Claude
-//   npm run e2e -- chat          a real conversation: approvals, Stop, restart
+//   npm run e2e -- headless      the documented source/headless start still works, untouched
+//   npm run e2e -- chat          a real conversation: approvals, Stop, crash, restart
 //   add --keep to leave the data folders in place
 //
 // `npm run setup` and `npm run build` must have been run. `chat` needs Claude Code
@@ -265,6 +266,23 @@ async function failures() {
     await app.quit(page);
   });
 
+  await check("with Claude installed but signed out the page says so, and how to sign in", async () => {
+    // The real CLI, pointed at an empty configuration folder, is genuinely signed out.
+    const config = fresh("signedout-claude-config");
+    const app = await start({ dataDir: fresh("signedout"), env: { CLAUDE_CONFIG_DIR: config } });
+    const page = await app.page();
+    const text = await page.waitFor(
+      `/not signed in|not available/i.test(document.body.innerText) && document.body.innerText`,
+      "the signed-out notice",
+      60_000,
+    );
+    assert.match(text, /not signed in/i);
+    assert.match(text, /claude auth login/);
+    assert.equal(await ui(page).has("Send"), false, "nothing can be sent");
+    fs.writeFileSync(path.join(BASE, "signedout", "signed-out.png"), await page.screenshot());
+    assert.equal(await app.quit(page), 0);
+  });
+
   await check("a relative OPEN_DOTS_CLAUDE_PATH is refused with a message, not used", async () => {
     const app = await start({ dataDir: fresh("relative"), env: { OPEN_DOTS_CLAUDE_PATH: "claude" } });
     await sleep(8000);
@@ -313,6 +331,88 @@ async function failures() {
     assert.equal(alive(app.child.pid), true, "the app is showing its error box");
     app.destroy();
   });
+}
+
+// ---- existing source / headless installs -------------------------------------------
+
+const sha = (file) => require("node:crypto").createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const killTree = (pid) => spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true });
+
+async function headless() {
+  console.log("\nexisting source/headless install");
+  const dir = fresh("headless");
+  const envFile = path.join(paths.backend, ".env");
+  if (fs.existsSync(envFile)) {
+    console.log("  skipped: backend/.env exists here; run this from a fresh checkout so it is not overwritten");
+    return;
+  }
+  const db = path.join(dir, "headless.db");
+  const key = python("from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())").stdout.trim();
+  const envText = `DATABASE_BACKEND=sqlite\nSQLITE_PATH=${db}\nTOKEN_ENCRYPTION_KEYS=${key}\nLOCAL_EXECUTION_ENABLED=true\n`;
+  fs.writeFileSync(envFile, envText);
+  const children = [];
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.ELECTRON_RUN_AS_NODE;
+  try {
+    const port = await require("./app").freePort();
+    let server;
+
+    await check("the documented manual start works from backend/.env: migrations, then the API, no token needed", async () => {
+      const migrate = spawnSync(paths.python, ["-m", "alembic", "upgrade", "head"], { cwd: paths.backend, env: cleanEnv, encoding: "utf8" });
+      assert.equal(migrate.status, 0, migrate.stderr);
+      assert.ok(fs.existsSync(db), "the SQLite file named in .env was created");
+      server = require("node:child_process").spawn(paths.python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)], {
+        cwd: paths.backend, env: cleanEnv, stdio: "ignore",
+      });
+      children.push(server);
+      await waitUntil(async () => fetch(`http://127.0.0.1:${port}/api/v1/threads`).then((r) => r.status === 200, () => false), "the headless API", 60_000);
+      const made = await fetch(`http://127.0.0.1:${port}/api/v1/threads`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "headless-marker" }),
+      });
+      assert.equal(made.status, 201);
+      const status = await fetch(`http://127.0.0.1:${port}/api/v1/local/status`);
+      assert.equal(status.status, 200);
+      assert.equal((await fetch(`http://127.0.0.1:${port}/chat/`)).status, 404, "the API does not serve the desktop page");
+    });
+
+    await check("the headless web UI (`next dev`) still serves", async () => {
+      const uiPort = await require("./app").freePort();
+      const next = require("node:child_process").spawn("npm", ["run", "dev", "--", "-p", String(uiPort), "-H", "127.0.0.1"], {
+        cwd: paths.frontend, env: cleanEnv, stdio: "ignore", shell: true,
+      });
+      children.push(next);
+      await waitUntil(async () => fetch(`http://127.0.0.1:${uiPort}/chat`).then((r) => r.status === 200, () => false), "next dev", 120_000);
+      const html = await (await fetch(`http://127.0.0.1:${uiPort}/chat`)).text();
+      assert.match(html, /<html/);
+      killTree(next.pid);
+    });
+
+    await check("a desktop run beside it leaves the headless database, .env and checkout untouched, and shares nothing", async () => {
+      killTree(server.pid);
+      await waitUntil(() => fetch(`http://127.0.0.1:${port}/api/v1/threads`).then(() => false, () => true), "the headless API to stop", 20_000);
+      const before = { db: sha(db), env: sha(envFile) };
+      const app = await start({ dataDir: fresh("headless-desktop") });
+      const page = await app.page();
+      assert.equal(await page.evaluate(`fetch('/api/v1/threads').then(r => r.json()).then(t => JSON.stringify(t))`), "[]", "the desktop does not see the headless threads");
+      assert.equal(await app.quit(page), 0);
+      assert.deepEqual({ db: sha(db), env: sha(envFile) }, before);
+      const git = spawnSync("git", ["status", "--porcelain", "--", ".", ":(exclude)desktop/e2e"], { cwd: paths.root, encoding: "utf8" });
+      assert.equal(git.stdout.trim(), "", "nothing in the checkout changed (ignored files aside)");
+    });
+
+    await check("the headless backend starts again on the same database and still has its data", async () => {
+      server = require("node:child_process").spawn(paths.python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)], {
+        cwd: paths.backend, env: cleanEnv, stdio: "ignore",
+      });
+      children.push(server);
+      await waitUntil(async () => fetch(`http://127.0.0.1:${port}/api/v1/threads`).then((r) => r.status === 200, () => false), "the headless API", 60_000);
+      const threads = await (await fetch(`http://127.0.0.1:${port}/api/v1/threads`)).json();
+      assert.deepEqual(threads.map((t) => t.title), ["headless-marker"]);
+    });
+  } finally {
+    for (const child of children) killTree(child.pid);
+    fs.rmSync(envFile, { force: true });
+  }
 }
 
 // ---- chat, with the real Claude CLI ------------------------------------------------
@@ -384,6 +484,36 @@ async function chat() {
     await waitForCompose(page);
   });
 
+  await check("a crash in the middle of an answer loses no completed conversation", async () => {
+    const completed = (await u.list()).split("\n").map((l) => l.trim()).filter(Boolean);
+    assert.ok(completed.length >= 4, `expected the four conversations so far, got: ${completed.join(" | ")}`);
+    await u.newChat();
+    await page.waitFor(`!location.search.includes('thread=')`, "a new chat", 20_000);
+    await u.send("Write a long story about a ship's cook, at least 600 words, in many paragraphs.");
+    await page.waitFor(`document.querySelector('main').innerText.length > 100 && ${u.buttonShown("Stop")}`, "an answer streaming", 180_000);
+    const dying = app.backendPid();
+    await app.hardKill();
+    await waitUntil(() => !alive(dying), "the backend to stop by itself", 60_000);
+    app.destroy();
+    await sleep(3000);
+    app = await start({ dataDir: data });
+    page = await app.page();
+    u = ui(page);
+    await page.waitFor(`document.querySelector('nav[aria-label="Conversations"]') && document.querySelector('nav[aria-label="Conversations"]').innerText.includes('pong')`, "the list", 60_000);
+    const after = await u.list();
+    for (const line of completed) assert.ok(after.includes(line), `still listed after the crash: ${line}`);
+    // The interrupted answer must not be left looking like it is still running.
+    await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Conversations"] a')].find(a => a.innerText.toLowerCase().includes('pong')).click()`);
+    await page.waitFor(`location.search.includes('thread=') && document.querySelector('main').innerText.toLowerCase().includes('pong')`, "a completed transcript", 60_000);
+    await waitForCompose(page);
+    assert.equal(await u.has("Stop"), false);
+    await page.evaluate(`[...document.querySelectorAll('nav[aria-label="Conversations"] a')].find(a => /ship's cook|story/i.test(a.innerText)).click()`);
+    await sleep(2000);
+    await waitForCompose(page); // an interrupted conversation can be written to again
+    fs.writeFileSync(path.join(data, "after-crash.png"), await page.screenshot());
+    console.log(`       interrupted conversation after the crash: ${JSON.stringify((await u.main()).slice(-160))}`);
+  });
+
   let conversations;
   await check("quitting while idle and starting again keeps every conversation", async () => {
     conversations = await u.list();
@@ -421,11 +551,12 @@ async function chat() {
     if (selected("lifecycle")) await lifecycle();
     if (selected("scripts")) await scripts();
     if (selected("failures")) await failures();
+    if (selected("headless")) await headless();
     if (selected("chat")) await chat();
   } finally {
     for (const app of running) app.destroy();
     if (!keep) {
-      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout"]) {
+      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout", "signedout", "signedout-claude-config", "headless", "headless-desktop"]) {
         // The chat folder is also where Claude's workspace is; only this run's own folders go.
         fs.rmSync(path.join(BASE, name), { recursive: true, force: true });
       }

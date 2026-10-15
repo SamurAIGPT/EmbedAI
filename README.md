@@ -315,8 +315,9 @@ for your Allow or Deny in the page (an allowed command runs as you, with no
 sandbox). See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
 
 A separate set of endpoints, `/api/v1/threads`, keeps conversations in the
-database so they continue and survive a restart. It is API only for now: the
-page does not use it yet. See [docs/SETUP.md](docs/SETUP.md#durable-threads-experimental).
+database so they continue and survive a restart. The Chat page (`/chat`, linked
+as "Open chat" on the home page) is their interface. See
+[docs/SETUP.md](docs/SETUP.md#the-chat-page).
 
 ## Known limitations
 
@@ -342,9 +343,10 @@ page does not use it yet. See [docs/SETUP.md](docs/SETUP.md#durable-threads-expe
 - Scheduled-run notifications only reach Telegram-linked users (a numeric
   `user_id`) and only if `TELEGRAM_BOT_TOKEN` is set — a web-only guest has
   no chat to message and only sees outcomes in the UI's schedules list.
-- Durable threads (`/api/v1/threads`) have no UI yet, are tested on SQLite only,
-  and store transcripts (including what Claude read, wrote and ran) in the
-  database with no way to delete them yet.
+- Durable threads (`/api/v1/threads`) and the Chat page cannot yet stop a running
+  answer, rename or delete a conversation, or format answers as Markdown; they are
+  tested on SQLite only, and store transcripts (including what Claude read, wrote
+  and ran) in the database with no way to delete them yet.
 
 ## Contributing
 

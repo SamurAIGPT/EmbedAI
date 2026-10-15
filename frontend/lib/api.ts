@@ -3,15 +3,24 @@ const API_BASE =
 
 class ApiError extends Error {
   status: number;
+  // The backend's machine-readable cause when it gives one (for example
+  // "turn_running"); null otherwise.
+  code: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
 function formatErrorDetail(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    // {"error_code": ..., "message": ...}, the shape of errors a client acts on.
+    const message = (detail as { message?: unknown }).message;
+    return typeof message === "string" && message ? message : fallback;
+  }
   if (!Array.isArray(detail)) return fallback;
   const messages = detail.flatMap((issue: unknown) => {
     if (!issue || typeof issue !== "object" || !("msg" in issue) || typeof issue.msg !== "string") {
@@ -35,7 +44,10 @@ export type RunEvent = {
   ts: string;
 };
 
-function parseBlock(block: string): RunEvent | null {
+// What every stream frame has in common: the parser checks nothing else.
+export type StreamEnvelope = { type: string; data: Record<string, unknown> };
+
+function parseBlock<T extends StreamEnvelope>(block: string): T | null {
   const data: string[] = [];
   for (const line of block.split("\n")) {
     if (line === "" || line.startsWith(":")) continue; // blank or keep-alive comment
@@ -51,11 +63,11 @@ function parseBlock(block: string): RunEvent | null {
     if (
       parsed &&
       typeof parsed === "object" &&
-      typeof (parsed as RunEvent).type === "string" &&
-      (parsed as RunEvent).data &&
-      typeof (parsed as RunEvent).data === "object"
+      typeof (parsed as StreamEnvelope).type === "string" &&
+      (parsed as StreamEnvelope).data &&
+      typeof (parsed as StreamEnvelope).data === "object"
     ) {
-      return parsed as RunEvent;
+      return parsed as T;
     }
   } catch {
     // a frame that is not valid JSON is skipped, not fatal
@@ -65,7 +77,7 @@ function parseBlock(block: string): RunEvent | null {
 
 // Feed it decoded text in any chunking (a frame, half a frame, "\r\n" split
 // across chunks); it calls onEvent once per complete frame.
-export function createSseParser(onEvent: (event: RunEvent) => void) {
+export function createSseParser<T extends StreamEnvelope = RunEvent>(onEvent: (event: T) => void) {
   let buffer = "";
   return {
     push(chunk: string) {
@@ -77,7 +89,7 @@ export function createSseParser(onEvent: (event: RunEvent) => void) {
       const blocks = buffer.split("\n\n");
       buffer = (blocks.pop() ?? "") + heldBack;
       for (const block of blocks) {
-        const event = parseBlock(block);
+        const event = parseBlock<T>(block);
         if (event) onEvent(event);
       }
     },
@@ -92,13 +104,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     let detail = res.statusText;
+    let code: string | null = null;
     try {
       const body = await res.json();
       detail = formatErrorDetail(body?.detail, detail);
+      if (typeof body?.detail?.error_code === "string") code = body.detail.error_code;
     } catch {
       // response body wasn't JSON — fall back to statusText
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, code);
   }
 
   if (res.status === 204) return undefined as T;
@@ -214,6 +228,81 @@ export type PermissionAsk = {
   answered_at: string | null;
 };
 
+export type Thread = {
+  id: number;
+  title: string | null;
+  provider: string;
+  model: string | null;
+  // new | active | broken | none. "broken": the Claude session cannot be found
+  // and must be reset before the thread takes another message.
+  session_state: string;
+  last_seq: number;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ThreadTurn = {
+  id: number;
+  seq: number;
+  prompt_text: string;
+  // running | succeeded | failed | cancelled | interrupted
+  status: string;
+  error_code: string | null;
+  error: string | null;
+  result: string | null;
+  model: string | null;
+  usage: Record<string, unknown> | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type ThreadDetail = Thread & {
+  turns: ThreadTurn[];
+  active_turn_id: number | null;
+};
+
+// One frame of a thread's stream. Stored events have a seq and a timestamp;
+// typing frames (text.delta) and runtime.status have neither.
+export type ThreadEvent = {
+  thread_id: number;
+  seq?: number;
+  type: string;
+  turn_id?: number | null;
+  data: Record<string, unknown>;
+  ts?: string;
+};
+
+// A GET that returns server-sent events. No Content-Type header: it is a plain
+// GET and stays a simple cross-origin request (Last-Event-ID, when given, is
+// the only extra header). Resolves when the stream ends for any reason; a
+// dropped connection rejects, it is never a success.
+async function readEventStream<T extends StreamEnvelope>(
+  path: string,
+  extraHeaders: Record<string, string>,
+  onEvent: (event: T) => void,
+  signal?: AbortSignal,
+  onOpen?: () => void
+): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: "text/event-stream", ...extraHeaders },
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    throw new ApiError(res.status, res.statusText || "Could not open the live stream");
+  }
+  onOpen?.();
+  const parser = createSseParser<T>(onEvent);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parser.push(decoder.decode(value, { stream: true }));
+  }
+  parser.push(decoder.decode());
+}
+
 export const api = {
   createLinkCode: () => request<LinkCode>("/link", { method: "POST" }),
 
@@ -294,30 +383,58 @@ export const api = {
   // Live events for one local run. Resolves when the stream ends for any
   // reason, so the caller must then read the task to learn the real outcome.
   // A dropped connection rejects; it is never a success.
-  streamLocalTask: async (
+  streamLocalTask: (
     taskId: number,
     onEvent: (event: RunEvent) => void,
     signal?: AbortSignal
-  ): Promise<void> => {
-    // No Content-Type header: this is a plain GET and should stay a simple
-    // cross-origin request.
-    const res = await fetch(`${API_BASE}/local/tasks/${taskId}/events`, {
-      headers: { Accept: "text/event-stream" },
+  ): Promise<void> =>
+    readEventStream<RunEvent>(`/local/tasks/${taskId}/events`, {}, onEvent, signal),
+
+  // --- Durable threads (/threads) ---
+
+  listThreads: () => request<Thread[]>("/threads"),
+
+  getThread: (threadId: number) => request<ThreadDetail>(`/threads/${threadId}`),
+
+  createThread: () =>
+    request<Thread>("/threads", { method: "POST", body: JSON.stringify({}) }),
+
+  // 202 once the turn has started; its answer arrives on the stream. Errors with
+  // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).
+  sendTurn: (threadId: number, promptText: string) =>
+    request<ThreadTurn>(`/threads/${threadId}/turns`, {
+      method: "POST",
+      body: JSON.stringify({ prompt_text: promptText }),
+    }),
+
+  // The way out of session_state "broken": a new Claude session, same transcript.
+  resetThreadSession: (threadId: number) =>
+    request<Thread>(`/threads/${threadId}/session/reset`, { method: "POST" }),
+
+  // 409 approval_not_waiting: already answered, expired, or its turn ended.
+  answerThreadApproval: (threadId: number, approvalId: string, decision: "allow" | "deny") =>
+    request<{ status: string; decision: string }>(
+      `/threads/${threadId}/approvals/${encodeURIComponent(approvalId)}`,
+      { method: "POST", body: JSON.stringify({ decision }) }
+    ),
+
+  // Every stored event after `afterSeq` (null: from the start), then live. The
+  // server replays in order, so a reconnect with the last seq seen misses nothing
+  // and repeats nothing. Resolves when the stream ends for any reason.
+  streamThread: (
+    threadId: number,
+    afterSeq: number | null,
+    onEvent: (event: ThreadEvent) => void,
+    signal?: AbortSignal,
+    onOpen?: () => void
+  ): Promise<void> =>
+    readEventStream<ThreadEvent>(
+      `/threads/${threadId}/events/stream`,
+      afterSeq === null ? {} : { "Last-Event-ID": String(afterSeq) },
+      onEvent,
       signal,
-    });
-    if (!res.ok || !res.body) {
-      throw new ApiError(res.status, res.statusText || "Could not open the live stream");
-    }
-    const parser = createSseParser(onEvent);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      parser.push(decoder.decode(value, { stream: true }));
-    }
-    parser.push(decoder.decode());
-  },
+      onOpen
+    ),
 
   getPendingAsk: (taskId: number) =>
     request<PermissionAsk | null>(`/permissions/ask/task/${taskId}`),

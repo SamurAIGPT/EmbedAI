@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { ConnectTelegram } from "@/components/ConnectTelegram";
@@ -76,6 +77,9 @@ export default function Home() {
           <p className="text-sm text-zinc-500">
             Connect your accounts, then submit a task.
           </p>
+          <Link href="/chat" className="mt-2 inline-block text-sm font-medium underline">
+            Open chat
+          </Link>
         </div>
 
         {backendProblem ? (

@@ -75,13 +75,26 @@ What you must know before turning it on:
 - Approvals and the timeline live in memory, like the answer stream (single backend process). The timeline is shown while you keep the page open and is not saved; the saved task keeps only the answer. If the backend restarts during a run, the run ends as interrupted.
 - Each local task started from the page is a new conversation. For conversations that continue, see [Durable threads](#durable-threads-experimental).
 - Anyone who can already reach the local routes (see "Who can use it") can approve, because there is no password. Keep it off shared machines.
-- The Claude CLI has its own memory feature. When you ask it to remember something it may save notes under your `~/.claude/projects/` folder, outside the workspace, without an approval card; the CLI, not this app, decides that. Observed with Claude Code 2.1.232.
+- The Claude CLI has its own memory feature that can save notes under your `~/.claude/projects/` folder, outside the workspace, without an approval card. Runs started by this app turn it off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` for that process only), so the app's conversations cannot write there; your own use of the CLI is unchanged. Checked with Claude Code 2.1.232: with the variable set, a "remember this" request wrote no notes.
 
 Tested on Windows with Claude Code 2.1.232. The code is written for Windows, macOS and Linux (OS-specific parts are guarded in `local_claude_runner.py`: the npm `claude.cmd` shim, `taskkill` versus `killpg`, console-window flags), but macOS and Linux have not been run yet.
 
+## The Chat page
+
+Open `/chat` (the "Open chat" link on the home page). It needs the same setup as [local Claude](#local-claude-experimental): `LOCAL_EXECUTION_ENABLED=true` on the backend and the `claude` CLI installed and signed in. If not, the page says which, and what to change. With `LOCAL_TOOLS_ENABLED` off it is chat only and the header says so.
+
+- **Conversations.** The list on the left shows every conversation, newest activity first. "New chat" starts an empty one; the conversation is created when you send the first message, and its address (`/chat?thread=<number>`) can be bookmarked. On a narrow window the list is behind the menu button.
+- **Answers and tool calls.** Claude's answer appears as it is written. Each tool call is one step you can open to see its exact input and its output (long output is cut for display, with a button to show all).
+- **Approvals.** A call that needs your permission shows a card with exactly what will run, and does not run until you press Allow. Deny, or no answer, runs nothing. Until you answer, the message box is closed.
+- **Reload or restart.** Reloading the page, or restarting the backend, shows the same conversation, and your next message continues the same Claude session. If the backend stopped while Claude was working, the page says the message was not resumed or sent again; send it again if you still want it.
+- **A lost session.** If Claude can no longer find a conversation's session, the page explains it and offers "Start a new session". The messages stay visible, but Claude no longer has them as context.
+- **Connection.** If the page loses the backend it shows "Reconnecting…" and catches up by itself; nothing is lost or shown twice.
+- **Not yet:** stopping a running answer, Markdown formatting (answers are plain text), renaming, archiving or deleting conversations, search.
+- **Where it is stored.** Conversations, including what Claude read, wrote and ran, are in the database, as described under [Durable threads](#durable-threads-experimental); the page itself keeps nothing in the browser.
+
 ## Durable threads (experimental)
 
-Conversations that survive a page refresh and a backend restart, where each message continues the same Claude session. For now this is an API only: the web page does not use it yet (its Local Claude card still runs one prompt at a time). It is local access only and needs the same setup as [local Claude](#local-claude-experimental) (`LOCAL_EXECUTION_ENABLED=true`, the `claude` CLI signed in). Tools and approvals follow `LOCAL_TOOLS_ENABLED` exactly as described under [Tools and approvals](#tools-and-approvals-local-claude).
+Conversations that survive a page refresh and a backend restart, where each message continues the same Claude session. The [Chat page](#the-chat-page) is its interface; the older Local Claude card on the home page still runs one prompt at a time. It is local access only and needs the same setup as [local Claude](#local-claude-experimental) (`LOCAL_EXECUTION_ENABLED=true`, the `claude` CLI signed in). Tools and approvals follow `LOCAL_TOOLS_ENABLED` exactly as described under [Tools and approvals](#tools-and-approvals-local-claude).
 
 After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` does). It adds four tables (`thread`, `turn`, `event`, `approval`) and changes nothing that exists.
 

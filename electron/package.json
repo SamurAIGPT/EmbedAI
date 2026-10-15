@@ -1,0 +1,13 @@
+{
+  "name": "open-dots-desktop-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Feasibility spike: Electron shell around the packaged backend and the exported web page.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^43.0.0"
+  }
+}

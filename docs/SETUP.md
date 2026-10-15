@@ -50,7 +50,7 @@ Tested on Windows with PostgreSQL 17 in Docker (`postgres:17-alpine`); the code 
 
 ## Local Claude (experimental)
 
-Runs Claude through the `claude` CLI already installed and signed in on the machine that runs the backend, instead of a Boat sandbox. By default it is **chat-only**: tools, MCP servers and skills are all disabled, so Claude can answer but cannot read files or run commands. With `LOCAL_TOOLS_ENABLED=true` it can also use tools, each one waiting for your approval (see [Tools and approvals](#tools-and-approvals-local-claude)). The answer streams into the page as Claude writes it; there is no conversation history beyond a list of past answers yet.
+Runs Claude through the `claude` CLI already installed and signed in on the machine that runs the backend, instead of a Boat sandbox. By default it is **chat-only**: tools, MCP servers and skills are all disabled, so Claude can answer but cannot read files or run commands. With `LOCAL_TOOLS_ENABLED=true` it can also use tools, each one waiting for your approval (see [Tools and approvals](#tools-and-approvals-local-claude)). The answer streams into the page as Claude writes it; the page keeps only a list of past answers (for conversations that continue and survive a restart, see [Durable threads](#durable-threads-experimental)).
 
 1. Install Claude Code and sign in (`claude auth login`).
 2. In `backend/.env` set `LOCAL_EXECUTION_ENABLED=true` and restart the backend. Optionally set `LOCAL_CLAUDE_CLI_PATH` to the full path of the real `claude` executable (on Windows the npm `claude.cmd` shim is resolved to the real `claude.exe` automatically) and `LOCAL_WORKSPACE_ROOT` (default `~/.open-dots/local`).
@@ -73,9 +73,39 @@ What you must know before turning it on:
 - Once you press Allow, a command runs **as you, on this computer, without a sandbox**. Read the command before approving. This is the same trust you give the Claude CLI in a terminal.
 - The CLI, not this app, decides which calls ask. In its default mode it asks for writes, for anything outside the workspace folder, and for commands it does not recognise as read-only. A few read-only commands (for example `echo` and `ls`) and reads inside the workspace run without asking, and permission rules in your own Claude settings are not turned off by this app, so a rule there that allows something will let it run unasked. Tested with Claude Code 2.1.232: a write inside the workspace, a read of `C:\Windows\win.ini` and `python -c ...` each asked; denying each stopped it.
 - Approvals and the timeline live in memory, like the answer stream (single backend process). The timeline is shown while you keep the page open and is not saved; the saved task keeps only the answer. If the backend restarts during a run, the run ends as interrupted.
-- Each local task is a new conversation. Threads and resuming come later.
+- Each local task started from the page is a new conversation. For conversations that continue, see [Durable threads](#durable-threads-experimental).
 - Anyone who can already reach the local routes (see "Who can use it") can approve, because there is no password. Keep it off shared machines.
+- The Claude CLI has its own memory feature. When you ask it to remember something it may save notes under your `~/.claude/projects/` folder, outside the workspace, without an approval card; the CLI, not this app, decides that. Observed with Claude Code 2.1.232.
 
 Tested on Windows with Claude Code 2.1.232. The code is written for Windows, macOS and Linux (OS-specific parts are guarded in `local_claude_runner.py`: the npm `claude.cmd` shim, `taskkill` versus `killpg`, console-window flags), but macOS and Linux have not been run yet.
+
+## Durable threads (experimental)
+
+Conversations that survive a page refresh and a backend restart, where each message continues the same Claude session. For now this is an API only: the web page does not use it yet (its Local Claude card still runs one prompt at a time). It is local access only and needs the same setup as [local Claude](#local-claude-experimental) (`LOCAL_EXECUTION_ENABLED=true`, the `claude` CLI signed in). Tools and approvals follow `LOCAL_TOOLS_ENABLED` exactly as described under [Tools and approvals](#tools-and-approvals-local-claude).
+
+After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` does). It adds four tables (`thread`, `turn`, `event`, `approval`) and changes nothing that exists.
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/v1/threads` | Start a conversation. Optional `provider` (default `claude`), `model` and `title`. |
+| `GET /api/v1/threads`, `GET /api/v1/threads/{id}` | List conversations, newest activity first; read one with its turns. |
+| `POST /api/v1/threads/{id}/turns` | Send a message, `{"prompt_text": "..."}`. Answers 202 once the turn has started; the answer arrives as events. 409 `turn_running` while a turn is running, 409 `session_broken` (see below), 503 `provider_unavailable` if the CLI is not ready. |
+| `GET /api/v1/threads/{id}/events?after=N` | Stored events after number N, in order. |
+| `GET /api/v1/threads/{id}/events/stream` | Server-sent events. Each stored event has `id: <number>`; a browser that reconnects sends `Last-Event-ID` itself and receives exactly what it missed (or pass `?after=N`). `text.delta` frames are a typing preview with no id that is never stored: clear it when the `assistant.message` event arrives. |
+| `GET /api/v1/threads/{id}/approvals?status=pending`, `POST /api/v1/threads/{id}/approvals/{approval_id}` | Tool calls waiting for you, with the exact input; answer `{"decision": "allow"}` or `{"decision": "deny"}`. An approval that was already answered, expired, or whose turn is no longer running answers 409 `approval_not_waiting` and authorizes nothing. |
+| `POST /api/v1/threads/{id}/session/reset` | Start a new Claude session for the thread (see below). Not allowed while a turn is running. |
+
+Events, in the order they happen: `turn.started` (it carries the prompt), `assistant.message`, `tool.started`, `approval.requested`, `approval.resolved`, `tool.completed`, then one of `turn.completed`, `turn.failed` or `turn.interrupted` (`turn.cancelled` is reserved for Stop, which does not exist yet); and `session.reset` when a session is reset.
+
+What to know:
+
+- **Restarts and crashes.** Everything stored survives. A turn that was running when the backend stopped is marked `interrupted` and is never run again. Quitting the backend cleanly does this at once; after a crash it happens about a minute later, when the turn's heartbeat expires, and until then the thread reports a turn as running. Claude does not remember the call it was about to make, so say so in your next message if it matters. The text of an answer that was still being typed at that moment is not saved; only completed answers are. A turn that fails while the backend keeps running keeps its partial answer, marked `incomplete`.
+- **A lost session.** If Claude can no longer find a thread's session (for example its `~/.claude` data was removed), the turn fails with `session_resume_failed` and the thread becomes `broken`. The app never starts a fresh session on its own: Claude would answer without the earlier context while looking like a continuation. Reset the session explicitly; the stored transcript stays visible, but Claude no longer has it as context.
+- **Approvals** are stored with the exact input that was shown and are valid only while their turn is running. An Allow reaches Claude only if the turn still belongs to the backend process that is running it.
+- **Stored transcripts.** Events contain what Claude read, wrote and ran, including file contents and commands. They are stored in the database (the SQLite file, or PostgreSQL) and there is no way to delete them or set a retention period yet. Keep the database out of shared or synced folders.
+- **One backend process for the live parts.** The typing preview and a live Allow or Deny answer are handled in the memory of the process running the turn. With several backend processes, stored events still reach every stream within about a second, and an answer recorded by another process is noticed within about a second.
+- **Databases.** Tested on SQLite. On PostgreSQL the migration applies, but the behaviour has not been verified yet, so use SQLite for this feature for now.
+- The heartbeat and expiry times (`THREAD_HEARTBEAT_SECONDS`, default 10, and `THREAD_LEASE_SECONDS`, default 60) are internal tuning values; you should not need to change them.
+- Tested with Claude Code 2.1.232 on Windows. The code is written for Windows, macOS and Linux, but macOS and Linux have not been run yet.
 
 This file will change when the local-first launcher (roadmap F09/F10) ships.

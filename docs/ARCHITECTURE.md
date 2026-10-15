@@ -19,6 +19,7 @@ Next.js web UI (frontend/)        Telegram bot (backend/app/telegram_bot.py)
 
 - **Backend:** FastAPI, SQLAlchemy models (`task`, `schedule`, `user_sandbox`, `user_credential`, `permission_rule`, `permission_ask`, `link_code`), Alembic migrations, background loop for schedules and task sync.
 - **Frontend:** Next.js, components for connecting Claude/GitHub/Telegram and submitting tasks.
+- **Threads (experimental, API only):** `thread`, `turn`, `event` and `approval` tables, and a runtime that runs each turn in the user's `claude` CLI, stores every event before announcing it, and keeps a heartbeat so that a turn whose process died is marked interrupted. Routes under `/api/v1/threads` include a server-sent-events stream that resumes from a stored event number. Nothing in the web page uses them yet.
 - **Identity:** guest or Telegram id stored in the browser; no owner authentication yet. The optional local Claude path (off by default) is instead restricted to requests from the machine itself by `local_access_policy`, and runs through the user's own `claude` CLI: chat-only by default, or with tools whose calls each wait for a person's approval when `LOCAL_TOOLS_ENABLED` is set.
 
 See [README](../README.md), [backend/README.md](../backend/README.md) and [frontend/README.md](../frontend/README.md) for details.
@@ -70,4 +71,4 @@ Web UI (desktop wrapper later)      Telegram (optional)
 7. Storage migrations are additive. Existing task, schedule and credential data is preserved.
 8. Host CLI execution runs natively on loopback. Containers cannot see host CLI logins automatically, so Docker isolation is a separate, later feature.
 
-This section describes intent, not shipped behavior. One deliberate gap today: local runs stream their text over server-sent events from memory only (F02), so rule 2's storage and `Last-Event-ID` replay are not implemented yet; they arrive with threads and resume in F04/F05.
+This section describes intent, not shipped behavior. Durable threads (F04) already follow rules 2, 5 and 6 and never replay an interrupted turn: events are stored before they are announced and a stream resumes from `Last-Event-ID`, approvals are stored and checked against the running turn, and a thread has at most one running turn. The older Local Claude card still streams from memory only. Stop and resume (F05), named agents (F06), a second provider and a computer provider are not built yet.

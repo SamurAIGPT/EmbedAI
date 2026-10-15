@@ -18,7 +18,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F01 | Run Claude CLI locally from the web UI (loopback access policy, chat-only) | Done |
 | F02 | Stream assistant text and status (SSE) | Implemented, awaiting review |
 | F03 | Tool timeline and inline approvals | Implemented (opt-in, in memory), awaiting review |
-| F04 | Durable agents/threads/events and thread list | Planned |
+| F04 | Durable threads, turns, events and approvals, and a thread list (named agents are F06) | Backend implemented as an API (no UI yet); SQLite supported, PostgreSQL behaviour not yet verified |
 | F05 | Stop, restart and resume | Planned |
 | F06 | Multiple named agents with dedicated workspaces | Planned |
 | F07 | Codex provider (experimental until Windows sandbox issue is resolved) | Planned |

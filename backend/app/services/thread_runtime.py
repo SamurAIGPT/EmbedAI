@@ -50,8 +50,22 @@ STATUS_CACHE_SECONDS = 30.0
 SHUTDOWN_WAIT_SECONDS = 10.0
 
 
+# Every thread belongs to the person at this machine. A runtime can be given
+# another owner id (tests do, so they never touch real threads).
+LOCAL_OWNER_ID = "local-owner"
+
+RESET_MESSAGE = (
+    "A new session was started. The provider no longer has the earlier conversation as "
+    "context; the transcript above is still stored and visible."
+)
+
+
 class UnknownProvider(Exception):
     pass
+
+
+class SessionNotResettable(Exception):
+    """This provider keeps no session of its own, so there is nothing to reset."""
 
 
 class ProviderUnavailable(Exception):
@@ -82,6 +96,9 @@ class TurnRecorder:
         self._runtime = runtime
         self._run = run
         self._lost = False
+        # Seq of the last event this run stored (None before the first), used to
+        # tag typing deltas so a stream can drop one a stored message supersedes.
+        self._last_seq: int | None = None
 
     @property
     def lost(self) -> bool:
@@ -103,6 +120,7 @@ class TurnRecorder:
         if event is None:
             self.lose()
             return False
+        self._last_seq = event.seq
         if type == "assistant.message":
             self._runtime.hub.message_done(run.thread_id)
         self._runtime.hub.notify(run.thread_id)
@@ -110,7 +128,9 @@ class TurnRecorder:
 
     def delta(self, text: str) -> None:
         if not self._lost:
-            self._runtime.hub.delta(self._run.thread_id, self._run.turn_id, text)
+            self._runtime.hub.delta(
+                self._run.thread_id, self._run.turn_id, text, after_seq=self._last_seq
+            )
 
 
 class ThreadApprovalGate:
@@ -216,6 +236,7 @@ class ThreadRuntime:
     adapters: dict[str, ProviderAdapter] = field(default_factory=lambda: {"claude": ClaudeAdapter()})
     status_ttl: float = STATUS_CACHE_SECONDS
     instance_id: str = field(default_factory=lambda: uuid4().hex)
+    owner_id: str = LOCAL_OWNER_ID
     _runs: dict[int, ActiveRun] = field(default_factory=dict)
     _waiters: dict[str, asyncio.Future] = field(default_factory=dict)
     _status_cache: dict[str, tuple[float, ProviderStatus]] = field(default_factory=dict)
@@ -228,6 +249,46 @@ class ThreadRuntime:
         from app.db.session import AsyncSessionLocal
 
         return AsyncSessionLocal()
+
+    # -- threads ----------------------------------------------------------------------
+
+    async def create_thread(
+        self, *, provider: str = "claude", model: str | None = None, title: str | None = None
+    ) -> store.Thread:
+        """A new thread for this runtime's owner. Raises UnknownProvider."""
+        adapter = self.adapters.get(provider)
+        if adapter is None:
+            raise UnknownProvider(provider)
+        session_id = adapter.new_session_id()
+        async with self.session() as db:
+            return await store.create_thread(
+                db,
+                owner_id=self.owner_id,
+                provider=provider,
+                model=model,
+                title=title,
+                provider_session_id=session_id,
+                session_state="new" if session_id is not None else "none",
+            )
+
+    async def reset_session(self, thread_id: int) -> store.Thread:
+        """Start the thread's provider session over, so a broken thread is never
+        stuck. Raises ThreadNotFound, UnknownProvider, SessionNotResettable, or
+        ThreadBusy (a turn is running)."""
+        async with self.session() as db:
+            thread = await store.get_thread(db, thread_id)
+        if thread is None or thread.owner_id != self.owner_id:
+            raise store.ThreadNotFound(thread_id)
+        adapter = self.adapters.get(thread.provider)
+        if adapter is None:
+            raise UnknownProvider(thread.provider)
+        session_id = adapter.new_session_id()
+        if session_id is None:
+            raise SessionNotResettable(thread.provider)
+        async with self.session() as db:
+            thread = await store.reset_session(db, thread_id, session_id, message=RESET_MESSAGE)
+        self.hub.notify(thread_id)
+        return thread
 
     # -- sending a turn ----------------------------------------------------------
 

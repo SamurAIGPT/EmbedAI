@@ -618,6 +618,46 @@ async def test_a_process_can_interrupt_only_its_own_turn_when_it_shuts_down(sess
     assert (await reload(sessions, Approval, approval.id)).status == "cancelled"
 
 
+async def test_a_session_reset_gives_a_new_session_keeps_the_transcript_and_records_it(sessions, owner):
+    thread = await new_thread(sessions, owner, session_state="broken")
+    turn = await call(sessions, store.start_turn, thread.id, "before")
+    await call(sessions, store.finish_turn, turn.id, turn.owner_token, status="failed", event_type="turn.failed")
+    old_session = thread.provider_session_id
+
+    reset = await call(sessions, store.reset_session, thread.id, "brand-new-session", message="started over")
+    assert (reset.provider_session_id, reset.session_state) == ("brand-new-session", "new")
+    assert reset.updated_at is not None  # readable after the session closed
+    stored = await reload(sessions, Thread, thread.id)
+    assert (stored.provider_session_id, stored.session_state) != (old_session, "broken")
+    events = await events_of(sessions, thread.id)
+    assert [e.type for e in events] == ["turn.started", "turn.failed", "session.reset"]  # the transcript stays
+    assert events[-1].turn_id is None
+    assert events[-1].data == {"message": "started over", "previous_state": "broken"}
+
+    # A provider that keeps no session ends up in the `none` state.
+    none = await call(sessions, store.reset_session, thread.id, None, message="no session")
+    assert (none.provider_session_id, none.session_state) == (None, "none")
+
+
+async def test_a_session_cannot_be_reset_while_a_turn_runs_or_for_a_missing_thread(sessions, owner):
+    thread = await new_thread(sessions, owner)
+    await call(sessions, store.start_turn, thread.id, "running")
+    with pytest.raises(store.ThreadBusy):
+        await call(sessions, store.reset_session, thread.id, "x", message="m")
+    assert (await reload(sessions, Thread, thread.id)).provider_session_id == thread.provider_session_id
+    assert [e.type for e in await events_of(sessions, thread.id)] == ["turn.started"]  # nothing written
+    with pytest.raises(store.ThreadNotFound):
+        await call(sessions, store.reset_session, 987654321, "x", message="m")
+
+
+async def test_two_threads_cannot_end_up_sharing_a_session_through_a_reset(sessions, owner):
+    first = await new_thread(sessions, owner, provider_session_id="taken")
+    second = await new_thread(sessions, owner)
+    with pytest.raises(IntegrityError):
+        await call(sessions, store.reset_session, second.id, "taken", message="m")
+    assert first.id != second.id
+
+
 async def test_all_events_are_read_across_pages(sessions, owner):
     thread = await new_thread(sessions, owner)
     for i in range(7):

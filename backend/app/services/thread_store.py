@@ -283,6 +283,40 @@ async def set_session_state(
     return result.rowcount == 1
 
 
+async def reset_session(
+    db: AsyncSession, thread_id: int, new_session_id: str | None, *, message: str
+) -> Thread:
+    """Give the thread a new provider session (or none, when `new_session_id` is
+    None) and record a `session.reset` event, in one transaction. The stored
+    transcript is untouched; only the provider's own context is gone. Refused
+    (ThreadBusy) while a turn is running, because that turn is using the old
+    session."""
+    await begin_write(db)
+    thread = (
+        await db.execute(select(Thread).where(Thread.id == thread_id).with_for_update())
+    ).scalar_one_or_none()
+    if thread is None:
+        await db.rollback()
+        raise ThreadNotFound(thread_id)
+    running = (
+        await db.execute(select(Turn.id).where(Turn.thread_id == thread_id, Turn.status == "running"))
+    ).scalar_one_or_none()
+    if running is not None:
+        await db.rollback()
+        raise ThreadBusy(thread_id)
+    previous = thread.session_state
+    thread.provider_session_id = new_session_id
+    thread.session_state = "new" if new_session_id is not None else "none"
+    # Set here, in Python: left to the database's onupdate it would be expired
+    # after the commit and unreadable once the session is closed.
+    thread.updated_at = utcnow()
+    await _add_event(
+        db, thread_id, "session.reset", {"message": message, "previous_state": previous}, None
+    )
+    await db.commit()
+    return thread
+
+
 async def append_event(
     db: AsyncSession,
     thread_id: int,

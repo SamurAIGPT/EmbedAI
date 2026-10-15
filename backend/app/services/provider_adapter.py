@@ -131,6 +131,10 @@ class ApprovalGate(Protocol):
 class ProviderAdapter(Protocol):
     key: str
 
+    def new_session_id(self) -> str | None:
+        """A fresh provider session id for a new thread (or after a reset), or
+        None for a provider that keeps no session of its own."""
+
     async def status(self) -> ProviderStatus: ...
 
     async def run_turn(

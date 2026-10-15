@@ -7,6 +7,13 @@ deltas of the message in progress, which are display-only, unnumbered, and
 never stored. A lost or late wake costs at most one poll interval; a dropped
 delta is superseded by the completed `assistant.message`.
 
+Each delta (and the in-progress snapshot) is tagged with `after_seq`: the
+sequence number of the last event the run had stored when the message started.
+The message will be stored with a higher seq, so a stream whose cursor is past
+`after_seq` may already have delivered it and drops the typing text instead of
+showing it again. `None` means the run had stored nothing yet, so nothing can
+be stale.
+
 Everything here runs on the event loop thread and never awaits while it holds
 state, so "take the text so far and start listening" is atomic: a new
 subscriber can neither miss nor repeat a delta.
@@ -22,6 +29,7 @@ SUBSCRIBER_QUEUE_SIZE = 256
 class Delta:
     turn_id: int
     text: str
+    after_seq: int | None = None
 
 
 @dataclass(eq=False)
@@ -30,18 +38,26 @@ class ThreadSubscription:
     # The text of the message in progress when the subscription started, to be
     # sent once as a `replace` snapshot, then live deltas.
     snapshot: str
+    snapshot_turn_id: int | None = None
+    snapshot_after_seq: int | None = None
+    # Set when something was committed: read the database. Cleared by the reader
+    # just before it reads.
     wake: asyncio.Event = field(default_factory=asyncio.Event)
+    # Set by a commit or by typing text: the reader has something to do. A delta
+    # sets only this, so typing shows up at once without a database read each time.
+    signal: asyncio.Event = field(default_factory=asyncio.Event)
     deltas: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE))
     lagged: bool = False
 
     async def wait(self, timeout: float) -> bool:
-        """Wait for a wake or `timeout` seconds. True if woken. Either way the
-        caller then reads the database from its cursor."""
+        """Wait until there is something to do (a commit or typing text) or
+        `timeout` seconds. True if woken. The caller reads the database when
+        `wake` is set or the wait timed out, and always sends pending typing."""
         try:
-            await asyncio.wait_for(self.wake.wait(), timeout)
+            await asyncio.wait_for(self.signal.wait(), timeout)
         except TimeoutError:
             return False
-        self.wake.clear()
+        self.signal.clear()
         return True
 
     def drain_deltas(self) -> list[Delta]:
@@ -53,9 +69,11 @@ class ThreadSubscription:
 
 @dataclass
 class _Live:
-    # Text of the message in progress, per turn, so a late subscriber can be
-    # given what was typed so far.
+    # Text of the message in progress, so a late subscriber can be given what
+    # was typed so far.
     in_progress: str = ""
+    in_progress_turn: int | None = None
+    in_progress_after: int | None = None
     subscribers: set = field(default_factory=set)
 
 
@@ -68,7 +86,12 @@ class ThreadHub:
 
     def subscribe(self, thread_id: int) -> ThreadSubscription:
         live = self._live(thread_id)
-        subscription = ThreadSubscription(thread_id=thread_id, snapshot=live.in_progress)
+        subscription = ThreadSubscription(
+            thread_id=thread_id,
+            snapshot=live.in_progress,
+            snapshot_turn_id=live.in_progress_turn,
+            snapshot_after_seq=live.in_progress_after,
+        )
         live.subscribers.add(subscription)
         return subscription
 
@@ -90,13 +113,18 @@ class ThreadHub:
             return
         for subscriber in live.subscribers:
             subscriber.wake.set()
+            subscriber.signal.set()
 
-    def delta(self, thread_id: int, turn_id: int, text: str) -> None:
+    def delta(self, thread_id: int, turn_id: int, text: str, after_seq: int | None = None) -> None:
         live = self._live(thread_id)
+        if not live.in_progress:  # the first text of a new message
+            live.in_progress_turn = turn_id
+            live.in_progress_after = after_seq
         live.in_progress += text
         for subscriber in list(live.subscribers):
             try:
-                subscriber.deltas.put_nowait(Delta(turn_id, text))
+                subscriber.deltas.put_nowait(Delta(turn_id, text, after_seq))
+                subscriber.signal.set()  # typing is sent at once; no database read needed
             except asyncio.QueueFull:
                 # A slow reader never holds a run back. It misses typing deltas
                 # and is told, so it can show the stored message when it lands.
@@ -107,6 +135,8 @@ class ThreadHub:
         live = self._threads.get(thread_id)
         if live is not None:
             live.in_progress = ""
+            live.in_progress_turn = None
+            live.in_progress_after = None
             if not live.subscribers:
                 self._threads.pop(thread_id, None)
 

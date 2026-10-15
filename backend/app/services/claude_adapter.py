@@ -23,6 +23,7 @@ Session rules (verified against Claude Code 2.1.232):
 import asyncio
 import json
 from dataclasses import dataclass
+from uuid import uuid4
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -106,6 +107,9 @@ class _Attempt:
 
 class ClaudeAdapter:
     key = "claude"
+
+    def new_session_id(self) -> str:
+        return str(uuid4())
 
     async def status(self) -> ProviderStatus:
         cli = await local_claude_runner.get_status()

@@ -243,7 +243,12 @@ def workspace_dir() -> Path:
 
 
 def _child_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in _APP_SECRET_ENV}
+    env = {k: v for k, v in os.environ.items() if k not in _APP_SECRET_ENV}
+    # The CLI's own memory feature can save notes under ~/.claude/projects/,
+    # outside the workspace and without asking. Not for runs this app starts;
+    # the user's own use of the CLI is unaffected (only this process sees it).
+    env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+    return env
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:

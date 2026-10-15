@@ -64,6 +64,14 @@ def test_app_secrets_are_not_passed_to_the_child(tmp_path, monkeypatch):
     assert out.stdout.strip() == "absent visible"
 
 
+def test_the_cli_auto_memory_is_off_for_runs_this_app_starts(tmp_path, monkeypatch):
+    # Whatever the user's own shell says: app runs never let the CLI save notes
+    # outside the workspace.
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "0")
+    out = run("import os; print(os.environ.get('CLAUDE_CODE_DISABLE_AUTO_MEMORY'))", tmp_path=tmp_path)
+    assert out.stdout.strip() == "1"
+
+
 def test_build_args_locks_tools_down_and_keeps_the_prompt_off_argv():
     args = runner.build_args(Path("claude.exe"), "sid-1")
     assert args[args.index("--tools") + 1] == ""

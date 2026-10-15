@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.core.background import run_every
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.desktop.launch_auth import LaunchAuthMiddleware
 from app.routers.router import router as app_router
 from app.services import schedule_service, task_execution_service
 from app.services.thread_runtime import runtime as thread_runtime
@@ -49,6 +50,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Desktop launches only (a no-op otherwise). Added before CORS, which makes it the
+# inner of the two: a preflight is answered by CORS without a token, and a refusal
+# still carries the CORS headers the page needs to read it.
+app.add_middleware(LaunchAuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

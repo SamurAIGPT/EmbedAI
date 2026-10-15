@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from sqlalchemy import URL
+
+from app.desktop import profile
 
 
 class Settings(BaseSettings):
@@ -78,6 +80,22 @@ class Settings(BaseSettings):
     THREAD_LEASE_SECONDS: int = 60
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # The desktop profile (app/desktop/profile.py) is the whole configuration of
+        # a desktop launch: neither the environment nor a .env file may change it.
+        # Everywhere else this is pydantic-settings' own order, unchanged.
+        if profile.active():
+            return (init_settings,)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
     @property
     def FRONTEND_ORIGIN_LIST(self) -> list[str]:
@@ -157,4 +175,4 @@ class Settings(BaseSettings):
         ).render_as_string(hide_password=False)
 
 
-settings = Settings()  # type: ignore
+settings = Settings(**profile.settings_overrides())  # type: ignore

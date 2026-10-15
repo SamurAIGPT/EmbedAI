@@ -25,6 +25,7 @@ from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
+from app.desktop import profile
 
 # Verified against Claude Code 2.1.232: init reported tools=[], mcp_servers=[],
 # skills=[], and a prompt asking to run a shell command wrote nothing.
@@ -68,6 +69,17 @@ _APP_SECRET_ENV = (
 )
 
 _STATUS_TIMEOUT_SECONDS = 20
+
+_NOT_FOUND = (
+    "Claude CLI not found. Install Claude Code, or set LOCAL_CLAUDE_CLI_PATH "
+    "to the full path of the real claude executable."
+)
+# The desktop app has no .env to point at (D-012): it names what it does read.
+_NOT_FOUND_DESKTOP = (
+    "Claude CLI not found. Install Claude Code, then choose Check again. If it is installed "
+    "where Open Dots cannot see it, start Open Dots with OPEN_DOTS_CLAUDE_PATH set to the "
+    "full path of the claude executable."
+)
 
 # stream-json repeats the answer (deltas, snapshots, final result) and adds
 # bookkeeping events, so the raw stream is allowed to be larger than the text
@@ -444,13 +456,7 @@ def user_message_line(prompt: str) -> str:
 def _status_blocking() -> CliStatus:
     executable = resolve_claude_executable()
     if executable is None:
-        return CliStatus(
-            installed=False,
-            error=(
-                "Claude CLI not found. Install Claude Code, or set LOCAL_CLAUDE_CLI_PATH "
-                "to the full path of the real claude executable."
-            ),
-        )
+        return CliStatus(installed=False, error=_NOT_FOUND_DESKTOP if profile.active() else _NOT_FOUND)
 
     cwd = workspace_dir()
 

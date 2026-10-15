@@ -1,0 +1,21 @@
+"""Start the backend for the desktop app. Run by the launcher, not by hand:
+it waits for the launcher's message on stdin (see app/desktop/entry.py)."""
+
+import os
+import sys
+
+from app.desktop.entry import main
+
+if __name__ == "__main__":
+    code = main()
+    # Leave without interpreter shutdown. A thread may still be blocked reading
+    # stdin (the launcher's message, or the lifeline); Python aborts with a fatal
+    # error, and a garbage exit code, when it finalizes while one holds stdin's
+    # buffer lock. Everything that matters (server shutdown, the database) has
+    # finished by now, and the exit code is part of the contract with the launcher.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except (OSError, ValueError):
+            pass
+    os._exit(code)

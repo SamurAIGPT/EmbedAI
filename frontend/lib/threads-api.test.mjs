@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { api, ApiError } from './api.ts';
+import { api, ApiError, isLaunchTokenMissing } from './api.ts';
 import { applyEvent, emptyTranscript } from './transcript.ts';
 
 const originalFetch = globalThis.fetch;
@@ -183,4 +183,22 @@ test('delete sends DELETE and a 204 with no body is a success', async () => {
   assert.equal(await api.deleteThread(3), undefined);
   assert.match(calls[0].url, /\/threads\/3$/);
   assert.equal(calls[0].options.method, 'DELETE');
+});
+
+
+test('a refusal for a missing launch token is recognised, and nothing else is', async () => {
+  respondJson(401, { detail: { error_code: 'launch_token_required', message: 'This address only works from inside the Open Dots app.' } });
+  await assert.rejects(api.getLocalStatus(), (err) => isLaunchTokenMissing(err) === true);
+
+  respondJson(401, { detail: 'Not authenticated' });
+  await assert.rejects(api.getLocalStatus(), (err) => isLaunchTokenMissing(err) === false);
+
+  respondJson(409, { detail: { error_code: 'turn_running', message: 'x' } });
+  await assert.rejects(api.getLocalStatus(), (err) => isLaunchTokenMissing(err) === false);
+
+  respondJson(503, { detail: { error_code: 'launch_token_unavailable', message: 'x' } });
+  await assert.rejects(api.getLocalStatus(), (err) => isLaunchTokenMissing(err) === false);
+
+  assert.equal(isLaunchTokenMissing(new TypeError('Failed to fetch')), false);
+  assert.equal(isLaunchTokenMissing(undefined), false);
 });

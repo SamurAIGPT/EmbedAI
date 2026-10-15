@@ -14,6 +14,12 @@ class ApiError extends Error {
   }
 }
 
+// The desktop app's backend answers every request that lacks its launch token with
+// this code: the page was opened somewhere other than the app's own window.
+export function isLaunchTokenMissing(err: unknown): boolean {
+  return err instanceof ApiError && err.code === "launch_token_required";
+}
+
 function formatErrorDetail(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object" && !Array.isArray(detail)) {

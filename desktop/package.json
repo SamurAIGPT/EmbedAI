@@ -1,0 +1,22 @@
+{
+  "name": "open-dots-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open Dots desktop app, run from a source checkout: an Electron window around the local backend.",
+  "main": "main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "app": "node scripts/run.js",
+    "setup": "node scripts/setup.js",
+    "build": "node scripts/build.js",
+    "start": "node scripts/launch.js start",
+    "dev": "node scripts/launch.js dev",
+    "test": "node --test \"test/*.test.js\"",
+    "e2e": "node e2e/run.js"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0"
+  }
+}

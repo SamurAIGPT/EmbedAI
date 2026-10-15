@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ApiError, type LocalStatus, type Thread } from "@/lib/api";
+import { api, ApiError, isLaunchTokenMissing, type LocalStatus, type Thread } from "@/lib/api";
 import { pendingApprovals } from "@/lib/transcript";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
@@ -15,6 +15,8 @@ const LIST_REFRESH_MS = 15_000;
 type Gate =
   | { phase: "loading" }
   | { phase: "unreachable" }
+  // The backend wants the desktop app's launch token: this page is not in the app's window.
+  | { phase: "locked" }
   | { phase: "ready"; status: LocalStatus };
 
 function parseThreadId(raw: string | null): number | null {
@@ -41,12 +43,28 @@ function sendErrorText(err: unknown): string {
   return "Could not reach the backend.";
 }
 
-function Notice({ title, children }: { title: string; children: React.ReactNode }) {
+function Notice({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: React.ReactNode;
+  action?: { label: string; onClick: () => void };
+}) {
   return (
     <div className="flex flex-1 items-center justify-center p-6">
       <section className="max-w-md rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
         <h2 className="text-base font-semibold">{title}</h2>
         <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{children}</div>
+        {action && (
+          <button
+            onClick={action.onClick}
+            className="mt-3 cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            {action.label}
+          </button>
+        )}
       </section>
     </div>
   );
@@ -60,6 +78,8 @@ export function ChatApp() {
   const threadId = parseThreadId(useSearchParams().get("thread"));
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
+  // Bumped by "Check again": Claude may have been installed or signed in since.
+  const [statusTick, setStatusTick] = useState(0);
   const [threads, setThreads] = useState<Thread[] | null>(null);
   // Bumped to ask for a fresh thread list (after a send, a reset, a poll).
   const [listTick, setListTick] = useState(0);
@@ -87,13 +107,19 @@ export function ChatApp() {
       .then((status) => !cancelled && setGate({ phase: "ready", status }))
       .catch((err: unknown) => {
         if (cancelled) return;
+        if (isLaunchTokenMissing(err)) return setGate({ phase: "locked" });
         // An answer that is an error (an older backend without the route) is not "unreachable".
         setGate(err instanceof ApiError ? { phase: "ready", status: { enabled: false, available: false, reason: null, cli_version: null } } : { phase: "unreachable" });
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [statusTick]);
+
+  const checkAgain = () => {
+    setGate({ phase: "loading" });
+    setStatusTick((n) => n + 1);
+  };
 
   const ready = gate.phase === "ready" && gate.status.available;
 
@@ -260,6 +286,18 @@ export function ChatApp() {
     );
   }
 
+  if (gate.phase === "locked") {
+    return (
+      <div className="flex h-dvh flex-col">
+        {header}
+        <Notice title="Open this from the Open Dots app">
+          This address only works inside the Open Dots window, which keeps your conversations
+          private to it. Use that window instead of a browser tab.
+        </Notice>
+      </div>
+    );
+  }
+
   if (gate.phase === "unreachable") {
     return (
       <div className="flex h-dvh flex-col">
@@ -277,7 +315,10 @@ export function ChatApp() {
     return (
       <div className="flex h-dvh flex-col">
         {header}
-        <Notice title={gate.status.enabled ? "Local Claude is not available" : "Local Claude is turned off"}>
+        <Notice
+          title={gate.status.enabled ? "Local Claude is not available" : "Local Claude is turned off"}
+          action={gate.status.enabled ? { label: "Check again", onClick: checkAgain } : undefined}
+        >
           {gate.status.enabled
             ? (gate.status.reason ?? "unknown reason")
             : "Set LOCAL_EXECUTION_ENABLED=true in backend/.env on the machine running the backend, then restart it. Chat runs Claude through your own signed-in CLI on this computer."}

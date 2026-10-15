@@ -23,7 +23,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F06 | Multiple named agents with dedicated workspaces | Planned |
 | F07 | Codex provider (experimental until Windows sandbox issue is resolved) | Planned |
 | F08 | Browse/download agent workspace files | Planned |
-| F09 | First-run onboarding and local storage (SQLite storage first, as F09a: foundation in progress, opt-in and experimental) | In progress |
+| F09 | First-run onboarding and local storage (SQLite storage first, as F09a: foundation in progress, opt-in and experimental; a desktop app that starts from a source checkout with no `.env` exists, Windows only; the settings page is not built) | In progress |
 | F10 | Installable beta, CI and documentation | Planned |
 
 Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
@@ -34,7 +34,7 @@ Permission modes, thread search, agent memory, scheduled agent routines, run his
 
 ## Sprint 3 and beyond
 
-Usage and audit log, attachments and diffs, Docker computer provider and lifecycle, computer preview/takeover, desktop wrapper, installers, multi-agent rooms, delegation, voice notes, further parity items based on user demand.
+Usage and audit log, attachments and diffs, Docker computer provider and lifecycle, computer preview/takeover, a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
 
 Out of scope until explicitly approved: multi-tenant paid hosting, hosting third-party subscription credentials, enterprise roles/billing.
 

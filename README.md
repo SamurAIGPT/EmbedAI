@@ -319,6 +319,17 @@ database so they continue and survive a restart. The Chat page (`/chat`, linked
 as "Open chat" on the home page) is their interface. See
 [docs/SETUP.md](docs/SETUP.md#the-chat-page).
 
+### Desktop app (from source, experimental)
+
+An Electron window around the local backend, for local Claude only: from the
+`desktop/` folder, `npm run app` (or the steps one at a time: `npm run setup`,
+`npm run build`, `npm run start`). It
+needs no `.env` file: it makes and keeps its own encryption key in the
+operating system's secret storage, creates its SQLite database, and only its own
+window can use the backend. `npm run app` does the setup and build on the first
+run and then opens it. No installer yet; verified on Windows only. See
+[docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental).
+
 ## Known limitations
 
 - Sandboxes are never automatically stopped/deleted — repeated `/connect`

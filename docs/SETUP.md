@@ -127,4 +127,47 @@ What to know:
 - The heartbeat and expiry times (`THREAD_HEARTBEAT_SECONDS`, default 10, and `THREAD_LEASE_SECONDS`, default 60) are internal tuning values; you should not need to change them.
 - Tested with Claude Code 2.1.232 on Windows. The code is written for Windows, macOS and Linux, but macOS and Linux have not been run yet.
 
-This file will change when the local-first launcher (roadmap F09/F10) ships.
+## Desktop app (from a source checkout, experimental)
+
+An Electron window around the local backend: you open one app instead of starting Python, the API and the web UI yourself. There is no installer yet; you run it from a clone of this repository. It uses local Claude only: Boat, Telegram, schedules and PostgreSQL are not part of it (the settings for those are not read), and it needs no `.env` file.
+
+**You need:** Node.js 22 or newer, [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (it downloads the Python the backend needs, so you do not install Python yourself), and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and signed in. Run the commands below in the `desktop/` folder.
+
+**The short way:** `npm run app` does whatever is missing, then opens Open Dots: it sets up the first time, rebuilds the page when it is missing or older than its source, and otherwise just starts. (`npm run app -- dev` is the same in dev mode.) The four commands below are what it runs, and what to use when you want one step on its own.
+
+| Command | What it does |
+|---|---|
+| `npm run setup` | Installs everything: the backend's Python environment (`uv sync --locked`), the page's dependencies and Electron, including its program file. Run it once, and again after the dependencies change. |
+| `npm run build` | Builds the page the app shows, as plain files. Run it once, and again after the page's code changes. |
+| `npm run start` | Opens Open Dots. |
+| `npm run dev` | The same, with its own data folder and window title, so developing never touches the data you use. |
+
+`start` and `dev` never install or build anything. If something is missing they say which command to run and stop. (If the page's code is newer than the last build, they tell you, and open the older build.)
+
+**First start.** Nothing to configure. The first start takes longer: it creates the database and the encryption key.
+
+**What the app does for you**
+
+- **Encryption key.** Made on first start and kept with the operating system's secret storage (Windows DPAPI, the macOS Keychain, or the Linux keyring) in `secrets/encryption-key.v1` in the data folder. It is never written as plain text and never replaced: if the stored key cannot be read, or the stored credentials cannot be opened with it, the app stops and tells you instead of making a new one. This protects against other user accounts and a copied disk; it does not protect against software running as you. Where there is no secret storage (a Linux session without a running keyring) the app does not start rather than keep the key in a plain file.
+- **Database.** SQLite, in the `data` folder, created and updated by the app. Before an update that changes the database, the app copies it to `data/backups/` (the newest five copies are kept). A file that is not one this app made is refused and left alone. When the app stops, the write-ahead log is folded into the file, so the file on its own holds everything.
+- **Access.** Only the app's own window can use the backend. Each start makes a fresh random token, which the backend receives before it listens and the window adds to its own requests; a browser tab, another program or another website that finds the address gets nothing (a browser tab is told to use the app window). The token is never written to a file, a log, the environment or the page. There is no way to switch this off, in `dev` either. The address and port are chosen by the operating system on every start.
+- **Settings.** Not read from the environment or from any `.env` file, whatever your shell has set. They are the app's own: SQLite, local execution on, Claude may use tools (each call still waits for your Allow or Deny), its workspace under the data folder (`local/workspace`).
+
+**Where things are.** The data folder is `Open Dots` (or `Open Dots (dev)` for `dev`) in your operating system's application-data folder (on Windows, `%APPDATA%\Open Dots`). In it: `data/` (the database, its backups, Claude's workspace in `local/`), `secrets/`, and `logs/backend.log` (the backend's log, also where it says why it did not start). To remove the app's data, close it and delete that folder. Claude's own copy of each session stays in your `.claude` folder, as for the Chat page.
+
+**Claude not found or not signed in.** The Chat page says so, with what to do, and a "Check again" button, so you can fix it without restarting. If Claude is installed where the app cannot see it (an app started from a shortcut can have a different `PATH` than your terminal), start the app with `OPEN_DOTS_CLAUDE_PATH` set to the full path of the `claude` executable. This is a temporary way to say it: a settings page will replace it.
+
+**One more launcher variable**, optional: `OPEN_DOTS_DATA_DIR` (a full path) uses another data folder, for tests or a second copy. Like `OPEN_DOTS_CLAUDE_PATH` it is read by the launcher, not by the backend, and is not a `.env` setting.
+
+**Quitting.** Closing the window stops the backend. If the app is killed, the backend notices and stops within seconds. A message Claude was answering at that moment is interrupted and is not sent again (see [Durable threads](#durable-threads-experimental)).
+
+**Limits of this version**
+
+- Verified on Windows only (Windows 11, Electron 43, Node 22, Claude Code 2.1.232): starting with no `.env`, the token, a restart that keeps the data, a real conversation with an approval, Deny and Stop. The code is written for Windows, macOS and Linux, but macOS and Linux have not been run; on Linux the app also needs a running keyring. It has not been tried on a machine that never ran it before, or by anyone but its author.
+- No installer, no automatic updates, no settings page, no workspace picker, and Claude is found only through the app's `PATH` or `OPEN_DOTS_CLAUDE_PATH`.
+- One app per data folder (a second start brings the first window forward), but this is the app's own lock, not a lock on the data folder: do not point two copies at one folder with `OPEN_DOTS_DATA_DIR`.
+- If the backend stops while the app is open, the app tells you and closes; it does not restart it.
+- The page's address (and so its browser storage) changes on every start. The page keeps nothing there that matters.
+- `npm run e2e` (in `desktop/`) runs the app for real: it opens a window, and its `chat` part makes a few short requests with your Claude. It is written for Windows.
+
+This file will change when the installable launcher (roadmap F10) ships.

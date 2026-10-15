@@ -425,3 +425,161 @@ async def test_typing_is_tagged_with_the_last_event_the_run_had_stored(rt, sessi
     # first message (stored as `first_message.seq`).
     assert "".join(by_message[None]) == "Let me look."
     assert "".join(by_message[first_message.seq]) == "All done."
+
+
+# --- stopping a turn ---------------------------------------------------------------------
+
+
+async def test_stopping_a_turn_kills_the_cli_keeps_the_partial_answer_and_ends_it_as_cancelled(rt, sessions, cli, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "hang"})
+    turn = await rt.send_turn(thread.id, "work for a long time")
+    await wait_until(lambda: cli.log("hanging"))
+
+    assert await rt.stop_turn(thread.id) == turn.id
+    await finished(sessions, thread.id)
+
+    events = await events_of(sessions, thread.id)
+    assert [e.type for e in events] == ["turn.started", "assistant.message", "turn.cancelled"]
+    assert events[1].data == {"text": "typing", "incomplete": True}
+    assert events[2].data["status"] == "cancelled" and events[2].data["error_code"] == "stopped"
+    stopped = await reload(sessions, Turn, turn.id)
+    assert (stopped.status, stopped.error_code, stopped.result) == ("cancelled", "stopped", "typing")
+    assert rt._runs == {}
+
+
+async def test_a_stopped_conversation_carries_on_with_the_same_session(rt, sessions, cli, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "hang"}, {"type": "chat", "text": "Back again"})
+    await rt.send_turn(thread.id, "start something")
+    await wait_until(lambda: cli.log("hanging"))
+    await rt.stop_turn(thread.id)
+    await finished(sessions, thread.id)
+    # The CLI had reported its session before it was killed, so the thread knows it.
+    assert (await reload(sessions, Thread, thread.id)).session_state == "active"
+
+    second = await rt.send_turn(thread.id, "carry on")
+    await finished(sessions, thread.id, 2)
+
+    sid = thread.provider_session_id
+    assert cli.launches() == [("new", sid), ("resume", sid)]  # resumed, not restarted
+    done = await reload(sessions, Turn, second.id)
+    assert (done.status, done.result) == ("succeeded", "Back again")
+
+
+async def test_stopping_while_an_approval_waits_cancels_it_and_nothing_runs(rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "tool"})
+    turn = await rt.send_turn(thread.id, "write a file")
+    approval = await pending_approval(sessions, thread.id)
+
+    await rt.stop_turn(thread.id)
+    await finished(sessions, thread.id)
+
+    assert (await reload(sessions, Approval, approval.id)).status == "cancelled"
+    assert (await reload(sessions, Turn, turn.id)).status == "cancelled"
+    assert cli.log("reply") == []  # the CLI was never told Allow
+    # A late answer to the cancelled approval authorizes nothing.
+    assert not await rt.answer_approval(approval.id, "allow")
+
+
+async def test_a_stop_after_the_turn_already_ended_is_refused(rt, sessions, cli, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "chat"})
+    await rt.send_turn(thread.id, "hi")
+    await finished(sessions, thread.id)
+    await wait_until(lambda: rt._runs == {})
+    with pytest.raises(thread_runtime.NoRunningTurn):
+        await rt.stop_turn(thread.id)
+
+
+async def test_a_turn_running_in_another_process_cannot_be_stopped_from_here(rt, sessions, owner):
+    thread = await new_thread(sessions, owner)
+    async with sessions() as db:
+        await store.start_turn(db, thread.id, "someone else is running this", owner_instance="another-process")
+    with pytest.raises(thread_runtime.TurnNotHere):
+        await rt.stop_turn(thread.id)
+    assert (await _turns(sessions, thread.id))[0].status == "running"  # nothing was changed
+
+
+async def test_stopping_twice_ends_the_turn_once(rt, sessions, cli, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "hang"})
+    await rt.send_turn(thread.id, "work")
+    await wait_until(lambda: cli.log("hanging"))
+    await rt.stop_turn(thread.id)
+    try:
+        await rt.stop_turn(thread.id)
+    except thread_runtime.NoRunningTurn:
+        pass  # the first stop may already have finished
+    await finished(sessions, thread.id)
+    ends = [t for t in await types_of(sessions, thread.id) if t in {"turn.cancelled", "turn.failed", "turn.interrupted", "turn.completed"}]
+    assert ends == ["turn.cancelled"]
+
+
+async def test_a_turn_that_finishes_on_its_own_just_as_stop_arrives_keeps_its_result(rt, sessions, owner):
+    import asyncio
+
+    release = asyncio.Event()
+
+    class SlowThenDone(ClaudeAdapter):
+        async def status(self):
+            return ProviderStatus(ready=True, version="fake")
+
+        async def run_turn(self, ctx, sink, gate):
+            await release.wait()
+            from app.services.provider_adapter import TurnOutcome
+
+            return TurnOutcome("succeeded", result="done anyway", session_state="active")
+
+    rt.adapters = {"claude": SlowThenDone()}
+    thread = await new_thread(sessions, owner)
+    turn = await rt.send_turn(thread.id, "quick one")
+    await rt.stop_turn(thread.id)  # the stop is requested ...
+    release.set()  # ... but the provider had already finished
+    await finished(sessions, thread.id)
+
+    done = await reload(sessions, Turn, turn.id)
+    assert (done.status, done.result) == ("succeeded", "done anyway")
+    assert "turn.cancelled" not in await types_of(sessions, thread.id)
+
+
+async def test_a_stopped_turn_stays_stopped_after_the_backend_restarts(rt, sessions, cli, owner):
+    from tests.services.thread_harness import ReadyClaude
+
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "hang"}, {"type": "chat", "text": "Back after the restart"})
+    turn = await rt.send_turn(thread.id, "work")
+    await wait_until(lambda: cli.log("hanging"))
+    await rt.stop_turn(thread.id)
+    await finished(sessions, thread.id)
+    await wait_until(lambda: rt._runs == {})
+    before = [(e.seq, e.type, e.data) for e in await events_of(sessions, thread.id)]
+
+    # A new process: a new runtime with nothing in memory, over the same database.
+    restarted = ThreadRuntime(
+        hub=ThreadHub(),
+        adapters={"claude": ReadyClaude()},
+        status_ttl=0,
+        _session_factory=sessions,
+        owner_id=owner,
+    )
+    assert restarted.instance_id != rt.instance_id and restarted._runs == {}
+    assert await restarted.sweep_stale() == []  # startup sweep: nothing to do, nothing rewritten
+    try:
+        # What was stored is exactly what was stored.
+        assert [(e.seq, e.type, e.data) for e in await events_of(sessions, thread.id)] == before
+        stopped = await reload(sessions, Turn, turn.id)
+        assert (stopped.status, stopped.error_code, stopped.result) == ("cancelled", "stopped", "typing")
+        assert (await reload(sessions, Thread, thread.id)).session_state == "active"
+        with pytest.raises(thread_runtime.NoRunningTurn):
+            await restarted.stop_turn(thread.id)
+
+        # And the conversation goes on from the same Claude session.
+        second = await restarted.send_turn(thread.id, "carry on")
+        await finished(sessions, thread.id, 2)
+        sid = thread.provider_session_id
+        assert cli.launches() == [("new", sid), ("resume", sid)]
+        assert (await reload(sessions, Turn, second.id)).result == "Back after the restart"
+    finally:
+        await restarted.shutdown()

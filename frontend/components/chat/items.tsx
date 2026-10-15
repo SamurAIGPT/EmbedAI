@@ -72,6 +72,8 @@ const STEP_MARK = {
   running: { mark: "…", color: "text-amber-600 dark:text-amber-400" },
   done: { mark: "✓", color: "text-emerald-600 dark:text-emerald-400" },
   error: { mark: "✗", color: "text-red-600 dark:text-red-400" },
+  // Never finished: the answer was stopped, failed or was interrupted first.
+  stopped: { mark: "■", color: "text-zinc-400" },
 } as const;
 
 export function ToolStep({ item }: { item: Item<"tool"> }) {
@@ -90,7 +92,10 @@ export function ToolStep({ item }: { item: Item<"tool"> }) {
           <p className="mb-1 text-zinc-500">Input</p>
           <LongText value={input} />
         </div>
-        {item.state !== "running" && (
+        {item.state === "stopped" && (
+          <p className="text-zinc-500">This call did not finish: the answer ended first.</p>
+        )}
+        {(item.state === "done" || item.state === "error") && (
           <div>
             <p className="mb-1 text-zinc-500">
               {item.state === "error" ? "Error" : "Output"}
@@ -190,7 +195,7 @@ export function ApprovalCard({
 const END_TEXT: Record<Item<"turn_end">["status"], (item: Item<"turn_end">) => string | null> = {
   completed: () => null,
   failed: (i) => i.error || "The run failed.",
-  cancelled: () => "The run was stopped.",
+  cancelled: () => "You stopped this answer.",
   interrupted: (i) =>
     i.reason === "shutdown"
       ? "The app was closed while Claude was working. This message was not resumed or sent again."

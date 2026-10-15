@@ -20,19 +20,23 @@ from app.schemas.thread import (
     ApprovalAnswerResponse,
     ApprovalResponse,
     EventsPageResponse,
+    StopResponse,
     ThreadCreateRequest,
     ThreadDetailResponse,
     ThreadResponse,
+    ThreadUpdateRequest,
     TurnCreateRequest,
     TurnResponse,
 )
 from app.services import thread_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import (
+    NoRunningTurn,
     ProviderUnavailable,
     SessionBroken,
     SessionNotResettable,
     ThreadRuntime,
+    TurnNotHere,
     UnknownProvider,
 )
 from app.services.thread_runtime import runtime as default_runtime
@@ -101,6 +105,47 @@ async def get_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
     )
 
 
+@router.patch("/{thread_id}", response_model=ThreadResponse)
+async def update_thread(
+    thread_id: int, payload: ThreadUpdateRequest, rt: ThreadRuntime = Depends(get_runtime)
+):
+    """Rename and/or archive. Archiving hides a conversation from the default
+    list and deletes nothing; it is refused while a turn is running."""
+    await _thread_or_404(rt, thread_id)
+    try:
+        thread = None
+        # Archiving first: if it is refused, nothing has been renamed either.
+        if payload.archived is not None:
+            async with rt.session() as db:
+                thread = await store.set_archived(db, thread_id, payload.archived)
+        if payload.title is not None:
+            async with rt.session() as db:
+                thread = await store.rename_thread(db, thread_id, payload.title)
+    except store.ThreadNotFound:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    except store.ThreadBusy:
+        raise _error(409, "turn_running", "Stop the running answer before archiving this conversation.")
+    rt.hub.notify(thread_id)
+    return thread
+
+
+@router.delete("/{thread_id}", status_code=204)
+async def delete_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """Delete this app's records of a conversation: its turns, events and
+    approvals in the database. Refused while a turn is running. Not a secure
+    erase, and it never touches files: the Claude CLI's own copy of the session
+    under `~/.claude` stays, as do files Claude wrote in its workspace."""
+    await _thread_or_404(rt, thread_id)
+    try:
+        async with rt.session() as db:
+            await store.delete_thread(db, thread_id)
+    except store.ThreadNotFound:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    except store.ThreadBusy:
+        raise _error(409, "turn_running", "Stop the running answer before deleting this conversation.")
+    rt.hub.close(thread_id)
+
+
 # --- turns --------------------------------------------------------------------------------
 
 
@@ -127,6 +172,26 @@ async def send_turn(
         raise _error(503, "provider_unavailable", str(exc))
     except UnknownProvider as exc:
         raise _error(409, "unknown_provider", f"No provider is registered for {exc}.")
+
+
+@router.post("/{thread_id}/stop", response_model=StopResponse, status_code=202)
+async def stop_turn(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """Stop the running answer. Claude is stopped, what it had written is kept
+    (marked unfinished), anything it was waiting to ask is cancelled, and the
+    conversation carries on with the same session. The end arrives as a
+    `turn.cancelled` event."""
+    await _thread_or_404(rt, thread_id)
+    try:
+        return StopResponse(turn_id=await rt.stop_turn(thread_id))
+    except NoRunningTurn:
+        raise _error(409, "no_running_turn", "Nothing is running in this conversation.")
+    except TurnNotHere:
+        raise _error(
+            409,
+            "turn_not_stoppable",
+            "This answer is running in another process, so it cannot be stopped from here. "
+            "It ends by itself, or is marked stopped within a minute if that process is gone.",
+        )
 
 
 @router.post("/{thread_id}/session/reset", response_model=ThreadResponse)

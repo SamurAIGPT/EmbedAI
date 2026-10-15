@@ -21,6 +21,15 @@ function parseThreadId(raw: string | null): number | null {
   return raw !== null && /^\d+$/.test(raw) ? Number(raw) : null;
 }
 
+// What went wrong with a rename, archive or delete, in words a person can act on.
+function manageErrorText(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === "turn_running") return "Stop the running answer first.";
+    return err.message || "That did not work.";
+  }
+  return "Could not reach the backend.";
+}
+
 // Says what went wrong in words a person can act on.
 function sendErrorText(err: unknown): string {
   if (err instanceof ApiError) {
@@ -62,6 +71,11 @@ export function ChatApp() {
   const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [manageError, setManageError] = useState<string | null>(null);
+  // The turn Stop was pressed for; cleared by the turn ending, which is what
+  // the button waits for.
+  const [stoppingTurn, setStoppingTurn] = useState<number | null>(null);
 
   const stream = useThreadStream(gate.phase === "ready" && gate.status.available ? threadId : null);
   const { transcript } = stream;
@@ -89,7 +103,7 @@ export function ChatApp() {
     if (!ready) return;
     let cancelled = false;
     api
-      .listThreads()
+      .listThreads(showArchived)
       .then((list) => !cancelled && setThreads(list))
       .catch(() => {
         // keep what is shown; the next refresh tries again
@@ -97,7 +111,7 @@ export function ChatApp() {
     return () => {
       cancelled = true;
     };
-  }, [ready, listTick, transcript.runningTurnId]);
+  }, [ready, listTick, showArchived, transcript.runningTurnId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -137,6 +151,45 @@ export function ChatApp() {
       setSending(false);
       setListTick((n) => n + 1);
     }
+  };
+
+  const stop = async () => {
+    if (threadId === null || transcript.runningTurnId === null) return;
+    setSendError(null);
+    setStoppingTurn(transcript.runningTurnId);
+    try {
+      await api.stopThread(threadId);
+    } catch (err) {
+      // Already over: the stream says so, nothing to show.
+      if (!(err instanceof ApiError && err.code === "no_running_turn")) {
+        setSendError(err instanceof ApiError ? err.message : "Could not stop the answer.");
+      }
+      setStoppingTurn(null);
+    }
+  };
+
+  // One place for rename, archive and delete: say what went wrong, and always
+  // read the list again afterwards.
+  const manage = async (change: () => Promise<void>) => {
+    setManageError(null);
+    try {
+      await change();
+    } catch (err) {
+      setManageError(manageErrorText(err));
+    } finally {
+      setListTick((n) => n + 1);
+    }
+  };
+
+  const listActions = {
+    onRename: (id: number, title: string) => manage(() => api.updateThread(id, { title }).then(() => {})),
+    onArchive: (id: number, archived: boolean) =>
+      manage(() => api.updateThread(id, { archived }).then(() => {})),
+    onDelete: (id: number) =>
+      manage(async () => {
+        await api.deleteThread(id);
+        if (id === threadId) router.replace("/chat");
+      }),
   };
 
   const answer = async (approvalId: string, decision: "allow" | "deny") => {
@@ -242,7 +295,15 @@ export function ChatApp() {
             listOpen ? "flex" : "hidden"
           } absolute inset-y-0 left-0 z-20 w-72 shrink-0 flex-col border-r border-zinc-200 bg-background md:static md:flex dark:border-zinc-800`}
         >
-          <ThreadList threads={threads} selectedId={threadId} onNavigate={() => setListOpen(false)} />
+          <ThreadList
+            threads={threads}
+            selectedId={threadId}
+            onNavigate={() => setListOpen(false)}
+            showArchived={showArchived}
+            onToggleArchived={() => setShowArchived((on) => !on)}
+            actions={listActions}
+            error={manageError}
+          />
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
@@ -285,6 +346,9 @@ export function ChatApp() {
             sending={sending}
             blockedReason={blockedReason}
             error={sendError}
+            running={transcript.runningTurnId !== null}
+            stopping={stoppingTurn !== null && stoppingTurn === transcript.runningTurnId}
+            onStop={stop}
           />
         </main>
       </div>

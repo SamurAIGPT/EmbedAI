@@ -13,6 +13,9 @@ export function Composer({
   sending,
   blockedReason,
   error,
+  running,
+  stopping,
+  onStop,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -22,6 +25,11 @@ export function Composer({
   // broken, ...). Null when it can.
   blockedReason: string | null;
   error: string | null;
+  // An answer is being written: the button becomes Stop.
+  running: boolean;
+  // Stop was pressed and the answer has not ended yet.
+  stopping: boolean;
+  onStop: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -55,13 +63,23 @@ export function Composer({
             aria-label="Message"
             className="min-h-10 flex-1 resize-none rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm placeholder:text-zinc-500 dark:border-zinc-700"
           />
-          <button
-            onClick={onSend}
-            disabled={!canSend}
-            className="h-10 cursor-pointer rounded-md bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            {sending ? "Sending…" : "Send"}
-          </button>
+          {running ? (
+            <button
+              onClick={onStop}
+              disabled={stopping}
+              className="h-10 cursor-pointer rounded-md border border-zinc-400 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
+            >
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          ) : (
+            <button
+              onClick={onSend}
+              disabled={!canSend}
+              className="h-10 cursor-pointer rounded-md bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {sending ? "Sending…" : "Send"}
+            </button>
+          )}
         </div>
         {blockedReason && value.trim() !== "" && (
           <p className="mt-1 text-xs text-zinc-500">{blockedReason}</p>

@@ -48,6 +48,9 @@ class ThreadSubscription:
     signal: asyncio.Event = field(default_factory=asyncio.Event)
     deltas: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE))
     lagged: bool = False
+    # The thread was deleted: the stream ends instead of waiting for events that
+    # will never come.
+    closed: bool = False
 
     async def wait(self, timeout: float) -> bool:
         """Wait until there is something to do (a commit or typing text) or
@@ -112,6 +115,16 @@ class ThreadHub:
         if live is None:
             return
         for subscriber in live.subscribers:
+            subscriber.wake.set()
+            subscriber.signal.set()
+
+    def close(self, thread_id: int) -> None:
+        """The thread was deleted: end every stream listening to it."""
+        live = self._threads.pop(thread_id, None)
+        if live is None:
+            return
+        for subscriber in live.subscribers:
+            subscriber.closed = True
             subscriber.wake.set()
             subscriber.signal.set()
 

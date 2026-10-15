@@ -29,7 +29,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,6 +96,80 @@ async def list_threads(
         query = query.where(Thread.archived_at.is_(None))
     query = query.order_by(Thread.updated_at.desc(), Thread.id.desc()).limit(limit)
     return list((await db.execute(query)).scalars())
+
+
+async def _locked_thread(db: AsyncSession, thread_id: int) -> Thread:
+    """Start a write transaction and lock the thread's row, as `start_turn` does,
+    so a check of its turns and the change that follows cannot interleave with a
+    new turn. Raises ThreadNotFound (and ends the transaction)."""
+    await begin_write(db)
+    thread = (
+        await db.execute(select(Thread).where(Thread.id == thread_id).with_for_update())
+    ).scalar_one_or_none()
+    if thread is None:
+        await db.rollback()
+        raise ThreadNotFound(thread_id)
+    return thread
+
+
+async def running_turn_id(db: AsyncSession, thread_id: int) -> int | None:
+    """The id of the thread's running turn, if there is one."""
+    running = await db.execute(
+        select(Turn.id).where(Turn.thread_id == thread_id, Turn.status == "running").limit(1)
+    )
+    return running.scalar_one_or_none()
+
+
+async def _has_running_turn(db: AsyncSession, thread_id: int) -> bool:
+    return await running_turn_id(db, thread_id) is not None
+
+
+async def _change_quietly(db: AsyncSession, thread_id: int, **values) -> Thread:
+    """Change columns without counting it as activity. The model refreshes
+    `updated_at` on every ORM update, which would move a renamed or archived
+    thread in the list, so the statement keeps the column as it is."""
+    await db.execute(
+        update(Thread)
+        .where(Thread.id == thread_id)
+        .values(**values, updated_at=Thread.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return await db.get(Thread, thread_id, populate_existing=True)
+
+
+async def rename_thread(db: AsyncSession, thread_id: int, title: str) -> Thread:
+    """Set the title. A rename is not activity: the list order does not change.
+    Raises ThreadNotFound."""
+    await _locked_thread(db, thread_id)
+    return await _change_quietly(db, thread_id, title=title)
+
+
+async def set_archived(db: AsyncSession, thread_id: int, archived: bool) -> Thread:
+    """Hide a thread from the default list (or bring it back). Nothing is
+    deleted. Raises ThreadNotFound, or ThreadBusy when archiving a thread whose
+    turn is running."""
+    await _locked_thread(db, thread_id)
+    if archived and await _has_running_turn(db, thread_id):
+        await db.rollback()
+        raise ThreadBusy(thread_id)
+    return await _change_quietly(db, thread_id, archived_at=utcnow() if archived else None)
+
+
+async def delete_thread(db: AsyncSession, thread_id: int) -> None:
+    """Remove a thread with its turns, events and approvals, in one transaction.
+    Raises ThreadNotFound, or ThreadBusy while a turn is running (stop it
+    first): the run is still writing to it."""
+    await _locked_thread(db, thread_id)
+    if await _has_running_turn(db, thread_id):
+        await db.rollback()
+        raise ThreadBusy(thread_id)
+    # Children first: events and approvals point at turns, all of them at the thread.
+    await db.execute(delete(Approval).where(Approval.thread_id == thread_id))
+    await db.execute(delete(Event).where(Event.thread_id == thread_id))
+    await db.execute(delete(Turn).where(Turn.thread_id == thread_id))
+    await db.execute(delete(Thread).where(Thread.id == thread_id))
+    await db.commit()
 
 
 async def get_turn(db: AsyncSession, turn_id: int) -> Turn | None:

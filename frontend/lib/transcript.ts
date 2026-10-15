@@ -28,7 +28,8 @@ export type TranscriptItem =
       name: string;
       summary: string;
       input: unknown;
-      state: "running" | "done" | "error";
+      // "stopped": the turn ended (stopped, failed, interrupted) before the call finished.
+      state: "running" | "done" | "error" | "stopped";
       output: string;
       // The stored output was cut at the backend's cap.
       truncated: boolean;
@@ -108,16 +109,19 @@ const TURN_END: Record<string, TurnEndStatus> = {
   "turn.interrupted": "interrupted",
 };
 
-// A turn that ended cannot be waiting for anyone: its open approvals are closed.
-function closeApprovals(items: TranscriptItem[], forTurn: number | null): TranscriptItem[] {
-  if (!items.some((i) => i.kind === "approval" && i.status === "pending" && i.turnId === forTurn)) {
-    return items;
-  }
-  return items.map((i) =>
-    i.kind === "approval" && i.status === "pending" && i.turnId === forTurn
+// A turn that ended cannot be waiting for anyone, and cannot still be running a
+// tool: its open approvals are closed and its unfinished tool steps marked.
+function closeTurn(items: TranscriptItem[], forTurn: number | null): TranscriptItem[] {
+  const open = (i: TranscriptItem) =>
+    (i.kind === "approval" && i.turnId === forTurn && i.status === "pending") ||
+    (i.kind === "tool" && i.turnId === forTurn && i.state === "running");
+  if (!items.some(open)) return items;
+  return items.map((i) => {
+    if (!open(i)) return i;
+    return i.kind === "approval"
       ? { ...i, status: "cancelled" as const }
-      : i
-  );
+      : { ...i, state: "stopped" as const };
+  });
 }
 
 export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
@@ -244,7 +248,7 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
         runningTurnId: id === state.runningTurnId || id === null ? null : state.runningTurnId,
         typing: null,
         items: [
-          ...closeApprovals(state.items, id),
+          ...closeTurn(state.items, id),
           {
             kind: "turn_end",
             key,

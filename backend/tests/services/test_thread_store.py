@@ -665,3 +665,90 @@ async def test_all_events_are_read_across_pages(sessions, owner):
     assert [e.seq for e in await call(sessions, store.list_all_events, thread.id, page=3)] == list(range(1, 8))
     assert [e.seq for e in await call(sessions, store.list_all_events, thread.id, page=7)] == list(range(1, 8))
     assert await call(sessions, store.get_approval, "missing") is None
+
+
+# --- managing conversations: rename, archive, delete ----------------------------------------
+
+
+async def titles(sessions, owner, **kwargs):
+    return [t.title for t in await call(sessions, store.list_threads, owner, **kwargs)]
+
+
+async def test_a_rename_sets_the_title_and_is_not_activity(sessions, owner):
+    older = await new_thread(sessions, owner, title="older")
+    newer = await new_thread(sessions, owner, title="newer")
+    before = (await call(sessions, store.get_thread, older.id)).updated_at
+    renamed = await call(sessions, store.rename_thread, older.id, "renamed")
+    assert renamed.title == "renamed"
+    assert renamed.updated_at == before
+    assert await titles(sessions, owner) == ["newer", "renamed"]  # the order did not change
+    assert newer.id != older.id
+
+
+async def test_archiving_hides_a_thread_from_the_default_list_and_unarchiving_brings_it_back(sessions, owner):
+    keep = await new_thread(sessions, owner, title="keep")
+    hide = await new_thread(sessions, owner, title="hide")
+    archived = await call(sessions, store.set_archived, hide.id, True)
+    assert archived.archived_at is not None
+    assert await titles(sessions, owner) == ["keep"]
+    assert sorted(await titles(sessions, owner, include_archived=True)) == ["hide", "keep"]
+    restored = await call(sessions, store.set_archived, hide.id, False)
+    assert restored.archived_at is None
+    assert sorted(await titles(sessions, owner)) == ["hide", "keep"]
+    assert keep.id != hide.id
+
+
+async def test_archiving_a_thread_with_a_running_turn_is_refused_and_changes_nothing(sessions, owner):
+    thread = await new_thread(sessions, owner)
+    turn = await call(sessions, store.start_turn, thread.id, "work")
+    with pytest.raises(store.ThreadBusy):
+        await call(sessions, store.set_archived, thread.id, True)
+    assert (await call(sessions, store.get_thread, thread.id)).archived_at is None
+    assert await call(sessions, store.finish_turn, turn.id, turn.owner_token, status="succeeded")
+    assert (await call(sessions, store.set_archived, thread.id, True)).archived_at is not None
+
+
+async def test_delete_removes_the_thread_its_turns_events_and_approvals_and_nothing_else(sessions, owner):
+    doomed, other, approval = None, None, None
+    doomed, turn, approval = await running_turn_with_approval(sessions, owner)
+    assert await call(sessions, store.finish_turn, turn.id, turn.owner_token, status="succeeded", event_type="turn.completed")
+    other, other_turn, other_approval = await running_turn_with_approval(sessions, owner)
+    assert await call(sessions, store.finish_turn, other_turn.id, other_turn.owner_token, status="succeeded")
+
+    await call(sessions, store.delete_thread, doomed.id)
+
+    assert await call(sessions, store.get_thread, doomed.id) is None
+    assert await call(sessions, store.list_turns, doomed.id) == []
+    assert await events_of(sessions, doomed.id) == []
+    assert await call(sessions, store.get_approval, approval.id) is None
+    # the other conversation is untouched
+    assert (await call(sessions, store.get_thread, other.id)).id == other.id
+    assert len(await call(sessions, store.list_turns, other.id)) == 1
+    assert await events_of(sessions, other.id)
+    assert await call(sessions, store.get_approval, other_approval.id) is not None
+
+
+async def test_delete_while_a_turn_runs_is_refused_and_deletes_nothing(sessions, owner):
+    thread, turn, approval = await running_turn_with_approval(sessions, owner)
+    with pytest.raises(store.ThreadBusy):
+        await call(sessions, store.delete_thread, thread.id)
+    assert await call(sessions, store.get_thread, thread.id) is not None
+    assert await call(sessions, store.get_approval, approval.id) is not None
+    assert await events_of(sessions, thread.id)
+    assert turn.status == "running"
+
+
+async def test_managing_a_thread_that_does_not_exist_says_so(sessions):
+    with pytest.raises(store.ThreadNotFound):
+        await call(sessions, store.rename_thread, 987654321, "x")
+    with pytest.raises(store.ThreadNotFound):
+        await call(sessions, store.set_archived, 987654321, True)
+    with pytest.raises(store.ThreadNotFound):
+        await call(sessions, store.delete_thread, 987654321)
+
+
+async def test_a_new_turn_cannot_start_in_a_thread_that_is_being_deleted(sessions, owner):
+    thread = await new_thread(sessions, owner)
+    await call(sessions, store.delete_thread, thread.id)
+    with pytest.raises(store.ThreadNotFound):
+        await call(sessions, store.start_turn, thread.id, "too late")

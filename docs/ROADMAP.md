@@ -19,7 +19,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F02 | Stream assistant text and status (SSE) | Implemented, awaiting review |
 | F03 | Tool timeline and inline approvals | Implemented (opt-in, in memory), awaiting review |
 | F04 | Durable threads, turns, events and approvals, and a thread list (named agents are F06) | Implemented, with a Chat page; SQLite supported, PostgreSQL behaviour not yet verified |
-| F05 | Stop, restart and resume | Planned |
+| F05 | Stop, restart and resume | Stop implemented (Chat page and API); a stopped or interrupted message is never resumed or sent again, the conversation continues from the same session |
 | F06 | Multiple named agents with dedicated workspaces | Planned |
 | F07 | Codex provider (experimental until Windows sandbox issue is resolved) | Planned |
 | F08 | Browse/download agent workspace files | Planned |

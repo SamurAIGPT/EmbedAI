@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ThreadCreateRequest(BaseModel):
@@ -11,6 +11,29 @@ class ThreadCreateRequest(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     # Omitted: set from the first prompt.
     title: str | None = Field(default=None, max_length=200)
+
+
+class ThreadUpdateRequest(BaseModel):
+    """Rename and/or archive. Send at least one field."""
+
+    title: str | None = Field(default=None, max_length=200)
+    archived: bool | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("title must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def _something_to_change(self):
+        if self.title is None and self.archived is None:
+            raise ValueError("send a title, archived, or both")
+        return self
 
 
 class ThreadResponse(BaseModel):
@@ -98,6 +121,12 @@ class ApprovalResponse(BaseModel):
     status: str
     created_at: datetime
     decided_at: datetime | None
+
+
+class StopResponse(BaseModel):
+    # The turn was told to stop; its end (`turn.cancelled`) arrives as an event.
+    status: Literal["stopping"] = "stopping"
+    turn_id: int
 
 
 class ApprovalAnswerRequest(BaseModel):

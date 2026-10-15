@@ -343,10 +343,11 @@ as "Open chat" on the home page) is their interface. See
 - Scheduled-run notifications only reach Telegram-linked users (a numeric
   `user_id`) and only if `TELEGRAM_BOT_TOKEN` is set — a web-only guest has
   no chat to message and only sees outcomes in the UI's schedules list.
-- Durable threads (`/api/v1/threads`) and the Chat page cannot yet stop a running
-  answer, rename or delete a conversation, or format answers as Markdown; they are
-  tested on SQLite only, and store transcripts (including what Claude read, wrote
-  and ran) in the database with no way to delete them yet.
+- Durable threads (`/api/v1/threads`) and the Chat page cannot yet format answers
+  as Markdown; they are tested on SQLite only, and store transcripts (including
+  what Claude read, wrote and ran) in the database. A conversation can be deleted
+  from there (not a secure erase), but the Claude CLI's own copy in your `.claude`
+  folder is never touched.
 
 ## Contributing
 

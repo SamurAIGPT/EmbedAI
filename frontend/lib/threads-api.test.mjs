@@ -138,3 +138,49 @@ test('creating a thread and resetting its session use the documented routes', as
   assert.match(reset[0].url, /\/threads\/4\/session\/reset$/);
   assert.equal(reset[0].options.method, 'POST');
 });
+
+test('listing asks for archived conversations only when told to', async () => {
+  const plain = respondJson(200, []);
+  await api.listThreads();
+  assert.match(plain[0].url, /\/threads$/);
+  const all = respondJson(200, []);
+  await api.listThreads(true);
+  assert.match(all[0].url, /\/threads\?include_archived=true$/);
+});
+
+test('stop posts to the thread, and a stop that came too late carries its code', async () => {
+  const ok = respondJson(202, { status: 'stopping', turn_id: 5 });
+  assert.deepEqual(await api.stopThread(3), { status: 'stopping', turn_id: 5 });
+  assert.match(ok[0].url, /\/threads\/3\/stop$/);
+  assert.equal(ok[0].options.method, 'POST');
+
+  respondJson(409, { detail: { error_code: 'no_running_turn', message: 'Nothing is running in this conversation.' } });
+  await assert.rejects(api.stopThread(3), (err) => err instanceof ApiError && err.code === 'no_running_turn');
+});
+
+test('rename and archive are one PATCH with only what changed', async () => {
+  const calls = respondJson(200, { id: 3, title: 'New name' });
+  await api.updateThread(3, { title: 'New name' });
+  assert.match(calls[0].url, /\/threads\/3$/);
+  assert.equal(calls[0].options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { title: 'New name' });
+  const archive = respondJson(200, { id: 3 });
+  await api.updateThread(3, { archived: true });
+  assert.deepEqual(JSON.parse(archive[0].options.body), { archived: true });
+});
+
+test('archiving a running conversation is refused with the code the page acts on', async () => {
+  respondJson(409, { detail: { error_code: 'turn_running', message: 'Stop the running answer before archiving this conversation.' } });
+  await assert.rejects(api.updateThread(3, { archived: true }), (err) => err.status === 409 && err.code === 'turn_running');
+});
+
+test('delete sends DELETE and a 204 with no body is a success', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response(null, { status: 204 });
+  };
+  assert.equal(await api.deleteThread(3), undefined);
+  assert.match(calls[0].url, /\/threads\/3$/);
+  assert.equal(calls[0].options.method, 'DELETE');
+});

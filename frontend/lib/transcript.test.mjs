@@ -268,3 +268,51 @@ test('applying an event never changes the state it was given', () => {
   applyTyping(t, typing('z'));
   assert.equal(JSON.stringify(t), snapshot);
 });
+
+test('a stopped turn closes its unfinished tool steps and keeps the finished ones', () => {
+  reset();
+  const t = run([
+    ev('turn.started', { prompt_text: 'x' }, 4),
+    ev('tool.started', { call_id: 'a', name: 'Bash', summary: '', input: {} }, 4),
+    ev('tool.completed', { call_id: 'a', ok: true, output: 'fine', truncated: false }, 4),
+    ev('tool.started', { call_id: 'b', name: 'Bash', summary: '', input: {} }, 4),
+    ev('turn.cancelled', { status: 'cancelled', error_code: 'stopped' }, 4),
+  ]);
+  assert.equal(t.items[1].state, 'done');
+  assert.equal(t.items[2].state, 'stopped');
+  assert.equal(t.items.at(-1).status, 'cancelled');
+  assert.equal(t.runningTurnId, null);
+});
+
+test('an interrupted or failed turn also leaves no tool step spinning', () => {
+  for (const type of ['turn.interrupted', 'turn.failed']) {
+    reset();
+    const t = run([
+      ev('turn.started', { prompt_text: 'x' }, 6),
+      ev('tool.started', { call_id: 'a', name: 'Bash', summary: '', input: {} }, 6),
+      ev(type, {}, 6),
+    ]);
+    assert.equal(t.items[1].state, 'stopped', type);
+  }
+});
+
+test('a turn ending does not touch another turn\'s running tool step', () => {
+  reset();
+  const t = run([
+    ev('tool.started', { call_id: 'a', name: 'Bash', summary: '', input: {} }, 9),
+    ev('turn.cancelled', {}, 8),
+  ]);
+  assert.equal(t.items[0].state, 'running');
+});
+
+test('a stopped answer keeps its partial text, marked unfinished, in order', () => {
+  reset();
+  const t = run([
+    ev('turn.started', { prompt_text: 'write a lot' }, 2),
+    ev('assistant.message', { text: 'It began', incomplete: true }, 2),
+    ev('turn.cancelled', { status: 'cancelled', error_code: 'stopped', result: 'It began' }, 2),
+  ]);
+  assert.deepEqual(kinds(t), ['user', 'assistant', 'turn_end']);
+  assert.equal(t.items[1].incomplete, true);
+  assert.equal(t.items[2].status, 'cancelled');
+});

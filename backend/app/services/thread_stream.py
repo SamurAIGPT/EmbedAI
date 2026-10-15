@@ -126,6 +126,8 @@ async def event_frames(
 
             # 3. Wait for a commit or typing text, or poll anyway.
             woke = await subscription.wait(poll_seconds)
+            if subscription.closed:
+                return  # the thread was deleted
             read_stored = (not woke) or subscription.wake.is_set()
             if not woke and loop.time() - last_sent >= keepalive_seconds:
                 yield KEEPALIVE_FRAME

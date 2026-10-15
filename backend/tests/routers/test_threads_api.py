@@ -101,6 +101,9 @@ ROUTES = [
     ("GET", "/api/v1/threads/1/events/stream", None),
     ("GET", "/api/v1/threads/1/approvals", None),
     ("POST", "/api/v1/threads/1/approvals/abc", {"decision": "allow"}),
+    ("PATCH", "/api/v1/threads/1", {"title": "renamed"}),
+    ("DELETE", "/api/v1/threads/1", None),
+    ("POST", "/api/v1/threads/1/stop", None),
 ]
 
 
@@ -439,3 +442,213 @@ async def test_approval_requests_for_other_threads_or_with_bad_input_are_refused
 
     await api.post(f"/api/v1/threads/{one['id']}/approvals/{approval['id']}", json={"decision": "deny"})
     await wait_for_terminals(api, one["id"])
+
+
+# --- stopping an answer ----------------------------------------------------------------------------------
+
+
+async def test_stop_ends_a_running_answer_as_cancelled_and_the_conversation_goes_on(api, cli):
+    thread = await create(api)
+    tid = thread["id"]
+    cli.script({"type": "hang"}, {"type": "chat", "text": "Back again"})
+    sent = await api.post(f"/api/v1/threads/{tid}/turns", json={"prompt_text": "work"})
+    await wait_until(lambda: cli.log("hanging"))
+
+    stopped = await api.post(f"/api/v1/threads/{tid}/stop")
+    assert stopped.status_code == 202
+    assert stopped.json() == {"status": "stopping", "turn_id": sent.json()["id"]}
+    await wait_for_terminals(api, tid)
+
+    page = await events(api, tid)
+    assert [e["type"] for e in page["events"]] == ["turn.started", "assistant.message", "turn.cancelled"]
+    assert page["events"][1]["data"]["incomplete"] is True
+    detail = (await api.get(f"/api/v1/threads/{tid}")).json()
+    assert detail["active_turn_id"] is None
+    assert detail["turns"][0]["status"] == "cancelled" and detail["turns"][0]["error_code"] == "stopped"
+    assert detail["session_state"] == "active"
+
+    again = await api.post(f"/api/v1/threads/{tid}/turns", json={"prompt_text": "carry on"})
+    assert again.status_code == 202
+    await wait_for_terminals(api, tid, 2)
+    assert (await api.get(f"/api/v1/threads/{tid}")).json()["turns"][1]["result"] == "Back again"
+
+
+async def test_stop_with_nothing_running_is_a_409_with_a_code(api):
+    thread = await create(api)
+    response = await api.post(f"/api/v1/threads/{thread['id']}/stop")
+    assert response.status_code == 409
+    assert code_of(response) == "no_running_turn"
+
+
+async def test_stop_for_a_turn_owned_by_another_process_says_so(api, sessions):
+    thread = await create(api)
+    async with sessions() as db:
+        await store.start_turn(db, thread["id"], "elsewhere", owner_instance="another-process")
+    response = await api.post(f"/api/v1/threads/{thread['id']}/stop")
+    assert response.status_code == 409
+    assert code_of(response) == "turn_not_stoppable"
+
+
+# --- managing conversations -------------------------------------------------------------------------------
+
+
+async def test_rename_sets_the_title_and_trims_it(api):
+    thread = await create(api, title="first title")
+    response = await api.patch(f"/api/v1/threads/{thread['id']}", json={"title": "  A better name  "})
+    assert response.status_code == 200
+    assert response.json()["title"] == "A better name"
+    assert (await api.get(f"/api/v1/threads/{thread['id']}")).json()["title"] == "A better name"
+
+
+@pytest.mark.parametrize("body", [{}, {"title": "   "}, {"title": ""}, {"title": "x" * 201}, {"archived": "maybe"}])
+async def test_a_bad_update_is_a_422_and_changes_nothing(api, body):
+    thread = await create(api, title="keep me")
+    assert (await api.patch(f"/api/v1/threads/{thread['id']}", json=body)).status_code == 422
+    assert (await api.get(f"/api/v1/threads/{thread['id']}")).json()["title"] == "keep me"
+
+
+async def test_archive_hides_a_conversation_and_unarchive_restores_it(api):
+    thread = await create(api, title="to archive")
+    other = await create(api, title="stays")
+    archived = await api.patch(f"/api/v1/threads/{thread['id']}", json={"archived": True})
+    assert archived.status_code == 200 and archived.json()["archived_at"] is not None
+    assert [t["title"] for t in (await api.get("/api/v1/threads")).json()] == ["stays"]
+    listed = (await api.get("/api/v1/threads", params={"include_archived": "true"})).json()
+    assert sorted(t["title"] for t in listed) == ["stays", "to archive"]
+    # still readable by address
+    assert (await api.get(f"/api/v1/threads/{thread['id']}")).status_code == 200
+    restored = await api.patch(f"/api/v1/threads/{thread['id']}", json={"archived": False})
+    assert restored.json()["archived_at"] is None
+    assert len((await api.get("/api/v1/threads")).json()) == 2
+    assert other["id"] != thread["id"]
+
+
+async def test_archive_and_delete_are_refused_while_an_answer_runs(api, cli):
+    thread = await create(api, title="busy")
+    tid = thread["id"]
+    cli.script({"type": "hang"})
+    await api.post(f"/api/v1/threads/{tid}/turns", json={"prompt_text": "work"})
+    await wait_until(lambda: cli.log("hanging"))
+
+    archive = await api.patch(f"/api/v1/threads/{tid}", json={"archived": True, "title": "should not apply"})
+    assert archive.status_code == 409 and code_of(archive) == "turn_running"
+    delete = await api.delete(f"/api/v1/threads/{tid}")
+    assert delete.status_code == 409 and code_of(delete) == "turn_running"
+    detail = (await api.get(f"/api/v1/threads/{tid}")).json()
+    assert detail["archived_at"] is None and detail["title"] == "busy"  # a refused update changed nothing
+
+    await api.post(f"/api/v1/threads/{tid}/stop")
+    await wait_for_terminals(api, tid)
+    assert (await api.delete(f"/api/v1/threads/{tid}")).status_code == 204
+
+
+async def test_delete_removes_the_conversation_for_good(api, cli):
+    thread = await create(api, title="doomed")
+    tid = thread["id"]
+    cli.script({"type": "chat", "text": "hello"})
+    await api.post(f"/api/v1/threads/{tid}/turns", json={"prompt_text": "hi"})
+    await wait_for_terminals(api, tid)
+    keep = await create(api, title="keep")
+
+    gone = await api.delete(f"/api/v1/threads/{tid}")
+    assert gone.status_code == 204 and gone.content == b""
+    for path in ("", "/events", "/approvals"):
+        assert (await api.get(f"/api/v1/threads/{tid}{path}")).status_code == 404
+    assert (await api.delete(f"/api/v1/threads/{tid}")).status_code == 404  # already gone
+    remaining = (await api.get("/api/v1/threads", params={"include_archived": "true"})).json()
+    assert [t["id"] for t in remaining] == [keep["id"]]
+
+
+async def test_delete_ends_the_streams_listening_to_that_conversation(rt, sessions, owner):
+    from tests.services.test_thread_stream import Stream
+
+    thread = await new_thread(sessions, owner)
+    stream = Stream(thread.id, sessions, rt.hub)
+    await wait_until(lambda: rt.hub.subscriber_count(thread.id) == 1)
+    async with client_for(app_for(rt)) as client:
+        assert (await client.delete(f"/api/v1/threads/{thread.id}")).status_code == 204
+    await wait_until(lambda: stream.task.done())
+    assert rt.hub.subscriber_count(thread.id) == 0
+
+
+async def test_another_owners_conversation_cannot_be_renamed_stopped_or_deleted(api, sessions):
+    from sqlalchemy import delete
+
+    from app.db.models import Thread
+
+    async with sessions() as db:
+        theirs = await store.create_thread(
+            db, owner_id="someone-else", provider="claude", provider_session_id="s-x", title="theirs"
+        )
+    try:
+        assert (await api.patch(f"/api/v1/threads/{theirs.id}", json={"title": "mine now"})).status_code == 404
+        assert (await api.post(f"/api/v1/threads/{theirs.id}/stop")).status_code == 404
+        assert (await api.delete(f"/api/v1/threads/{theirs.id}")).status_code == 404
+        async with sessions() as db:
+            assert (await store.get_thread(db, theirs.id)).title == "theirs"
+    finally:
+        async with sessions() as db:
+            await db.execute(delete(Thread).where(Thread.id == theirs.id))
+            await db.commit()
+
+
+async def test_delete_removes_only_this_apps_records_and_touches_no_files_or_other_conversations(
+    api, cli, sessions, monkeypatch
+):
+    import os
+    import pathlib
+    import shutil
+
+    from sqlalchemy import func, select
+
+    from app.db.models import Approval, Event, Thread, Turn
+
+    async def rows_of(thread_id):
+        async with sessions() as db:
+            return {
+                model.__tablename__: (
+                    await db.execute(select(func.count()).select_from(model).where(model.thread_id == thread_id))
+                ).scalar_one()
+                for model in (Event, Turn, Approval)
+            }
+
+    doomed = await create(api, title="doomed")
+    keep = await create(api, title="keep")
+    for thread in (doomed, keep):
+        cli.script({"type": "chat", "text": "hello from " + thread["title"]}, {"type": "chat", "text": "still here"})
+        sent = await api.post(f"/api/v1/threads/{thread['id']}/turns", json={"prompt_text": "hi"})
+        assert sent.status_code == 202
+        await wait_for_terminals(api, thread["id"])
+    sessions_dir = cli.plan.parent / "sessions"
+    session_files = sorted(p.name for p in sessions_dir.iterdir())
+    assert len(session_files) == 2  # one stand-in CLI session per conversation
+    keep_before = await rows_of(keep["id"])
+    assert (await rows_of(doomed["id"]))["event"] > 0
+
+    # Any attempt to remove a file or folder while deleting fails the test.
+    touched = []
+
+    def refuse(*args, **kwargs):
+        touched.append(args)
+        raise AssertionError("delete must not remove files or folders")
+
+    with monkeypatch.context() as blocked:
+        for target in (os, "remove"), (os, "unlink"), (os, "rmdir"), (shutil, "rmtree"), (pathlib.Path, "unlink"), (pathlib.Path, "rmdir"):
+            blocked.setattr(target[0], target[1], refuse)
+        deleted = await api.delete(f"/api/v1/threads/{doomed['id']}")
+    assert deleted.status_code == 204 and touched == []
+
+    # Every related row of the deleted conversation is gone ...
+    assert await rows_of(doomed["id"]) == {"event": 0, "turn": 0, "approval": 0}
+    async with sessions() as db:
+        assert (await db.execute(select(func.count()).select_from(Thread).where(Thread.id == doomed["id"]))).scalar_one() == 0
+    # ... the other conversation is exactly as it was ...
+    assert await rows_of(keep["id"]) == keep_before
+    assert (await api.get(f"/api/v1/threads/{keep['id']}")).json()["title"] == "keep"
+    # ... and no CLI session was touched: both are still there, and the survivor still continues.
+    assert sorted(p.name for p in sessions_dir.iterdir()) == session_files
+    again = await api.post(f"/api/v1/threads/{keep['id']}/turns", json={"prompt_text": "again"})
+    assert again.status_code == 202
+    await wait_for_terminals(api, keep["id"], 2)
+    second = (await api.get(f"/api/v1/threads/{keep['id']}")).json()["turns"][1]
+    assert second["status"] == "succeeded", (second["error_code"], second["error"])

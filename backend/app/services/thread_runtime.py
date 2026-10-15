@@ -68,6 +68,16 @@ class SessionNotResettable(Exception):
     """This provider keeps no session of its own, so there is nothing to reset."""
 
 
+class NoRunningTurn(Exception):
+    """The thread has no running turn to stop."""
+
+
+class TurnNotHere(Exception):
+    """The thread's turn is running, but not in this process, so this process
+    cannot stop it. It ends by itself when its owner finishes, or is interrupted
+    when its lease runs out."""
+
+
 class ProviderUnavailable(Exception):
     pass
 
@@ -85,6 +95,9 @@ class ActiveRun:
     recorder: "TurnRecorder | None" = None
     gate: "ThreadApprovalGate | None" = None
     task: asyncio.Task | None = None
+    # The person asked to stop this turn. What the provider reports after it is
+    # killed is then recorded as a stop, not as a failure.
+    stop_requested: bool = False
 
 
 class TurnRecorder:
@@ -337,6 +350,22 @@ class ThreadRuntime:
         self.hub.notify(thread_id)
         return turn
 
+    async def stop_turn(self, thread_id: int) -> int:
+        """Stop the thread's running turn: the provider process is killed, the
+        text written so far is kept (marked incomplete), any open approval is
+        cancelled, and the turn ends as `cancelled`. The conversation continues
+        with its session. Returns the turn's id; the end arrives as an event.
+        Raises NoRunningTurn, or TurnNotHere when the turn belongs to another
+        process."""
+        run = next((r for r in self._runs.values() if r.thread_id == thread_id), None)
+        if run is None:
+            async with self.session() as db:
+                running = await store.running_turn_id(db, thread_id)
+            raise TurnNotHere(thread_id) if running is not None else NoRunningTurn(thread_id)
+        run.stop_requested = True
+        run.ctx.abort()
+        return run.turn_id
+
     async def _provider_status(self, adapter: ProviderAdapter) -> ProviderStatus:
         loop = asyncio.get_running_loop()
         cached = self._status_cache.get(adapter.key)
@@ -362,6 +391,17 @@ class ThreadRuntime:
         finally:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
+        if run.stop_requested and outcome.status != "succeeded":
+            # Killed on request. A turn that finished on its own just before the
+            # stop arrived keeps its real result.
+            outcome = TurnOutcome(
+                "cancelled",
+                error_code="stopped",
+                model=outcome.model,
+                usage=outcome.usage,
+                partial_text=outcome.partial_text,
+                session_state=outcome.session_state,
+            )
         try:
             await self._finish(run, outcome)
         except Exception:  # noqa: BLE001

@@ -392,7 +392,9 @@ export const api = {
 
   // --- Durable threads (/threads) ---
 
-  listThreads: () => request<Thread[]>("/threads"),
+  // Newest activity first. Archived conversations are left out unless asked for.
+  listThreads: (includeArchived = false) =>
+    request<Thread[]>(`/threads${includeArchived ? "?include_archived=true" : ""}`),
 
   getThread: (threadId: number) => request<ThreadDetail>(`/threads/${threadId}`),
 
@@ -406,6 +408,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ prompt_text: promptText }),
     }),
+
+  // Stop the running answer. 202 once Claude was told to stop; the end arrives as
+  // a turn.cancelled event. 409 no_running_turn: it had already ended.
+  // 409 turn_not_stoppable: it is running in another process.
+  stopThread: (threadId: number) =>
+    request<{ status: string; turn_id: number }>(`/threads/${threadId}/stop`, { method: "POST" }),
+
+  // Rename and/or archive. 409 turn_running: stop the answer first (archive only).
+  updateThread: (threadId: number, change: { title?: string; archived?: boolean }) =>
+    request<Thread>(`/threads/${threadId}`, { method: "PATCH", body: JSON.stringify(change) }),
+
+  // Permanent: the conversation's messages, tool calls and approvals in this app's
+  // database. 409 turn_running: stop the answer first.
+  deleteThread: (threadId: number) =>
+    request<void>(`/threads/${threadId}`, { method: "DELETE" }),
 
   // The way out of session_state "broken": a new Claude session, same transcript.
   resetThreadSession: (threadId: number) =>

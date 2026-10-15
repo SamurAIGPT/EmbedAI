@@ -19,7 +19,7 @@ Next.js web UI (frontend/)        Telegram bot (backend/app/telegram_bot.py)
 
 - **Backend:** FastAPI, SQLAlchemy models (`task`, `schedule`, `user_sandbox`, `user_credential`, `permission_rule`, `permission_ask`, `link_code`), Alembic migrations, background loop for schedules and task sync.
 - **Frontend:** Next.js, components for connecting Claude/GitHub/Telegram and submitting tasks.
-- **Identity:** guest or Telegram id stored in the browser; no owner authentication yet. The optional local Claude path (off by default) is instead restricted to requests from the machine itself by `local_access_policy`, and runs through the user's own `claude` CLI: chat-only by default, or with tools whose calls each wait for a person's approval when `LOCAL_TOOLS_ENABLED` is set ([D-006](DECISIONS.md)).
+- **Identity:** guest or Telegram id stored in the browser; no owner authentication yet. The optional local Claude path (off by default) is instead restricted to requests from the machine itself by `local_access_policy`, and runs through the user's own `claude` CLI: chat-only by default, or with tools whose calls each wait for a person's approval when `LOCAL_TOOLS_ENABLED` is set.
 
 See [README](../README.md), [backend/README.md](../backend/README.md) and [frontend/README.md](../frontend/README.md) for details.
 
@@ -70,4 +70,4 @@ Web UI (desktop wrapper later)      Telegram (optional)
 7. Storage migrations are additive. Existing task, schedule and credential data is preserved.
 8. Host CLI execution runs natively on loopback. Containers cannot see host CLI logins automatically, so Docker isolation is a separate, later feature.
 
-This section describes intent, not shipped behavior. One deliberate gap today: local runs stream their text over server-sent events from memory only (F02), so rule 2's storage and `Last-Event-ID` replay are not implemented yet; they arrive with threads and resume in F04/F05 ([D-004](DECISIONS.md)).
+This section describes intent, not shipped behavior. One deliberate gap today: local runs stream their text over server-sent events from memory only (F02), so rule 2's storage and `Last-Event-ID` replay are not implemented yet; they arrive with threads and resume in F04/F05.

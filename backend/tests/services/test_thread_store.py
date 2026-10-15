@@ -545,3 +545,83 @@ def test_titles_are_one_clipped_line():
     assert store.make_title("") == ""
     title = store.make_title("word " * 40)
     assert len(title) == store.TITLE_MAX_CHARS and title.endswith("…")
+
+
+# --- slice 2 additions: owner-checked events, cancel, finish extras, own interrupt ------
+
+
+async def test_a_run_writes_events_only_while_it_owns_the_turn(sessions, owner):
+    thread = await new_thread(sessions, owner)
+    turn = await call(sessions, store.start_turn, thread.id, "work")
+    await make_stale(sessions, turn.id)
+
+    event = await call(
+        sessions, store.append_turn_event, turn.id, turn.owner_token, "assistant.message", {"text": "hi"}
+    )
+    assert (event.seq, event.turn_id, event.data) == (2, turn.id, {"text": "hi"})
+    # Writing an event is also a heartbeat: the lease was renewed.
+    assert (await reload(sessions, Turn, turn.id)).heartbeat_at > store.utcnow() - timedelta(seconds=30)
+
+    assert await call(sessions, store.append_turn_event, turn.id, "not-the-owner", "x", {}) is None
+    assert [e.type for e in await events_of(sessions, thread.id)] == ["turn.started", "assistant.message"]
+    await call(sessions, store.finish_turn, turn.id, turn.owner_token, status="succeeded")
+    assert await call(sessions, store.append_turn_event, turn.id, turn.owner_token, "x", {}) is None
+
+
+async def test_a_withdrawn_question_is_cancelled_once_and_never_after_a_decision(sessions, owner):
+    thread, turn, approval = await running_turn_with_approval(sessions, owner)
+    assert await call(sessions, store.cancel_approval, approval.id)
+    assert not await call(sessions, store.cancel_approval, approval.id)
+    assert not await call(sessions, store.decide_approval, approval.id, "allowed")
+    resolved = [e for e in await events_of(sessions, thread.id) if e.type == "approval.resolved"]
+    assert [e.data["status"] for e in resolved] == ["cancelled"]
+
+    _, _, decided = await running_turn_with_approval(sessions, owner, decision="allowed")
+    assert not await call(sessions, store.cancel_approval, decided.id)  # a decision stands
+
+
+async def test_finishing_stores_extra_events_before_the_terminal_one_and_sets_the_session_state(
+    sessions, owner
+):
+    thread = await new_thread(sessions, owner, session_state="new")
+    turn = await call(sessions, store.start_turn, thread.id, "work")
+    assert not await call(
+        sessions, store.finish_turn, turn.id, "not-the-owner", status="failed",
+        extra_events=[("assistant.message", {"text": "x"})], session_state="active",
+        event_type="turn.failed",
+    )
+    assert (await reload(sessions, Thread, thread.id)).session_state == "new"  # nothing leaked through
+
+    assert await call(
+        sessions, store.finish_turn, turn.id, turn.owner_token, status="failed", error="boom",
+        extra_events=[("assistant.message", {"text": "partial", "incomplete": True})],
+        session_state="active", event_type="turn.failed", event_data={"error": "boom"},
+    )
+    assert [e.type for e in await events_of(sessions, thread.id)] == [
+        "turn.started", "assistant.message", "turn.failed"
+    ]
+    assert (await reload(sessions, Thread, thread.id)).session_state == "active"
+    with pytest.raises(ValueError):
+        await call(
+            sessions, store.finish_turn, turn.id, turn.owner_token, status="failed", session_state="bogus"
+        )
+
+
+async def test_a_process_can_interrupt_only_its_own_turn_when_it_shuts_down(sessions, owner):
+    thread, turn, approval = await running_turn_with_approval(sessions, owner)
+    assert not await call(sessions, store.interrupt_own_turn, turn.id, "someone-elses-token")
+    assert (await reload(sessions, Turn, turn.id)).status == "running"
+    assert await call(sessions, store.interrupt_own_turn, turn.id, turn.owner_token, reason="shutdown")
+    assert not await call(sessions, store.interrupt_own_turn, turn.id, turn.owner_token)  # once
+    events = await events_of(sessions, thread.id)
+    assert events[-1].type == "turn.interrupted" and events[-1].data == {"reason": "shutdown"}
+    assert (await reload(sessions, Approval, approval.id)).status == "cancelled"
+
+
+async def test_all_events_are_read_across_pages(sessions, owner):
+    thread = await new_thread(sessions, owner)
+    for i in range(7):
+        await call(sessions, store.append_event, thread.id, "note", {"i": i})
+    assert [e.seq for e in await call(sessions, store.list_all_events, thread.id, page=3)] == list(range(1, 8))
+    assert [e.seq for e in await call(sessions, store.list_all_events, thread.id, page=7)] == list(range(1, 8))
+    assert await call(sessions, store.get_approval, "missing") is None

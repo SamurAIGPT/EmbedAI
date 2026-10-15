@@ -98,6 +98,10 @@ async def list_threads(
     return list((await db.execute(query)).scalars())
 
 
+async def get_turn(db: AsyncSession, turn_id: int) -> Turn | None:
+    return await db.get(Turn, turn_id)
+
+
 async def list_turns(db: AsyncSession, thread_id: int) -> list[Turn]:
     query = select(Turn).where(Turn.thread_id == thread_id).order_by(Turn.seq)
     return list((await db.execute(query)).scalars())
@@ -114,6 +118,22 @@ async def list_events(
         .limit(limit)
     )
     return list((await db.execute(query)).scalars())
+
+
+async def get_approval(db: AsyncSession, approval_id: str) -> Approval | None:
+    return await db.get(Approval, approval_id)
+
+
+async def list_all_events(db: AsyncSession, thread_id: int, *, page: int = 500) -> list[Event]:
+    """Every stored event of a thread, ascending (read in pages)."""
+    events: list[Event] = []
+    after = 0
+    while True:
+        batch = await list_events(db, thread_id, after=after, limit=page)
+        events.extend(batch)
+        if len(batch) < page:
+            return events
+        after = batch[-1].seq
 
 
 async def list_approvals(
@@ -278,6 +298,35 @@ async def append_event(
     return event
 
 
+async def append_turn_event(
+    db: AsyncSession,
+    turn_id: int,
+    owner_token: str,
+    type_: str,
+    data: dict | None = None,
+) -> Event | None:
+    """Store an event for a turn the caller owns. One transaction: the same
+    statement that proves the turn is still running under `owner_token` also
+    refreshes its heartbeat, so every event a run writes doubles as a lease
+    check. Returns None (and writes nothing) if the caller no longer owns the
+    turn: the run must stop."""
+    await begin_write(db)
+    touched = await db.execute(
+        update(Turn)
+        .where(Turn.id == turn_id, Turn.status == "running", Turn.owner_token == owner_token)
+        .values(heartbeat_at=utcnow())
+        .returning(Turn.thread_id)
+        .execution_options(synchronize_session=False)
+    )
+    thread_id = touched.scalar_one_or_none()
+    if thread_id is None:
+        await db.rollback()
+        return None
+    event = await _add_event(db, thread_id, type_, data, turn_id)
+    await db.commit()
+    return event
+
+
 # --- turns -------------------------------------------------------------------
 
 
@@ -350,11 +399,18 @@ async def finish_turn(
     usage: dict | None = None,
     event_type: str | None = None,
     event_data: dict | None = None,
+    extra_events: list[tuple[str, dict]] | None = None,
+    session_state: str | None = None,
 ) -> bool:
     """Finish a turn the caller owns, store its terminal event and cancel any
-    approval still open, all in one transaction. False (and nothing written)
-    if the caller no longer owns the turn."""
+    approval still open, all in one transaction. `extra_events` are stored
+    before the terminal event (for example the partial answer of a failed
+    turn), and `session_state`, if given, is set on the thread in the same
+    transaction. False (and nothing written) if the caller no longer owns the
+    turn."""
     _check(status, FINISH_STATUSES, "status")
+    if session_state is not None:
+        _check(session_state, SESSION_STATES, "session_state")
     await begin_write(db)
     updated = await db.execute(
         update(Turn)
@@ -375,22 +431,30 @@ async def finish_turn(
     if thread_id is None:
         await db.rollback()
         return False
+    if session_state is not None:
+        await db.execute(
+            update(Thread)
+            .where(Thread.id == thread_id)
+            .values(session_state=session_state)
+            .execution_options(synchronize_session=False)
+        )
     await _cancel_open_approvals(db, thread_id, turn_id)
+    for extra_type, extra_data in extra_events or []:
+        await _add_event(db, thread_id, extra_type, extra_data, turn_id)
     if event_type:
         await _add_event(db, thread_id, event_type, event_data, turn_id)
     await db.commit()
     return True
 
 
-async def interrupt_turn(db: AsyncSession, turn_id: int, *, stale_before: datetime) -> bool:
-    """Mark a running turn `interrupted` if its heartbeat is older than
-    `stale_before`: one atomic update, so only one caller can win. The winner
-    cancels the turn's open approvals and stores `turn.interrupted`, in the same
-    transaction. Nothing is resumed or replayed."""
+async def _interrupt(db: AsyncSession, turn_id: int, *conditions, reason: str) -> bool:
+    """Move a running turn to `interrupted` under extra conditions, in one
+    atomic update, and (only for the winner) cancel its open approvals and store
+    `turn.interrupted`, in the same transaction."""
     await begin_write(db)
     updated = await db.execute(
         update(Turn)
-        .where(Turn.id == turn_id, Turn.status == "running", Turn.heartbeat_at < stale_before)
+        .where(Turn.id == turn_id, Turn.status == "running", *conditions)
         .values(status="interrupted", finished_at=utcnow(), error_code="interrupted")
         .returning(Turn.thread_id)
         .execution_options(synchronize_session=False)
@@ -400,9 +464,26 @@ async def interrupt_turn(db: AsyncSession, turn_id: int, *, stale_before: dateti
         await db.rollback()
         return False
     await _cancel_open_approvals(db, thread_id, turn_id)
-    await _add_event(db, thread_id, "turn.interrupted", {"reason": "lease_expired"}, turn_id)
+    await _add_event(db, thread_id, "turn.interrupted", {"reason": reason}, turn_id)
     await db.commit()
     return True
+
+
+async def interrupt_turn(db: AsyncSession, turn_id: int, *, stale_before: datetime) -> bool:
+    """Mark a running turn `interrupted` if its heartbeat is older than
+    `stale_before`: one atomic update, so only one caller can win. Nothing is
+    resumed or replayed."""
+    return await _interrupt(
+        db, turn_id, Turn.heartbeat_at < stale_before, reason="lease_expired"
+    )
+
+
+async def interrupt_own_turn(
+    db: AsyncSession, turn_id: int, owner_token: str, *, reason: str = "shutdown"
+) -> bool:
+    """A run's own process is going away (a clean shutdown): interrupt the turn
+    at once instead of leaving it for the lease to expire. Only the owner can."""
+    return await _interrupt(db, turn_id, Turn.owner_token == owner_token, reason=reason)
 
 
 async def interrupt_stale_turns(db: AsyncSession, *, stale_after: timedelta) -> list[int]:
@@ -444,15 +525,16 @@ async def create_approval(
     input: dict,
     summary: str | None = None,
     kind: str | None = None,
+    owner_token: str | None = None,
 ) -> Approval:
     """Record a question about one tool call and its `approval.requested` event.
-    Raises TurnNotRunning if the turn is not running."""
+    Raises TurnNotRunning if the turn is not running (and, when `owner_token`
+    is given, not owned by it)."""
     await begin_write(db)
-    running = (
-        await db.execute(
-            select(Turn.id).where(Turn.id == turn_id, Turn.thread_id == thread_id, Turn.status == "running")
-        )
-    ).scalar_one_or_none()
+    still_running = [Turn.id == turn_id, Turn.thread_id == thread_id, Turn.status == "running"]
+    if owner_token is not None:
+        still_running.append(Turn.owner_token == owner_token)
+    running = (await db.execute(select(Turn.id).where(*still_running))).scalar_one_or_none()
     if running is None:
         await db.rollback()
         raise TurnNotRunning(turn_id)
@@ -507,11 +589,21 @@ async def decide_approval(db: AsyncSession, approval_id: str, decision: str) -> 
 async def expire_approval(db: AsyncSession, approval_id: str) -> bool:
     """Nobody answered in time. Expiry authorizes nothing, so it does not need
     the turn to be running; it only needs the approval to still be pending."""
+    return await _close_pending(db, approval_id, "expired")
+
+
+async def cancel_approval(db: AsyncSession, approval_id: str) -> bool:
+    """The provider withdrew the question (the tool call was abandoned). Like
+    expiry it authorizes nothing, and only needs the approval to be pending."""
+    return await _close_pending(db, approval_id, "cancelled")
+
+
+async def _close_pending(db: AsyncSession, approval_id: str, status: str) -> bool:
     await begin_write(db)
     updated = await db.execute(
         update(Approval)
         .where(Approval.id == approval_id, Approval.status == "pending")
-        .values(status="expired", decided_at=utcnow())
+        .values(status=status, decided_at=utcnow())
         .returning(Approval.thread_id, Approval.turn_id)
         .execution_options(synchronize_session=False)
     )
@@ -520,7 +612,7 @@ async def expire_approval(db: AsyncSession, approval_id: str) -> bool:
         await db.rollback()
         return False
     thread_id, turn_id = row
-    await _add_event(db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": "expired"}, turn_id)
+    await _add_event(db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": status}, turn_id)
     await db.commit()
     return True
 

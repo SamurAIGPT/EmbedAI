@@ -10,9 +10,13 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.routers.router import router as app_router
 from app.services import schedule_service, task_execution_service
+from app.services.thread_runtime import runtime as thread_runtime
 from app.services.box_operations import BoatNotConfigured
 
 BACKGROUND_INTERVAL_SECONDS = 30
+# How often the lease sweep looks for turns whose owner stopped. Much shorter
+# than THREAD_LEASE_SECONDS, so a dead turn is noticed soon after its lease ends.
+THREAD_SWEEP_INTERVAL_SECONDS = 15
 
 
 configure_logging()
@@ -32,8 +36,13 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(
             run_every(BACKGROUND_INTERVAL_SECONDS, schedule_service.report_finished_runs)
         ),
+        # Runs once at startup, then periodically.
+        asyncio.create_task(run_every(THREAD_SWEEP_INTERVAL_SECONDS, thread_runtime.sweep_stale)),
     ]
     yield
+    # Kill this process's provider processes and interrupt its own turns now,
+    # rather than leaving them for the lease to expire.
+    await thread_runtime.shutdown()
     for job in jobs:
         job.cancel()
     await asyncio.gather(*jobs, return_exceptions=True)

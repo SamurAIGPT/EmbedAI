@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # An approval nobody answers within this time is denied.
     LOCAL_APPROVAL_TIMEOUT_SECONDS: int = 300
 
+    # Durable threads: a running turn refreshes its heartbeat this often, and a
+    # turn whose heartbeat is older than the lease is marked interrupted (never
+    # resumed or replayed). The lease must be several heartbeats long.
+    THREAD_HEARTBEAT_SECONDS: int = 10
+    THREAD_LEASE_SECONDS: int = 60
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 
     @property

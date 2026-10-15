@@ -26,6 +26,11 @@ class ToolEvent:
 
     kind: str
     data: dict
+    # What a durable store needs and the live timeline does not: the full input
+    # of a started call (`input`) and the full text of a result (`output`).
+    # Kept out of `data` so the existing live payloads do not change, and out of
+    # equality so they compare as before.
+    extra: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 def _clip(text: str, limit: int) -> str:
@@ -59,6 +64,21 @@ def summarize_tool(name: str, tool_input: dict) -> str:
     return _clip(value, SUMMARY_CHARS) if isinstance(value, str) else name
 
 
+def _usage_of(event: dict) -> dict | None:
+    """Token counts and cost from a `result` event, as a small dict, or None."""
+    usage: dict = {}
+    raw = event.get("usage")
+    if isinstance(raw, dict):
+        for key in ("input_tokens", "output_tokens"):
+            value = raw.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                usage[key] = value
+    cost = event.get("total_cost_usd")
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+        usage["cost_usd"] = cost
+    return usage or None
+
+
 @dataclass
 class FinalResult:
     """The CLI's own end-of-turn report (the `result` event)."""
@@ -81,7 +101,17 @@ class StreamNormalizer:
     over_limit: bool = False
     skipped_lines: int = 0
     final: FinalResult | None = None
+    # True once the CLI has reported `system/init`: the session exists.
+    init_seen: bool = False
+    # What the CLI reported about itself and the run, for the stored turn.
+    model: str | None = None
+    usage: dict | None = None
     _text_parts: list[str] = field(default_factory=list)
+    # Text streamed since the last completed assistant message: what would be
+    # lost if the run ended now.
+    _since_message: list[str] = field(default_factory=list)
+    _messages: list[str] = field(default_factory=list)
+    _message_keys: set = field(default_factory=set)
     _current_message: str | None = None
     _messages_with_deltas: set[str] = field(default_factory=set)
     _snapshot_seen: dict[str, str] = field(default_factory=dict)
@@ -91,6 +121,17 @@ class StreamNormalizer:
     @property
     def text(self) -> str:
         return "".join(self._text_parts)
+
+    @property
+    def unflushed_text(self) -> str:
+        """Streamed text that no completed assistant message has covered yet."""
+        return "".join(self._since_message)
+
+    def take_messages(self) -> list[str]:
+        """Complete assistant messages (their text) seen since the last call, in
+        order. A message with no text (a tool call alone) is not listed."""
+        messages, self._messages = self._messages, []
+        return messages
 
     def take_tool_events(self) -> list[ToolEvent]:
         """Tool activity and approval requests seen since the last call."""
@@ -105,9 +146,17 @@ class StreamNormalizer:
         kind = event.get("type")
         if kind == "stream_event":
             return self._stream_event(event)
+        if kind == "system":
+            if event.get("subtype") == "init":
+                self.init_seen = True
+                model = event.get("model")
+                self.model = model if isinstance(model, str) else None
+            return []
         if kind == "assistant":
             self._tool_uses(event)
-            return self._assistant(event)
+            chunks = self._assistant(event)
+            self._complete_message(event)
+            return chunks
         if kind == "user":
             self._tool_results(event)
         elif kind == "control_request":
@@ -119,6 +168,31 @@ class StreamNormalizer:
         elif kind == "result":
             self._result(event)
         return []
+
+    def _complete_message(self, event: dict) -> None:
+        """An `assistant` event carries a finished block of the answer. Its text
+        becomes one stored message, once, and whatever was streamed for it is no
+        longer at risk."""
+        if event.get("parent_tool_use_id"):
+            return
+        message = event.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            return
+        text = "".join(
+            block.get("text", "")
+            for block in message["content"]
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        )
+        if not text.strip():
+            return
+        key = (message.get("id"), text)
+        if key in self._message_keys:
+            return
+        self._message_keys.add(key)
+        self._messages.append(text)
+        self._since_message.clear()
 
     def _tool_uses(self, event: dict) -> None:
         if event.get("parent_tool_use_id"):
@@ -146,6 +220,7 @@ class StreamNormalizer:
                         "tool": name,
                         "summary": summarize_tool(name, tool_input),
                     },
+                    extra={"input": tool_input},
                 )
             )
 
@@ -170,6 +245,7 @@ class StreamNormalizer:
                         "is_error": bool(block.get("is_error")),
                         "preview": _clip(_result_text(block.get("content")), RESULT_PREVIEW_CHARS),
                     },
+                    extra={"output": _result_text(block.get("content"))},
                 )
             )
 
@@ -268,6 +344,7 @@ class StreamNormalizer:
         return self._append(new_text) if new_text else []
 
     def _result(self, event: dict) -> None:
+        self.usage = _usage_of(event)
         text = event.get("result")
         denials = event.get("permission_denials")
         self.final = FinalResult(
@@ -285,4 +362,5 @@ class StreamNormalizer:
             return []
         self.text_bytes += size
         self._text_parts.append(chunk)
+        self._since_message.append(chunk)
         return [chunk]

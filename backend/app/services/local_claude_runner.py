@@ -103,6 +103,7 @@ class RunControl:
         self._pauses = 0
         self._remaining = 0.0
         self._finished = False
+        self._killed = False
 
     def _attach(self, proc: subprocess.Popen, timeout_seconds: float, on_timeout) -> None:
         with self._lock:
@@ -110,6 +111,23 @@ class RunControl:
             self._timeout_seconds = timeout_seconds
             self._on_timeout = on_timeout
             self._start_timer(timeout_seconds)
+            killed = self._killed
+        if killed:  # kill() was called before the process existed
+            _kill_tree(proc)
+
+    @property
+    def killed(self) -> bool:
+        return self._killed
+
+    def kill(self) -> None:
+        """Kill the process and everything it started. Safe to call from any
+        thread, at any time (before the process starts, while it runs, after it
+        ended). Used when the run no longer owns its turn."""
+        with self._lock:
+            self._killed = True
+            proc = self._proc
+        if proc is not None:
+            _kill_tree(proc)
 
     def _start_timer(self, seconds: float) -> None:
         self._deadline = time.monotonic() + seconds
@@ -255,6 +273,7 @@ def run_blocking(
     max_output_bytes: int,
     on_stdout_line: LineHandler | None = None,
     control: RunControl | None = None,
+    keep_stdin_open: bool | None = None,
 ) -> RunOutput:
     """Run a process to completion with a time limit and an output cap,
     killing its whole process tree if either is exceeded.
@@ -265,7 +284,11 @@ def run_blocking(
 
     With `control`, `stdin_text` is sent as one line and stdin stays open so
     the caller can keep writing; the caller (or the end of the run) closes it,
-    and the time limit is owned by `control` so it can be paused."""
+    and the time limit is owned by `control` so it can be paused. With
+    `keep_stdin_open=False` a control only provides the kill switch and the
+    pausable time limit: the text is written and stdin closed, as without one."""
+    if keep_stdin_open is None:
+        keep_stdin_open = control is not None
     popen_kwargs: dict = {}
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -355,7 +378,7 @@ def run_blocking(
     for reader in readers:
         reader.start()
     try:
-        if control is not None:
+        if control is not None and keep_stdin_open:
             if stdin_text is not None:
                 control.send(stdin_text)
         else:
@@ -386,14 +409,18 @@ def run_blocking(
     )
 
 
-def build_args(executable: Path, session_id: str, *, tools: bool = False) -> list[str]:
-    # The prompt goes in on stdin, never on the command line.
+def build_args(
+    executable: Path, session_id: str, *, tools: bool = False, resume: bool = False
+) -> list[str]:
+    # The prompt goes in on stdin, never on the command line. `resume` continues
+    # the conversation that already holds `session_id`; otherwise the CLI is
+    # told to create it under that id.
     common = [
         str(executable),
         "-p",
         "--verbose",
         "--include-partial-messages",
-        "--session-id",
+        "--resume" if resume else "--session-id",
         session_id,
     ]
     if not tools:
@@ -459,15 +486,19 @@ def _run_blocking(
     session_id: str,
     on_stdout_line: LineHandler | None,
     control: RunControl | None,
+    resume: bool = False,
+    tools: bool | None = None,
 ) -> RunOutput:
     executable = resolve_claude_executable()
     if executable is None:
         raise ClaudeCliUnavailable("Claude CLI not found.")
-    tools = control is not None
+    if tools is None:
+        tools = control is not None
+    extra = {"resume": True} if resume else {}
     args = (
-        build_args(executable, session_id, tools=True)
+        build_args(executable, session_id, tools=True, **extra)
         if tools
-        else build_args(executable, session_id)
+        else build_args(executable, session_id, **extra)
     )
     return run_blocking(
         args,
@@ -477,6 +508,7 @@ def _run_blocking(
         max_output_bytes=settings.LOCAL_MAX_OUTPUT_BYTES * RAW_STREAM_SIZE_FACTOR,
         on_stdout_line=on_stdout_line,
         control=control,
+        keep_stdin_open=tools if control is not None else None,
     )
 
 
@@ -485,8 +517,15 @@ async def run_prompt(
     session_id: str,
     on_stdout_line: LineHandler | None = None,
     control: RunControl | None = None,
+    *,
+    resume: bool = False,
+    tools: bool | None = None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
-    through `control`."""
-    return await run_in_threadpool(_run_blocking, prompt, session_id, on_stdout_line, control)
+    through `control`. `tools=False` with a control gives a chat-only run the
+    caller can still kill; `resume=True` continues the session `session_id`
+    instead of creating it."""
+    return await run_in_threadpool(
+        _run_blocking, prompt, session_id, on_stdout_line, control, resume, tools
+    )

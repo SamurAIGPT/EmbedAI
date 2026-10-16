@@ -38,6 +38,9 @@ from app.services.thread_runtime import (
     ThreadRuntime,
     TurnNotHere,
     UnknownProvider,
+    AgentArchived,
+    AgentProviderMismatch,
+    UnknownAgent,
 )
 from app.services.thread_runtime import runtime as default_runtime
 from app.services.thread_stream import event_frames
@@ -72,10 +75,22 @@ async def _thread_or_404(rt: ThreadRuntime, thread_id: int) -> store.Thread:
 async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
     try:
         return await rt.create_thread(
-            provider=payload.provider, model=payload.model, title=payload.title
+            # Omitted means the agent's provider, or Claude without an agent.
+            provider=payload.provider if "provider" in payload.model_fields_set else None,
+            model=payload.model,
+            title=payload.title,
+            agent_id=payload.agent_id,
         )
     except UnknownProvider:
         raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
+    except UnknownAgent:
+        raise _error(422, "agent_not_found", "No such agent.") from None
+    except AgentArchived:
+        raise _error(409, "agent_archived", "This agent is archived; unarchive it first.") from None
+    except AgentProviderMismatch:
+        raise _error(
+            422, "agent_provider_mismatch", "The provider must match the agent's, or be omitted."
+        ) from None
     except (OSError, ValueError) as exc:
         raise _error(409, "workspace_unavailable", str(exc)) from None
 

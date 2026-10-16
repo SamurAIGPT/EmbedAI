@@ -264,6 +264,13 @@ class ClaudeAdapter:
                     logger.exception("could not record a Claude event", thread_id=ctx.thread_id)
 
         pump_task = asyncio.create_task(pump())
+        # Only what the thread's agent or request set is passed on, so a plain
+        # thread launches exactly as before.
+        extra = {}
+        if ctx.model:
+            extra["model"] = ctx.model
+        if ctx.instructions:
+            extra["system_prompt"] = ctx.instructions
         try:
             attempt.output = await local_claude_runner.run_prompt(
                 ctx.prompt,
@@ -273,6 +280,7 @@ class ClaudeAdapter:
                 resume=resume,
                 tools=tools,
                 workspace=ctx.workspace,
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001
             if not isinstance(exc, local_claude_runner.ClaudeCliUnavailable):

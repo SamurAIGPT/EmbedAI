@@ -20,4 +20,6 @@ Shipped capabilities. Planned work is in [ROADMAP.md](ROADMAP.md).
 
 - **Desktop settings:** configure the Claude executable and default workspace root with native Browse dialogs, local tools, answer/approval timeouts and output limit. Per-field saves are versioned in the database, sensitive changes are audited, and the page shows sources, effective values and validation errors. New turns use saved configuration; running turns and existing approval deadlines stay unchanged. Conversations keep their original workspace across changes and restarts. Storage information is read-only; no onboarding wizard yet. See [SETUP.md](SETUP.md#desktop-app-from-a-source-checkout-experimental).
 
+- **Named agents (backend):** save instructions, model, workspace and approval mode under a name and start conversations from it (`agent_id` on `POST /api/v1/threads`). Edits apply from a conversation's next message; its workspace stays as it was when it began. Pin, archive, duplicate and delete are in `/api/v1/agents`. See [SETUP.md](SETUP.md).
+
 Limitations: see "Known limitations" in the [README](../README.md).

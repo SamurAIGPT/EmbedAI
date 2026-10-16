@@ -71,6 +71,12 @@ class TurnContext:
     # The thread's stored history, for a provider that keeps no session of its
     # own. A session provider (Claude) never calls it.
     history: Callable[[], Awaitable[list[dict]]]
+    # ask | accept_edits | plan (approval_modes.py); None means ask. Set by the
+    # runtime from the thread's agent; an adapter maps it onto its own provider.
+    approval_mode: str | None = None
+    # Extra instructions from the thread's named agent, for the provider's
+    # system prompt (appended, never replacing it), or None. Read fresh each turn.
+    instructions: str | None = None
     _abort_callbacks: list[Callable[[], None]] = field(default_factory=list)
     aborted: bool = False
 

@@ -46,6 +46,9 @@ class Thread(Base):
     # Small, adapter-private state. Never secrets, endpoints or keys.
     provider_state: Mapped[dict | None] = mapped_column(JSONValue, nullable=True)
     workspace_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The named agent this thread was created from, if any. Not a database
+    # foreign key: deleting an agent never deletes or rewrites its threads.
+    agent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Last event sequence number handed out in this thread.
     last_seq: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"

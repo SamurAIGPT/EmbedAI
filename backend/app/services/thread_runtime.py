@@ -25,6 +25,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
+from app.services import agent_store
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
@@ -66,6 +67,18 @@ RESET_MESSAGE = (
 
 class UnknownProvider(Exception):
     pass
+
+
+class UnknownAgent(Exception):
+    """No such agent for this owner."""
+
+
+class AgentArchived(Exception):
+    """A new conversation cannot start from an archived agent."""
+
+
+class AgentProviderMismatch(Exception):
+    """The request names a provider other than the agent's."""
 
 
 class SessionNotResettable(Exception):
@@ -276,14 +289,43 @@ class ThreadRuntime:
     # -- threads ----------------------------------------------------------------------
 
     async def create_thread(
-        self, *, provider: str = "claude", model: str | None = None, title: str | None = None
+        self,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        title: str | None = None,
+        agent_id: int | None = None,
     ) -> store.Thread:
-        """A new thread for this runtime's owner. Raises UnknownProvider."""
+        """A new thread for this runtime's owner. With `agent_id` the thread is
+        started from that agent: its provider is used and its workspace is
+        pinned now (later edits to the agent's workspace do not move the
+        thread). Raises UnknownProvider, UnknownAgent, AgentArchived,
+        AgentProviderMismatch, or OSError when the agent's folder is gone."""
+        agent = None
+        if agent_id is not None:
+            async with self.session() as db:
+                agent = await agent_store.get_agent(db, agent_id)
+            if agent is None or agent.owner_id != self.owner_id:
+                raise UnknownAgent(agent_id)
+            if agent.archived_at is not None:
+                raise AgentArchived(agent_id)
+            if provider is not None and provider != agent.provider:
+                raise AgentProviderMismatch(provider)
+            provider = agent.provider
+        provider = provider or "claude"
         adapter = self.adapters.get(provider)
         if adapter is None:
             raise UnknownProvider(provider)
         session_id = adapter.new_session_id()
-        workspace = local_claude_runner.workspace_dir()
+        if agent is not None and agent.workspace_path:
+            workspace = require_workspace(Path(agent.workspace_path))
+        elif agent is not None:
+            # No folder chosen: the agent gets its own, keyed by id so a rename
+            # never moves it and two agents never share files.
+            workspace = local_claude_runner.workspace_dir() / "agents" / str(agent.id)
+            workspace.mkdir(parents=True, exist_ok=True)
+        else:
+            workspace = local_claude_runner.workspace_dir()
         async with self.session() as db:
             return await store.create_thread(
                 db,
@@ -294,6 +336,7 @@ class ThreadRuntime:
                 provider_session_id=session_id,
                 session_state="new" if session_id is not None else "none",
                 workspace_path=str(workspace.resolve()),
+                agent_id=agent.id if agent is not None else None,
             )
 
     async def reset_session(self, thread_id: int) -> store.Thread:
@@ -342,6 +385,13 @@ class ThreadRuntime:
         if not status.ready:
             raise ProviderUnavailable(status.error or f"{thread.provider} is not ready")
 
+        # A named agent's current settings apply to every turn. A deleted agent
+        # leaves the thread with its own provider and model only.
+        agent = None
+        if thread.agent_id is not None:
+            async with self.session() as db:
+                agent = await agent_store.get_agent(db, thread.agent_id)
+
         async with self.session() as db:
             turn = await store.start_turn(
                 db, thread_id, prompt_text, owner_instance=self.instance_id
@@ -356,11 +406,14 @@ class ThreadRuntime:
             turn_id=turn.id,
             prompt=prompt_text,
             workspace=Path(thread.workspace_path) if thread.workspace_path else None,
-            model=thread.model,
+            # A model chosen for this conversation wins over its agent's.
+            model=thread.model or (agent.model if agent is not None else None),
             provider_session_id=thread.provider_session_id,
             provider_state=thread.provider_state,
             resume=thread.session_state == "active",
             history=history,
+            instructions=(agent.instructions or None) if agent is not None else None,
+            approval_mode=agent.approval_mode if agent is not None else None,
         )
         run = ActiveRun(thread_id=thread_id, turn_id=turn.id, owner_token=turn.owner_token, ctx=ctx)
         run.settings_snapshot = snapshot

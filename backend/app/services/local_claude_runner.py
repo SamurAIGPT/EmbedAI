@@ -427,7 +427,13 @@ def run_blocking(
 
 
 def build_args(
-    executable: Path, session_id: str, *, tools: bool = False, resume: bool = False
+    executable: Path,
+    session_id: str,
+    *,
+    tools: bool = False,
+    resume: bool = False,
+    model: str | None = None,
+    system_prompt: str | None = None,
 ) -> list[str]:
     # The prompt goes in on stdin, never on the command line. `resume` continues
     # the conversation that already holds `session_id`; otherwise the CLI is
@@ -440,6 +446,12 @@ def build_args(
         "--resume" if resume else "--session-id",
         session_id,
     ]
+    # An agent's model, and its instructions added to the CLI's own system
+    # prompt (never replacing it). Both are argument values, not shell text.
+    if model:
+        common += ["--model", model]
+    if system_prompt:
+        common += ["--append-system-prompt", system_prompt]
     if not tools:
         return [*common, "--output-format", "stream-json", *LOCKDOWN_ARGS]
     return [*common, "--output-format", "stream-json", *TOOLS_ARGS]
@@ -505,6 +517,8 @@ def _run_blocking(
     resume: bool = False,
     tools: bool | None = None,
     workspace: Path | None = None,
+    model: str | None = None,
+    system_prompt: str | None = None,
 ) -> RunOutput:
     if workspace is not None:
         from app.services.workspaces import require_workspace
@@ -515,6 +529,10 @@ def _run_blocking(
     if tools is None:
         tools = control is not None
     extra = {"resume": True} if resume else {}
+    if model:
+        extra["model"] = model
+    if system_prompt:
+        extra["system_prompt"] = system_prompt
     args = (
         build_args(executable, session_id, tools=True, **extra)
         if tools
@@ -541,6 +559,8 @@ async def run_prompt(
     resume: bool = False,
     tools: bool | None = None,
     workspace: Path | None = None,
+    model: str | None = None,
+    system_prompt: str | None = None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
@@ -548,5 +568,14 @@ async def run_prompt(
     caller can still kill; `resume=True` continues the session `session_id`
     instead of creating it."""
     return await run_in_threadpool(
-        _run_blocking, prompt, session_id, on_stdout_line, control, resume, tools, workspace
+        _run_blocking,
+        prompt,
+        session_id,
+        on_stdout_line,
+        control,
+        resume,
+        tools,
+        workspace,
+        model,
+        system_prompt,
     )

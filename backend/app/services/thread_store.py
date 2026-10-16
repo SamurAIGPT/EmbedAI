@@ -320,6 +320,7 @@ async def create_thread(
     provider_state: dict | None = None,
     title: str | None = None,
     workspace_path: str | None = None,
+    agent_id: int | None = None,
 ) -> Thread:
     if not provider.strip():
         raise ValueError("provider is required")
@@ -340,6 +341,7 @@ async def create_thread(
         session_state=session_state,
         provider_state=provider_state,
         workspace_path=workspace_path,
+        agent_id=agent_id,
     )
     db.add(thread)
     await db.flush()

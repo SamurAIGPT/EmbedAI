@@ -11,6 +11,11 @@ class ThreadCreateRequest(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     # Omitted: set from the first prompt.
     title: str | None = Field(default=None, max_length=200)
+    # Start the conversation from a named agent: its provider is used (naming a
+    # different one is a 422), its workspace (or its own folder under the
+    # default root) is pinned, and each message uses its current instructions,
+    # approval mode and, unless `model` is set here, model.
+    agent_id: int | None = None
 
 
 class ThreadUpdateRequest(BaseModel):
@@ -44,6 +49,9 @@ class ThreadResponse(BaseModel):
     provider: str
     model: str | None
     workspace_path: str | None = None
+    # The agent this conversation was started from; null if none, or if it
+    # was deleted.
+    agent_id: int | None = None
     # new | active | broken | none. `broken` means a resume failed and the
     # session must be reset before the thread can take another message.
     session_state: str

@@ -8,6 +8,7 @@ CREATE TABLE thread (
 	session_state VARCHAR DEFAULT 'new' NOT NULL, 
 	provider_state JSON, 
 	workspace_path VARCHAR, 
+	agent_id BIGINT, 
 	last_seq BIGINT DEFAULT '0' NOT NULL, 
 	archived_at TIMESTAMP WITH TIME ZONE, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 

@@ -1,0 +1,122 @@
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+ApprovalMode = Literal["ask", "accept_edits", "plan"]
+
+# Standing instructions are capped in bytes, not characters, so the limit means
+# the same thing in every language.
+INSTRUCTIONS_MAX_BYTES = 24_000
+
+
+def _one_line(value: str, what: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{what} must not be blank")
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{what} must fit on one line")
+    return value
+
+
+def _instructions_fit(value: str) -> str:
+    if len(value.encode("utf-8")) > INSTRUCTIONS_MAX_BYTES:
+        raise ValueError(f"instructions must be at most {INSTRUCTIONS_MAX_BYTES} bytes")
+    return value
+
+
+def _optional_line(value: str | None) -> str | None:
+    """A title: one line, or null/blank for none."""
+    if value is None or not value.strip():
+        return None
+    return _one_line(value, "title")
+
+
+class AgentCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    # A short role line and a longer description, for lists and pickers.
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    instructions: str = ""
+    # An unknown provider is a 422. Claude is the only one registered today.
+    provider: str = Field(default="claude", min_length=1, max_length=64)
+    model: str | None = Field(default=None, max_length=200)
+    # Omitted: the agent gets its own folder under the default workspace root.
+    # Otherwise an absolute path (or `~/...`) to an existing folder.
+    workspace_path: str | None = Field(default=None, max_length=1000)
+    approval_mode: ApprovalMode = "ask"
+    pinned: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _name_one_line(cls, value: str) -> str:
+        return _one_line(value, "name")
+
+    @field_validator("title")
+    @classmethod
+    def _title_one_line(cls, value: str | None) -> str | None:
+        return _optional_line(value)
+
+    @field_validator("instructions")
+    @classmethod
+    def _instructions_size(cls, value: str) -> str:
+        return _instructions_fit(value)
+
+
+class AgentUpdateRequest(BaseModel):
+    """Change any of these; send at least one. `title`, `description`, `model`
+    and `workspace_path` accept an explicit null to go back to the default."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    instructions: str | None = None
+    model: str | None = Field(default=None, max_length=200)
+    workspace_path: str | None = Field(default=None, max_length=1000)
+    approval_mode: ApprovalMode | None = None
+    pinned: bool | None = None
+    archived: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_one_line(cls, value: str | None) -> str | None:
+        return None if value is None else _one_line(value, "name")
+
+    @field_validator("title")
+    @classmethod
+    def _title_one_line(cls, value: str | None) -> str | None:
+        return _optional_line(value)
+
+    @field_validator("instructions")
+    @classmethod
+    def _instructions_size(cls, value: str | None) -> str | None:
+        return None if value is None else _instructions_fit(value)
+
+    @model_validator(mode="after")
+    def _something_to_change(self):
+        if not self.model_fields_set:
+            raise ValueError("send at least one field to change")
+        for field in ("name", "instructions", "approval_mode", "pinned", "archived"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
+
+
+class AgentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    title: str | None
+    description: str | None
+    instructions: str
+    provider: str
+    model: str | None
+    # Null: a thread started from this agent gets its own folder, named by the
+    # agent's id, under the default workspace root.
+    workspace_path: str | None
+    approval_mode: ApprovalMode
+    pinned: bool
+    archived_at: datetime | None
+    created_at: datetime
+    updated_at: datetime

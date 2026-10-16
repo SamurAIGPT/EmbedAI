@@ -6,7 +6,7 @@ Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent.**
 Today it wraps the Claude Code CLI: run tasks from Telegram or the web, review
 risky actions before they run, connect GitHub, schedule recurring prompts, and
 chat with a locally signed-in Claude from a desktop app. It supports Claude
-only, has no named agents or multi-agent features yet, and is not a
+only, has named agents but no multi-agent features yet, and is not a
 feature-for-feature replacement for those services. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for what is planned.
 
@@ -364,7 +364,7 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   sandbox services have only partial coverage, and there are no frontend
   tests. The GitHub Actions workflows have not yet run on GitHub, so treat
   them as untested until the first run.
-- Only the Claude Code CLI is supported. There are no named agents,
+- Only the Claude Code CLI is supported. Named agents exist, but there is no
   delegation, connectors beyond an optional search MCP, or memory.
 - Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows

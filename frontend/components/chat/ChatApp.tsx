@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ApiError, isLaunchTokenMissing, type LocalStatus, type Thread } from "@/lib/api";
+import { api, ApiError, isLaunchTokenMissing, type Agent, type LocalStatus, type Thread } from "@/lib/api";
+import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
+import { AgentsPanel } from "./AgentsPanel";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { ThreadList } from "./ThreadList";
@@ -97,6 +99,13 @@ export function ChatApp() {
   // The turn Stop was pressed for; cleared by the turn ending, which is what
   // the button waits for.
   const [stoppingTurn, setStoppingTurn] = useState<number | null>(null);
+  // Named agents. null: the backend has none to offer (an older one answers 404),
+  // and the page behaves as before.
+  const [agents, setAgents] = useState<Agent[] | null>(null);
+  const [agentTick, setAgentTick] = useState(0);
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  // The agent a new chat will start with (null: a plain chat).
+  const [newAgentId, setNewAgentId] = useState<number | null>(null);
 
   const stream = useThreadStream(gate.phase === "ready" && gate.status.available ? threadId : null);
   const { transcript } = stream;
@@ -146,6 +155,21 @@ export function ChatApp() {
 
   useEffect(() => {
     if (!ready) return;
+    let cancelled = false;
+    api
+      .listAgents(true)
+      .then((list) => !cancelled && setAgents(list))
+      .catch((err: unknown) => {
+        // 404: an older backend without agents. Anything else: keep what is shown.
+        if (!cancelled && err instanceof ApiError && err.status === 404) setAgents(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, agentTick]);
+
+  useEffect(() => {
+    if (!ready) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") setListTick((n) => n + 1);
     }, LIST_REFRESH_MS);
@@ -153,6 +177,11 @@ export function ChatApp() {
   }, [ready]);
 
   const thread = threads?.find((t) => t.id === threadId) ?? null;
+  const names = agentNames(agents);
+  const threadAgent = thread?.agent_id != null ? (agents?.find((a) => a.id === thread.agent_id) ?? null) : null;
+  const choosable = activeAgents(agents);
+  // The chosen agent may have been archived since: then the chat starts plain.
+  const startingAgentId = choosable.some((a) => a.id === newAgentId) ? newAgentId : null;
   const waiting = pendingApprovals(transcript).length > 0;
 
   let blockedReason: string | null = null;
@@ -170,7 +199,7 @@ export function ChatApp() {
     try {
       let id = threadId;
       if (id === null) {
-        id = (await api.createThread()).id;
+        id = (await api.createThread(startingAgentId)).id;
         // Open it now: the stream replays from the start, so nothing is missed.
         router.replace(`/chat?thread=${id}`);
       }
@@ -270,6 +299,39 @@ export function ChatApp() {
       <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
         {thread?.title || (threadId === null ? "New chat" : "Chat")}
       </h1>
+      {agents !== null &&
+        (threadId === null ? (
+          <select
+            value={startingAgentId ?? ""}
+            onChange={(e) => setNewAgentId(e.target.value === "" ? null : Number(e.target.value))}
+            aria-label="Agent for this chat"
+            className="max-w-40 cursor-pointer truncate rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+          >
+            <option value="">No agent</option>
+            {choosable.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          threadAgent && (
+            <span
+              className="hidden max-w-48 truncate text-xs text-zinc-500 sm:inline"
+              title={`${modelLabel(threadAgent.model)} · ${approvalModeLabel(threadAgent.approval_mode)}`}
+            >
+              {threadAgent.name} · {modelLabel(threadAgent.model)}
+            </span>
+          )
+        ))}
+      {agents !== null && (
+        <button
+          onClick={() => setAgentsOpen(true)}
+          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Agents
+        </button>
+      )}
       {stream.connection === "reconnecting" && (
         <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
       )}
@@ -336,6 +398,13 @@ export function ChatApp() {
   return (
     <div className="relative flex h-dvh flex-col">
       {header}
+      {agentsOpen && agents !== null && (
+        <AgentsPanel
+          agents={agents}
+          onClose={() => setAgentsOpen(false)}
+          onChanged={() => setAgentTick((n) => n + 1)}
+        />
+      )}
       <div className="relative flex min-h-0 flex-1">
         <aside
           className={`${
@@ -350,6 +419,7 @@ export function ChatApp() {
             onToggleArchived={() => setShowArchived((on) => !on)}
             actions={listActions}
             error={manageError}
+            agentNames={names}
           />
         </aside>
 

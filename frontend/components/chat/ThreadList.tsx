@@ -27,11 +27,13 @@ function ThreadRow({
   selected,
   onNavigate,
   actions,
+  agentName,
 }: {
   thread: Thread;
   selected: boolean;
   onNavigate?: () => void;
   actions: RowActions;
+  agentName?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -130,6 +132,7 @@ function ThreadRow({
         <span className="block truncate">{thread.title || "New chat"}</span>
         <span className="flex items-center gap-2 text-xs text-zinc-500">
           {when(thread.updated_at)}
+          {agentName && <span className="max-w-32 truncate rounded bg-zinc-200 px-1.5 dark:bg-zinc-800">{agentName}</span>}
           {archived && <span>archived</span>}
           {thread.session_state === "broken" && (
             <span className="text-amber-600 dark:text-amber-400">needs a new session</span>
@@ -192,6 +195,7 @@ export function ThreadList({
   onToggleArchived,
   actions,
   error,
+  agentNames,
 }: {
   // null while the first load is under way.
   threads: Thread[] | null;
@@ -203,6 +207,9 @@ export function ThreadList({
   actions: RowActions;
   // What went wrong with the last rename, archive or delete, if anything.
   error: string | null;
+  // Agent names by id; a conversation with an agent shows its name. Missing when
+  // the backend has no agents.
+  agentNames?: Map<number, string>;
 }) {
   return (
     <nav aria-label="Conversations" className="flex min-h-0 flex-1 flex-col">
@@ -229,6 +236,7 @@ export function ThreadList({
             selected={thread.id === selectedId}
             onNavigate={onNavigate}
             actions={actions}
+            agentName={thread.agent_id != null ? agentNames?.get(thread.agent_id) : undefined}
           />
         ))}
       </ul>

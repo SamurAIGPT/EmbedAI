@@ -234,8 +234,36 @@ export type PermissionAsk = {
   answered_at: string | null;
 };
 
+export type ApprovalMode = "ask" | "accept_edits" | "plan";
+
+// A named agent: instructions, model, workspace and how much it asks first.
+// Conversations started with it keep using it.
+export type Agent = {
+  id: number;
+  name: string;
+  instructions: string | null;
+  provider: string;
+  model: string | null;
+  workspace_path: string | null;
+  approval_mode: ApprovalMode;
+  archived_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type AgentInput = {
+  name: string;
+  instructions?: string | null;
+  provider?: string;
+  model?: string | null;
+  workspace_path?: string | null;
+  approval_mode?: ApprovalMode;
+};
+
 export type Thread = {
   id: number;
+  // Present once the backend supports named agents; null for a plain chat.
+  agent_id?: number | null;
   title: string | null;
   provider: string;
   model: string | null;
@@ -428,8 +456,26 @@ export const api = {
 
   getThread: (threadId: number) => request<ThreadDetail>(`/threads/${threadId}`),
 
-  createThread: () =>
-    request<Thread>("/threads", { method: "POST", body: JSON.stringify({}) }),
+  createThread: (agentId?: number | null) =>
+    request<Thread>("/threads", {
+      method: "POST",
+      body: JSON.stringify(agentId != null ? { agent_id: agentId } : {}),
+    }),
+
+  // --- Named agents (/agents). An older backend answers 404: callers treat that
+  // as "no agents here" and keep working. ---
+
+  listAgents: (includeArchived = false) =>
+    request<Agent[]>(`/agents${includeArchived ? "?include_archived=true" : ""}`),
+
+  createAgent: (input: AgentInput) =>
+    request<Agent>("/agents", { method: "POST", body: JSON.stringify(input) }),
+
+  // Only the fields given change; `archived` archives or restores.
+  updateAgent: (agentId: number, change: Partial<AgentInput> & { archived?: boolean }) =>
+    request<Agent>(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(change) }),
+
+  deleteAgent: (agentId: number) => request<void>(`/agents/${agentId}`, { method: "DELETE" }),
 
   // 202 once the turn has started; its answer arrives on the stream. Errors with
   // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).

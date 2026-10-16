@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { TranscriptItem } from "@/lib/transcript";
+import { Markdown } from "./Markdown";
 
 type Item<K extends TranscriptItem["kind"]> = Extract<TranscriptItem, { kind: K }>;
 
@@ -55,10 +56,8 @@ export function AssistantMessage({
 }) {
   return (
     <div className="max-w-[85%] text-sm">
-      <p className="whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-200">
-        {text}
-        {live && <span className="animate-pulse">▍</span>}
-      </p>
+      <Markdown text={text} />
+      {live && <span className="animate-pulse">▍</span>}
       {incomplete && (
         <p className="mt-1 text-xs text-zinc-500">
           This message stopped before it was finished.

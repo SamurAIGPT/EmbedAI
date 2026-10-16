@@ -22,4 +22,17 @@ function layout(root = path.resolve(__dirname, "..", "..")) {
   };
 }
 
-module.exports = { layout };
+// Where things are in an installed app. electron-builder copies the frozen backend
+// to <resources>/backend and the built page to <resources>/ui (see package.json,
+// build.extraResources). The frozen backend is its own program: no Python, no script.
+function packagedLayout(resourcesPath, platform = process.platform) {
+  const folder = path.join(resourcesPath, "backend");
+  return {
+    resources: resourcesPath,
+    python: path.join(folder, platform === "win32" ? "open-dots-backend.exe" : "open-dots-backend"),
+    backendScript: null,
+    ui: path.join(resourcesPath, "ui"),
+  };
+}
+
+module.exports = { layout, packagedLayout };

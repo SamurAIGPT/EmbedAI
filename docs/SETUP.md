@@ -144,6 +144,8 @@ An Electron window around the local backend: you open one app instead of startin
 
 `start` and `dev` never install or build anything. If something is missing they say which command to run and stop. (If the page's code is newer than the last build, they tell you, and open the older build.)
 
+**Windows installer (experimental, unsigned).** `npm run package` (in `desktop/`, after `npm run setup`) builds the page, freezes the backend with PyInstaller (`backend/build.py`, needs `uv`) and makes `desktop/release/Open-Dots-Setup-<version>.exe` with electron-builder. The installed app carries its own backend, so it needs no Python; it still needs the Claude Code CLI. `npm run smoke:packaged` starts `release/win-unpacked` with no Python on `PATH` and a fresh data folder and checks that the backend serves. The installer is unsigned, so Windows SmartScreen will warn; PyInstaller does not cross-compile, so each OS needs its own build.
+
 **First start.** Nothing to configure. The first start takes longer: it creates the database and the encryption key.
 
 **What the app does for you**

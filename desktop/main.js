@@ -1,4 +1,4 @@
-// The Open Dots desktop shell, run from a source checkout (D-012).
+// The Open Dots desktop shell, run from a source checkout (D-012) or installed.
 //
 // Order of events: take the single-instance lock, show a window straight away,
 // get the encryption key from the operating system's secret storage, start the
@@ -14,7 +14,7 @@ const { app, BrowserWindow, dialog, safeStorage, session, ipcMain } = require("e
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { layout } = require("./src/paths");
+const { layout, packagedLayout } = require("./src/paths");
 const { createKeyStore, KeyStoreError } = require("./src/keystore");
 const { startBackend, backendEnvironment, newToken } = require("./src/backend");
 const { attachTokenTo, lockDown, sameOrigin } = require("./src/origin");
@@ -22,7 +22,8 @@ const { registerPathPicker } = require("./src/path-picker");
 const { lastReason, describeFailure, describeUnexpectedExit } = require("./src/messages");
 
 const mode = process.argv.includes("--mode=dev") ? "dev" : "start";
-const paths = layout();
+// An installed app carries its own frozen backend and page; a checkout uses its own folders.
+const paths = app.isPackaged ? packagedLayout(process.resourcesPath) : layout();
 
 // Where this launch keeps its data. `dev` has its own, so developing never touches
 // the data of the app that is used for real. OPEN_DOTS_DATA_DIR is a launcher

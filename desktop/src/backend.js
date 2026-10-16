@@ -108,7 +108,8 @@ function startBackend({
     }
   };
 
-  const child = spawn(python, [script], {
+  // `script` is null for the packaged backend, which is a program of its own.
+  const child = spawn(python, script ? [script] : [], {
     cwd,
     env,
     stdio: ["pipe", "pipe", logFd],

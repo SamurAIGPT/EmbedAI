@@ -2,7 +2,7 @@
   "name": "open-dots-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Open Dots desktop app, run from a source checkout: an Electron window around the local backend.",
+  "description": "Open Dots desktop app: an Electron window around the local backend. Runs from a source checkout or installed.",
   "main": "main.js",
   "engines": {
     "node": ">=22"
@@ -14,9 +14,56 @@
     "start": "node scripts/launch.js start",
     "dev": "node scripts/launch.js dev",
     "test": "node --test \"test/*.test.js\"",
-    "e2e": "node e2e/run.js"
+    "e2e": "node e2e/run.js",
+    "package": "node scripts/package.js",
+    "smoke:packaged": "node scripts/smoke-packaged.js"
   },
   "devDependencies": {
-    "electron": "^43.0.0"
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "author": "Open Dots",
+  "build": {
+    "appId": "app.opendots.desktop",
+    "productName": "Open Dots",
+    "executableName": "Open Dots",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/open-dots-backend",
+        "to": "backend"
+      },
+      {
+        "from": "../frontend/out",
+        "to": "ui"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Open-Dots-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

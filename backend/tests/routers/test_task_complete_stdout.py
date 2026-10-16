@@ -1,5 +1,7 @@
 import json
 import threading
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,7 +21,7 @@ from app.services.box_operations import ascii_box_service
 def boat_api():
     state = {
         "stdout": "", "truncated": False, "running": False,
-        "read_error": False, "log_reads": 0,
+        "read_error": False, "log_reads": 0, "exit_code": 0, "signal": None,
     }
     log_path = "/tmp/boat-process-1.stdout.log"
 
@@ -49,7 +51,8 @@ def boat_api():
                     "ok": True, "type": "command.status", "success": True,
                     "processId": 1, "status": "running" if state["running"] else "exited",
                     "running": state["running"],
-                    "exitCode": None if state["running"] else 0,
+                    "exitCode": None if state["running"] else state["exit_code"],
+                    "signal": state["signal"],
                     "stdout": state["stdout"][-4096:] if state["truncated"] else state["stdout"],
                     "stderr": "", "stdoutTruncated": state["truncated"],
                     "logPath": log_path,
@@ -133,6 +136,25 @@ async def test_completed_task_uses_full_log(
         assert payload["status"] == ("failed" if is_error else "succeeded")
         assert payload["error" if is_error else "result"] == report
         assert state["log_reads"] == int(truncated)
+
+
+@pytest.mark.parametrize("exit_code,signal,expected", [(0, None, "succeeded"), (1, None, "failed"), (None, "SIGTERM", "failed")])
+async def test_completed_task_respects_process_termination(monkeypatch, boat_api, exit_code, signal, expected):
+    base_url, state = boat_api
+    state.update(stdout=json.dumps({"is_error": False, "result": "partial output"}),
+                 exit_code=exit_code, signal=signal)
+    monkeypatch.setattr(settings, "BOAT_BASE_URL", base_url)
+    task = SimpleNamespace(id=1, status="running", prompt_id="1", box_id="bx_abcdefgh", provider="claude")
+    db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(rowcount=0)), commit=AsyncMock())
+    monkeypatch.setattr(task_execution_service, "_reload", AsyncMock(return_value=task))
+    await task_execution_service.sync_task_status(db, task)
+    values = db.execute.call_args.args[0].compile().params
+    assert values["status"] == expected
+    if expected == "failed":
+        assert str(exit_code if signal is None else signal) in values["error"]
+    else:
+        assert values["result"] == "partial output"
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

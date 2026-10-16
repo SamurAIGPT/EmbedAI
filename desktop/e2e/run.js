@@ -7,11 +7,21 @@
 //   npm run e2e -- failures      a damaged key, a key that opens nothing, no Claude
 //   npm run e2e -- headless      the documented source/headless start still works, untouched
 //   npm run e2e -- chat          a real conversation: approvals, Stop, crash, restart
+//   npm run e2e -- settings      Settings: Browse, versioned saves, workspace pinning, restart, crash
+//   npm run e2e -- upgrade       OPT-IN, never part of "everything": an upgrade must not move an
+//                                existing Claude conversation to another workspace
 //   add --keep to leave the data folders in place
 //
 // `npm run setup` and `npm run build` must have been run. `chat` needs Claude Code
 // installed and signed in, and makes a few short requests with it. It needs a screen:
 // the window really opens. It ends processes with taskkill, so it is Windows only.
+//
+// `upgrade` is only run when it is named. It needs Claude Code signed in (two short
+// requests), the commit of the previous release in this checkout's Git history, and
+// `git`, `tar` and `uv` on PATH; the first run prepares a copy of that release under
+// the temp folder (see old-release.js). Without those it says why and skips. It never
+// deletes anything under Claude's own folders (D-011): the conversations it creates
+// stay in Claude's session store, named after this run's temp workspace.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -21,6 +31,7 @@ const { spawnSync } = require("node:child_process");
 
 const { launchApp, alive, waitUntil, paths, sleep } = require("./app");
 const { attach, waitForPage } = require("./cdp");
+const { prepareOldRelease } = require("./old-release");
 
 if (process.platform !== "win32") {
   console.error("The end-to-end checks have only been written for Windows (they use taskkill).");
@@ -31,6 +42,8 @@ const BASE = path.join(os.tmpdir(), "open-dots-e2e");
 const wanted = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const keep = process.argv.includes("--keep");
 const selected = (name) => wanted.length === 0 || wanted.includes("all") || wanted.includes(name);
+// Groups that need more than the other groups do run only when they are named.
+const explicit = (name) => wanted.includes(name);
 
 const results = [];
 const running = new Set();
@@ -620,6 +633,157 @@ async function chat() {
   await app.quit(page);
 }
 
+// ---- upgrade: an existing conversation must not change workspace ---------------------
+
+// The last release before Settings and workspace pinning: its database has no
+// `workspace_path`, and its conversations ran in <data>/local/workspace.
+const OLD_RELEASE = "64e48f6";
+
+const pageApi = (page) => (url, options = {}) =>
+  page.evaluate(`fetch(${JSON.stringify(url)}, ${JSON.stringify(options)}).then(async r => ({ status: r.status, data: await r.json() }))`);
+const asJson = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const samePath = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+// Claude keeps a conversation's file under its own config folder, which the app inherits.
+// Only ever read here: nothing under Claude's folders is deleted (D-011).
+function claudeSessionFile(sessionId) {
+  const roots = [process.env.CLAUDE_CONFIG_DIR && path.join(process.env.CLAUDE_CONFIG_DIR, "projects"), path.join(os.homedir(), ".claude", "projects")].filter(Boolean);
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    for (const folder of fs.readdirSync(root)) {
+      const file = path.join(root, folder, `${sessionId}.jsonl`);
+      if (fs.existsSync(file)) return file;
+    }
+  }
+  return null;
+}
+
+// The working directories Claude itself recorded while running this conversation.
+function recordedDirectories(file) {
+  const found = new Set();
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    try {
+      const cwd = JSON.parse(line).cwd;
+      if (cwd) found.add(cwd);
+    } catch {
+      /* not a JSON line */
+    }
+  }
+  return [...found];
+}
+
+async function closeApp(app, page) {
+  const code = await app.quit(page);
+  if (code !== 0) {
+    // Quitting is not what this group tests: end the process tree and go on.
+    console.log("       (the window did not close in time; ending the process tree)");
+    app.destroy();
+    await app.exited;
+  }
+  page.close();
+}
+
+async function upgrade() {
+  console.log(`\nupgrade (real Claude; the previous release is ${OLD_RELEASE})`);
+  let old;
+  try {
+    old = prepareOldRelease({ commit: OLD_RELEASE, repoRoot: path.resolve(paths.desktop, ".."), uiFrom: paths.ui });
+  } catch (error) {
+    console.log(`  FAIL could not prepare release ${OLD_RELEASE}\n       ${String(error.message).split("\n").join("\n       ")}`);
+    results.push({ name: `prepare release ${OLD_RELEASE}`, ok: false, error });
+    return;
+  }
+  if (old.skip) {
+    console.log(`  skipped: ${old.skip}`);
+    return;
+  }
+
+  const data = fresh("upgrade");
+  const newDefault = path.join(data, "new-default");
+  const database = path.join(data, "data", "open-dots.db");
+  const oldWorkspace = path.join(data, "data", "local", "workspace");
+  const open = async (entry) => {
+    const app = await start({ dataDir: data, entry });
+    const page = await app.page();
+    return { app, page, api: pageApi(page) };
+  };
+  const sendTurn = async (api, thread, prompt) => {
+    const sent = await api(`/api/v1/threads/${thread}/turns`, asJson("POST", { prompt_text: prompt }));
+    assert.equal(sent.status, 202, JSON.stringify(sent.data));
+    await waitUntil(async () => {
+      const turn = (await api(`/api/v1/threads/${thread}`)).data.turns.find((t) => t.id === sent.data.id);
+      if (turn && ["failed", "interrupted", "cancelled"].includes(turn.status)) throw new Error(`the turn ${turn.status}: ${turn.error ?? ""}`);
+      return turn?.status === "succeeded";
+    }, "Claude's answer", 180_000);
+    return (await api(`/api/v1/threads/${thread}`)).data.turns.at(-1).result;
+  };
+
+  // Claude must be usable before anything is created.
+  let session = await open(old.desktop);
+  if (!(await session.api("/api/v1/local/status")).data.available) {
+    await closeApp(session.app, session.page);
+    console.log("  skipped: Claude Code is not installed or not signed in");
+    return;
+  }
+
+  let threadId;
+  let sessionId;
+  let sessionFile;
+
+  await check(`release ${OLD_RELEASE} has a real conversation in its own workspace`, async () => {
+    const created = (await session.api("/api/v1/threads", asJson("POST", {}))).data;
+    threadId = created.id;
+    assert.equal(created.workspace_path, undefined, "the previous release must not know about pinned workspaces");
+    const answer = await sendTurn(session.api, threadId, "Remember the code word PELICAN. Reply with exactly: NOTED");
+    assert.match(answer, /NOTED/i);
+    await closeApp(session.app, session.page);
+    session = null;
+    const column = python("import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(\"select count(*) from pragma_table_info('thread') where name='workspace_path'\").fetchone()[0])", database);
+    assert.equal(column.stdout.trim(), "0", "the old database has no workspace_path column");
+    sessionId = python("import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select provider_session_id from thread').fetchone()[0])", database).stdout.trim();
+    sessionFile = claudeSessionFile(sessionId);
+    assert.ok(sessionFile, "Claude's session file for the conversation");
+    assert.deepEqual(recordedDirectories(sessionFile).map((d) => d.toLowerCase()), [path.resolve(oldWorkspace).toLowerCase()]);
+  });
+
+  await check("upgrading backs up the database and pins the conversation to that same workspace", async () => {
+    assert.ok(threadId, "the previous step did not finish");
+    session = await open(paths.desktop);
+    const threads = (await session.api("/api/v1/threads")).data;
+    assert.equal(threads.length, 1);
+    assert.ok(samePath(threads[0].workspace_path, oldWorkspace), `backfilled ${threads[0].workspace_path}`);
+    assert.equal(fs.readdirSync(path.join(data, "data", "backups")).filter((f) => f.endsWith(".db")).length, 1);
+  });
+
+  await check("changing the default workspace in Settings affects new conversations only", async () => {
+    assert.ok(session, "the previous step did not finish");
+    const row = (await session.api("/api/v1/settings")).data.settings.find((r) => r.key === "LOCAL_WORKSPACE_ROOT");
+    const saved = await session.api("/api/v1/settings/LOCAL_WORKSPACE_ROOT", asJson("PUT", { value: newDefault, expected_version: row.version }));
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    const probe = (await session.api("/api/v1/threads", asJson("POST", {}))).data;
+    assert.ok(samePath(probe.workspace_path, path.join(newDefault, "workspace")), "a new conversation starts in the new default");
+    await closeApp(session.app, session.page);
+    session = null;
+  });
+
+  await check("after a restart the old conversation resumes with the real CLI in its original workspace", async () => {
+    assert.ok(sessionFile, "the first step did not finish");
+    session = await open(paths.desktop);
+    const thread = (await session.api(`/api/v1/threads/${threadId}`)).data;
+    assert.ok(samePath(thread.workspace_path, oldWorkspace), "still pinned after the restart");
+    const answer = await sendTurn(session.api, threadId, "What was the code word I asked you to remember? Reply with that word only.");
+    assert.match(answer, /PELICAN/i, "the earlier Claude session was resumed");
+    await closeApp(session.app, session.page);
+    session = null;
+    assert.equal(claudeSessionFile(sessionId), sessionFile, "the resume continued the same session file");
+    const directories = recordedDirectories(sessionFile);
+    assert.deepEqual(directories.map((d) => d.toLowerCase()), [path.resolve(oldWorkspace).toLowerCase()], "every recorded working directory is the original workspace");
+    assert.ok(!directories.some((d) => samePath(d, path.join(newDefault, "workspace"))), "nothing ran in the new default");
+  });
+
+  if (session) await closeApp(session.app, session.page);
+}
+
 // ---- run ---------------------------------------------------------------------------
 
 (async () => {
@@ -636,10 +800,11 @@ async function chat() {
     if (selected("headless")) await headless();
     if (selected("chat")) await chat();
     if (selected("settings")) await settings();
+    if (explicit("upgrade")) await upgrade();
   } finally {
     for (const app of running) app.destroy();
     if (!keep) {
-      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout", "signedout", "signedout-claude-config", "headless", "headless-desktop", "settings"]) {
+      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout", "signedout", "signedout-claude-config", "headless", "headless-desktop", "settings", "upgrade"]) {
         // The chat folder is also where Claude's workspace is; only this run's own folders go.
         fs.rmSync(path.join(BASE, name), { recursive: true, force: true });
       }

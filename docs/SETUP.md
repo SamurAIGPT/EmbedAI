@@ -176,6 +176,6 @@ Each field has its own **Save** and **Discard**, source, effective value, defaul
 - One app per data folder (a second start brings the first window forward), but this is the app's own lock, not a lock on the data folder: do not point two copies at one folder with `OPEN_DOTS_DATA_DIR`.
 - If the backend stops while the app is open, the app tells you and closes; it does not restart it.
 - The page's address (and so its browser storage) changes on every start. The page keeps nothing there that matters.
-- `npm run e2e` (in `desktop/`) runs the app for real: it opens a window, and its `chat` part makes a few short requests with your Claude. It is written for Windows.
+- `npm run e2e` (in `desktop/`) runs the app for real: it opens a window, and its `chat` part makes a few short requests with your Claude. It is written for Windows. `npm run e2e -- upgrade` is optional and only runs when named: it starts the previous release (taken from Git history, prepared once under your temp folder), then checks that upgrading keeps an existing Claude conversation in its original workspace after you change the default one. It needs Claude signed in (two short requests), `git`, `tar` and `uv`, and skips with a reason if any is missing. The conversations it creates stay in Claude's own session store; the test never deletes anything there.
 
 This file will change when the installable launcher (roadmap F10) ships.

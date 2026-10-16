@@ -365,8 +365,7 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   tests. The GitHub Actions workflows have not yet run on GitHub, so treat
   them as untested until the first run.
 - Only the Claude Code CLI is supported. There are no named agents,
-  delegation, connectors beyond an optional search MCP, memory, or Markdown
-  rendering in the Chat page.
+  delegation, connectors beyond an optional search MCP, or memory.
 - Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows
   about (see `github_classifier.py`); an unrecognized verb defaults to the
@@ -379,8 +378,7 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
 - Scheduled-run notifications only reach Telegram-linked users (a numeric
   `user_id`) and only if `TELEGRAM_BOT_TOKEN` is set — a web-only guest has
   no chat to message and only sees outcomes in the UI's schedules list.
-- Durable threads (`/api/v1/threads`) and the Chat page cannot yet format answers
-  as Markdown; they are tested on SQLite only, and store transcripts (including
+- Durable threads (`/api/v1/threads`) and the Chat page are tested on SQLite only, and store transcripts (including
   what Claude read, wrote and ran) in the database. A conversation can be deleted
   from there (not a secure erase), but the Claude CLI's own copy in your `.claude`
   folder is never touched.

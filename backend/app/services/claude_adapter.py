@@ -280,6 +280,7 @@ class ClaudeAdapter:
                 resume=resume,
                 tools=tools,
                 workspace=ctx.workspace,
+                approval_mode=ctx.approval_mode,
                 **extra,
             )
         except Exception as exc:  # noqa: BLE001

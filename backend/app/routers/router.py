@@ -8,6 +8,8 @@ from app.routers.providers import router as providers_router
 from app.routers.agents import router as agents_router
 from app.routers.threads import router as threads_router
 from app.routers.settings import router as settings_router
+from app.routers.decisions import router as decisions_router
+from app.routers.approval_rules import router as approval_rules_router
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1")
@@ -21,3 +23,5 @@ router.include_router(providers_router)
 router.include_router(agents_router)
 router.include_router(threads_router)
 router.include_router(settings_router)
+router.include_router(decisions_router)
+router.include_router(approval_rules_router)

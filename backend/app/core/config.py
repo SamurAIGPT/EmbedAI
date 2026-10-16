@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     DATABASE_BACKEND: str = ""
     # SQLite database file. Empty means ~/.open-dots/open-dots.db.
     SQLITE_PATH: str = ""
+    # Folder for the decision log (what was asked, and how it was settled).
+    # Empty means ~/.open-dots/decisions. The desktop app uses its data folder.
+    DECISION_LOG_DIR: str = ""
+    # Decision log months older than this many days are deleted (1 to 3650).
+    DECISION_LOG_RETENTION_DAYS: int = 180
 
     POSTGRES_USER: str = "vadoo"
     POSTGRES_PASSWORD: str = "vadoo"

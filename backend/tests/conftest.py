@@ -85,6 +85,14 @@ def boat_settings(monkeypatch):
     monkeypatch.setattr(settings, "PERMISSION_HOOK_BASE_URL", "http://hook.test")
 
 
+@pytest.fixture(autouse=True)
+def decision_log_dir(monkeypatch, tmp_path):
+    """Approvals write a decision log; no test may write to the real one."""
+    folder = tmp_path / "decisions"
+    monkeypatch.setattr(settings, "DECISION_LOG_DIR", str(folder))
+    return folder
+
+
 @pytest.fixture
 def user_id() -> str:
     return "test-user-1"

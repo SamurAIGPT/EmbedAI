@@ -79,6 +79,23 @@ What you must know before turning it on:
 
 Tested on Windows with Claude Code 2.1.232. The code is written for Windows, macOS and Linux (OS-specific parts are guarded in `local_claude_runner.py`: the npm `claude.cmd` shim, `taskkill` versus `killpg`, console-window flags), but macOS and Linux have not been run yet.
 
+## Approval modes, saved rules and the decision log
+
+These apply to local Claude turns with tools on (`LOCAL_TOOLS_ENABLED`). Everything here is local access only.
+
+**Modes.** `ask` (the default) leaves every question to the Claude CLI's default mode. `accept_edits` lets file edits in the workspace through without a card; commands and anything else the CLI would ask about still ask. `plan` makes the turn read-only. The mode applies to the next turn, including one that resumes an existing session. There is no mode that skips permissions. Chat-only runs (tools off) stay locked down whatever the mode.
+
+**Always allow.** Answer an approval with `{"decision": "allow", "remember": true}` and that exact Bash command is saved for that conversation's workspace folder. Manage rules with `GET /api/v1/approval-rules`, `POST /api/v1/approval-rules` (`{"match": "exact" | "prefix", "command": "...", "workspace": "/abs/folder" (optional)}`) and `DELETE /api/v1/approval-rules/{id}`.
+
+- `exact` matches the whole command; `prefix` matches the leading words (`git status` allows `git status -s`) and never a command containing `;`, `&`, `|`, `<`, `>`, a backtick, `$(` or a newline.
+- A rule with a workspace applies only there, matched on the folder exactly as stored (no symlink or `..` folding). A rule without one applies in every folder.
+- Only the Bash tool has rules. Commands containing a credential, control characters, or anything on the safety floor cannot be saved. At most 200 rules.
+- A matching rule answers the question immediately. The approval is still recorded and shown in the conversation.
+
+**Safety floor.** These are never allowed by a rule; a card appears and only you can allow them: recursive delete of `/`, your home folder or a system directory; recursive `chmod`/`chown` of those; formatting or overwriting a disk device (`mkfs`, `dd of=/dev/...`, `> /dev/sda`); `git push` with `--force`, `-f`, `--force-with-lease` or `+ref`; fork bombs. A command the reader cannot follow to the end (an unbalanced quote, `$(...)`, backticks, `eval`) is held the same way. The floor lives only in front of automatic allows: it does not change what the CLI decides for itself, so `accept_edits` still lets edits through and a command the CLI never asks about is not seen by the app.
+
+**Decision log.** One line per event (`shown`, `allowed`, `denied`, `auto_allowed`, `expired`, `cancelled`) with the time, thread, turn, tool, a one-line summary, who or what decided (`source`: `user`, `saved_rule`, `timeout`, `provider`), and which rule (`rule`: the saved command, or `safety_floor:<rule>` when a rule matched but the call was asked about). The summary is cut to 300 characters and secrets (API keys, tokens, bearer headers, `NAME=value` for secret-looking names, long random strings) are removed before writing; the full input is never logged. Files are `decisions-YYYY-MM.ndjson` in `~/.open-dots/decisions` (override with `DECISION_LOG_DIR`; the desktop app uses its data folder), mode 0600 in a 0700 folder. Months that ended more than `DECISION_LOG_RETENTION_DAYS` (default 180) ago are deleted, at most once an hour. A write that fails is logged and ignored: an approval never fails because of it. Read it with `GET /api/v1/decisions?limit=50&before=<next_before>&event=denied&thread_id=3`. The log is not tamper-proof: anyone who can write to that folder can change it.
+
 ## The Chat page
 
 Open `/chat` (the "Open chat" link on the home page). It needs the same setup as [local Claude](#local-claude-experimental): `LOCAL_EXECUTION_ENABLED=true` on the backend and the `claude` CLI installed and signed in. If not, the page says which, and what to change. With `LOCAL_TOOLS_ENABLED` off it is chat only and the header says so.

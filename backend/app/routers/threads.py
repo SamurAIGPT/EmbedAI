@@ -308,7 +308,7 @@ async def answer_approval(
         approval = await store.get_approval(db, approval_id)
     if approval is None or approval.thread_id != thread_id:
         raise HTTPException(status_code=404, detail="Approval not found")
-    if not await rt.answer_approval(approval_id, payload.decision):
+    if not await rt.answer_approval(approval_id, payload.decision, remember=payload.remember):
         raise _error(
             409, "approval_not_waiting", "That request is no longer waiting for an answer."
         )

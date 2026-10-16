@@ -30,6 +30,7 @@ from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
 from app.services.claude_adapter import ClaudeAdapter
+from app.services import approval_allowlist, decision_log, safety_floor
 from app.services.provider_adapter import (
     ALLOW,
     CANCELLED,
@@ -174,6 +175,37 @@ class ThreadApprovalGate:
         self._run = run
         self._by_request: dict[str, str] = {}
         self._deadlines: dict[str, float] = {}
+        # What each open approval was about, for the decision log.
+        self._info: dict[str, tuple[str, str | None, str | None]] = {}
+
+    def _log(self, event: str, approval_id: str, **more) -> None:
+        tool, kind, summary = self._info.get(approval_id, (None, None, None))
+        decision_log.record(
+            event,
+            thread_id=self._run.thread_id,
+            turn_id=self._run.turn_id,
+            approval_id=approval_id,
+            tool=tool,
+            kind=kind,
+            summary=summary,
+            **more,
+        )
+
+    def _workspace(self) -> str | None:
+        workspace = self._run.ctx.workspace
+        return str(workspace) if workspace is not None else None
+
+    async def _saved_rule(self, tool: str, tool_input: dict):
+        """The person's saved "always allow" rule for this call, if any. A
+        failure to look is no rule: the call is asked about."""
+        try:
+            async with self._runtime.session() as db:
+                return await approval_allowlist.matching_rule(
+                    db, self._runtime.owner_id, tool, tool_input, self._workspace()
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("could not read saved command rules", thread_id=self._run.thread_id)
+            return None
 
     async def open(
         self, *, request_id: str, tool: str, input: dict, summary: str | None, kind: str | None
@@ -195,9 +227,32 @@ class ThreadApprovalGate:
             except store.TurnNotRunning:
                 run.recorder.lose()
                 return None
-        runtime._waiters[approval.id] = asyncio.get_running_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
+        runtime._waiters[approval.id] = future
         self._by_request[request_id] = approval.id
         self._deadlines[approval.id] = asyncio.get_running_loop().time() + app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True)
+        self._info[approval.id] = (tool, kind, summary)
+        rule = await self._saved_rule(tool, input)
+        held = None
+        if rule is not None:
+            # A command on the safety floor, or one that could not be read, is
+            # never allowed by a rule: a person decides on the card.
+            reading = safety_floor.floor_reading(input.get("command", "")) if isinstance(input.get("command"), str) else None
+            if reading is not None and not reading.clear:
+                held = reading.verdict.rule if reading.verdict else "unreadable"
+                rule = None
+        if rule is not None:
+            # Still recorded as an approval, answered at once, so the timeline
+            # shows what ran and the usual ownership re-check still applies.
+            async with runtime.session() as db:
+                won = await store.decide_approval(db, approval.id, "allowed")
+            if won:
+                future.set_result("allowed")
+                self._log(
+                    "auto_allowed", approval.id, source="saved_rule", rule=f"{rule.connector}: {rule.tool}"
+                )
+        else:
+            self._log("shown", approval.id, rule=f"safety_floor:{held}" if held else None)
         runtime.hub.notify(run.thread_id)
         return ApprovalHandle(approval_id=approval.id, request_id=request_id)
 
@@ -233,6 +288,9 @@ class ThreadApprovalGate:
             self._by_request.pop(handle.request_id, None)
             self._deadlines.pop(handle.approval_id, None)
 
+        if status in ("expired", "cancelled"):
+            self._log(status, handle.approval_id, source="timeout" if status == "expired" else "provider")
+        self._info.pop(handle.approval_id, None)
         if status == "allowed":
             # Re-check, atomically, that this run still owns its turn right
             # before the Allow is sent. The caller sends it only on ALLOW.
@@ -546,11 +604,15 @@ class ThreadRuntime:
 
     # -- approvals ----------------------------------------------------------------------
 
-    async def answer_approval(self, approval_id: str, decision: str) -> bool:
+    async def answer_approval(
+        self, approval_id: str, decision: str, *, remember: bool = False
+    ) -> bool:
         """The person's answer (`allow` or `deny`). True if it was recorded; False
         means it changed nothing (already answered, cancelled, or its turn is no
         longer running) and the caller must answer 409. An Allow authorizes
-        nothing until the run that owns the turn re-checks and delivers it."""
+        nothing until the run that owns the turn re-checks and delivers it.
+        With `remember`, an allowed Bash command is also saved as an exact
+        "always allow" rule (only when the Allow was recorded)."""
         if decision not in (ALLOW, DENY):
             raise ValueError("decision must be 'allow' or 'deny'")
         status = "allowed" if decision == ALLOW else "denied"
@@ -561,9 +623,41 @@ class ThreadRuntime:
             future = self._waiters.get(approval_id)
             if future is not None and not future.done():
                 future.set_result(status)
+            if approval is not None:
+                decision_log.record(
+                    status,
+                    thread_id=approval.thread_id,
+                    turn_id=approval.turn_id,
+                    approval_id=approval_id,
+                    tool=approval.tool,
+                    kind=approval.kind,
+                    summary=approval.summary,
+                    source="user",
+                    remembered=remember and decision == ALLOW,
+                )
+            if remember and decision == ALLOW and approval is not None:
+                await self._remember(approval)
         if approval is not None:
             self.hub.notify(approval.thread_id)
         return won
+
+    async def _remember(self, approval) -> None:
+        command = approval.input.get("command") if isinstance(approval.input, dict) else None
+        if approval.tool != approval_allowlist.BASH_TOOL or not isinstance(command, str):
+            return
+        try:
+            async with self.session() as db:
+                thread = await store.get_thread(db, approval.thread_id)
+                workspace = thread.workspace_path if thread is not None else None
+                if not workspace:
+                    return  # no folder to tie the rule to: allowed this once, not saved
+                await approval_allowlist.add_rule(
+                    db, self.owner_id, approval_allowlist.EXACT, command, str(Path(workspace))
+                )
+        except approval_allowlist.InvalidRule:
+            pass  # a credential, the safety floor, too long or too many: allowed this once, not saved
+        except Exception:  # noqa: BLE001
+            logger.exception("could not save an always-allow rule", thread_id=approval.thread_id)
 
     # -- recovery and shutdown ------------------------------------------------------------
 

@@ -12,6 +12,9 @@ Invoked as: python fake_claude_cli.py PLAN MODE SESSION_ID TOOLS
          (the last step repeats). Next to it the script keeps `count`, `sessions/`
          and `log.jsonl` (one line per thing that happened) for the test to read.
   MODE   "new" or "resume"        TOOLS  "1" or "0"
+  An optional 6th argument is the approval mode the app asked for; it is logged.
+A `tool` step may name another tool: {"type": "tool", "tool_name": "Bash",
+"tool_input": {"command": "git status"}}.
 """
 
 import json
@@ -40,7 +43,8 @@ def emit(event):
     sys.stdout.flush()
 
 
-log(event="start", tools=tools, cwd=str(pathlib.Path.cwd()))
+log(event="start", tools=tools, cwd=str(pathlib.Path.cwd()),
+    approval_mode=sys.argv[5] if len(sys.argv) > 5 else None)
 
 if mode == "new" and session_file.exists():
     sys.stderr.write(f"Error: Session ID {sid} is already in use.\n")
@@ -101,13 +105,14 @@ elif kind == "two_messages":
     finish("All done.")
 
 elif kind in ("tool", "tool_big"):
-    tool_input = {"file_path": "notes.txt", "content": "hello"}
+    tool_name = step.get("tool_name", "Write")
+    tool_input = step.get("tool_input", {"file_path": "notes.txt", "content": "hello"})
     if kind == "tool_big":
         tool_input["content"] = "x" * 60000
     emit({"type": "assistant", "message": {"id": "m1", "content": [
-        {"type": "tool_use", "id": "tu1", "name": "Write", "input": tool_input}]}})
+        {"type": "tool_use", "id": "tu1", "name": tool_name, "input": tool_input}]}})
     emit({"type": "control_request", "request_id": "req-1", "request": {
-        "subtype": "can_use_tool", "tool_name": "Write", "input": tool_input, "tool_use_id": "tu1"}})
+        "subtype": "can_use_tool", "tool_name": tool_name, "input": tool_input, "tool_use_id": "tu1"}})
     reply = sys.stdin.readline()
     log(event="reply", reply=json.loads(reply) if reply.strip() else None)
     behavior = json.loads(reply)["response"]["response"]["behavior"] if reply.strip() else "none"

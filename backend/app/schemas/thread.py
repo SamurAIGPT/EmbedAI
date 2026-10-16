@@ -13,8 +13,8 @@ class ThreadCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     # Start the conversation from a named agent: its provider is used (naming a
     # different one is a 422), its workspace (or its own folder under the
-    # default root) is pinned, and each message uses its current instructions,
-    # approval mode and, unless `model` is set here, model.
+    # default root) is pinned, and each message uses its
+    # current instructions, approval mode and, unless `model` is set here, model.
     agent_id: int | None = None
 
 
@@ -140,6 +140,9 @@ class StopResponse(BaseModel):
 
 class ApprovalAnswerRequest(BaseModel):
     decision: Literal["allow", "deny"]
+    # With an allow on a Bash call: also always allow this exact command from
+    # now on (see /api/v1/approval-rules). Ignored for a deny or other tools.
+    remember: bool = False
 
 
 class ApprovalAnswerResponse(BaseModel):

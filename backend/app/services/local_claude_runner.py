@@ -26,6 +26,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.core import app_settings
 from app.desktop import profile
+from app.services.approval_modes import cli_permission_mode
 
 # Verified against Claude Code 2.1.232: init reported tools=[], mcp_servers=[],
 # skills=[], and a prompt asking to run a shell command wrote nothing.
@@ -432,6 +433,7 @@ def build_args(
     *,
     tools: bool = False,
     resume: bool = False,
+    approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
 ) -> list[str]:
@@ -454,7 +456,11 @@ def build_args(
         common += ["--append-system-prompt", system_prompt]
     if not tools:
         return [*common, "--output-format", "stream-json", *LOCKDOWN_ARGS]
-    return [*common, "--output-format", "stream-json", *TOOLS_ARGS]
+    # Only the tools path has a permission mode to choose; chat-only runs stay
+    # locked down. `None` keeps the CLI's `default` (ask about everything).
+    tools_args = list(TOOLS_ARGS)
+    tools_args[tools_args.index("--permission-mode") + 1] = cli_permission_mode(approval_mode)
+    return [*common, "--output-format", "stream-json", *tools_args]
 
 
 def user_message_line(prompt: str) -> str:
@@ -517,6 +523,7 @@ def _run_blocking(
     resume: bool = False,
     tools: bool | None = None,
     workspace: Path | None = None,
+    approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
 ) -> RunOutput:
@@ -529,6 +536,8 @@ def _run_blocking(
     if tools is None:
         tools = control is not None
     extra = {"resume": True} if resume else {}
+    if approval_mode is not None:
+        extra["approval_mode"] = approval_mode  # unset: build_args behaves as before
     if model:
         extra["model"] = model
     if system_prompt:
@@ -559,6 +568,7 @@ async def run_prompt(
     resume: bool = False,
     tools: bool | None = None,
     workspace: Path | None = None,
+    approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
 ) -> RunOutput:
@@ -566,7 +576,8 @@ async def run_prompt(
     then asks over stdin/stdout before each tool call, and the caller answers
     through `control`. `tools=False` with a control gives a chat-only run the
     caller can still kill; `resume=True` continues the session `session_id`
-    instead of creating it."""
+    instead of creating it. `approval_mode` (see approval_modes.py) only
+    matters with tools on."""
     return await run_in_threadpool(
         _run_blocking,
         prompt,
@@ -576,6 +587,7 @@ async def run_prompt(
         resume,
         tools,
         workspace,
+        approval_mode,
         model,
         system_prompt,
     )

@@ -10,6 +10,19 @@ Issues and pull requests are welcome.
 4. Keep the README and `docs/` aligned with behavior; note limitations honestly.
 5. Do not merge with failing checks.
 
+## Tests and CI
+
+Run before opening a PR (the same checks as `.github/workflows/ci.yml`):
+
+```bash
+cd backend && DATABASE_BACKEND=sqlite uv run pytest   # SQLite, temporary file
+cd backend && uv run alembic upgrade head && uv run pytest   # PostgreSQL (docker compose up -d first)
+cd frontend && npm run lint && npm run build
+cd desktop && npm test
+```
+
+CI runs those on pushes to `main` and on pull requests; docs-only changes skip the heavy jobs. The `ci-gate` job is the single check to require in branch protection. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds unsigned Windows and macOS installers and attaches them to a GitHub release. The workflows have not run on GitHub yet, so expect to fix small things on their first run.
+
 ## Database rules (PostgreSQL and SQLite)
 
 The backend runs on PostgreSQL and, experimentally, on SQLite, and tests run on both (`DATABASE_BACKEND=sqlite uv run pytest` uses a temporary file). Code that touches the database must work on both:

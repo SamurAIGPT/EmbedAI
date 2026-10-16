@@ -1,12 +1,14 @@
 # Open Dots: Open-Source Alternative to Paid AI Agents
 
-**Open Dots is an open-source, self-hosted alternative for people exploring
-paid AI agent products such as OpenAI Dots, Meta Muse, Grok Bot, Instinct,
-Manus Cue, Claude Cowork, and ChatGPT agent.** The current prototype focuses
-on coding-agent workflows: run Claude Code tasks from Telegram or the web,
-review risky actions, connect GitHub, and schedule recurring prompts. Its
-features differ from those services; it is not a feature-for-feature
-replacement.
+**Open Dots is an open-source, self-hosted workspace for running coding-agent
+tasks, aimed at people exploring paid AI agent products such as OpenAI Dots,
+Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent.**
+Today it wraps the Claude Code CLI: run tasks from Telegram or the web, review
+risky actions before they run, connect GitHub, schedule recurring prompts, and
+chat with a locally signed-in Claude from a desktop app. It supports Claude
+only, has no named agents or multi-agent features yet, and is not a
+feature-for-feature replacement for those services. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for what is planned.
 
 Both interfaces use the same API, sandbox, and credentials for each user.
 
@@ -35,11 +37,13 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 - Ask for approval before risky actions such as file writes, shell commands, and Git pushes.
 - Continue completed tasks in the same Claude conversation from the web UI.
 - Schedule recurring prompts and receive run results in Telegram.
-- Store user credentials encrypted and manage sandbox, task, permission, and schedule records in PostgreSQL.
+- Keep durable local conversations (threads) with streaming answers, a tool-call timeline, inline approvals, Stop, and rename/archive/delete, using your own signed-in `claude` CLI (opt-in; see [Local Claude](#local-claude-experimental)).
+- Run as a desktop app from a source checkout, or from unsigned installers built by the release workflow (experimental; see [Desktop app](#desktop-app-from-source-experimental)).
+- Store user credentials encrypted and manage sandbox, task, permission, thread, and schedule records in PostgreSQL (default) or SQLite (experimental, no Docker).
 
 ## Why Open Dots
 
-Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity.
+Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity. The code is a small prototype: read [Known limitations](#known-limitations) before running it for others.
 
 ## Quick start
 
@@ -288,12 +292,20 @@ contributions welcome.
 ## Architecture
 
 ```text
-Telegram bot ─┐
-              ├── FastAPI backend ── PostgreSQL
-Next.js web UI┘          ├── disposable sandboxes (Boat provider)
-                         ├── permission prompts and rules
-                         └── task and schedule services
+Telegram bot ─┐                         ┌── PostgreSQL (default) or SQLite
+Next.js web UI├── FastAPI backend ──────┤
+Desktop app ──┘      │                  └── encrypted credentials
+ (Electron,          ├── Boat sandboxes (optional): tasks, schedules, GitHub push
+  local Claude)      ├── permission prompts and rules (git command classifier)
+                     ├── task and schedule services (polling loops in the API process)
+                     └── threads: local `claude` CLI turns, events stored then
+                         streamed over SSE, approvals, resume after restart
 ```
+
+Boat sandboxes are optional. Without a Boat key the app is chat-only unless
+local tools are enabled, and schedules, Telegram tasks and GitHub push are
+unavailable. The desktop app runs local Claude only. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target design.
 
 ## Project layout
 
@@ -302,7 +314,9 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
   for backend-specific details (REST endpoints, env vars, DB models).
 - [frontend/](frontend) — Next.js web UI. See
   [frontend/README.md](frontend/README.md) for frontend-specific notes.
-- [scripts/dev.sh](scripts/dev.sh) — one-command dev environment for both.
+- [desktop/](desktop) — Electron desktop app (local Claude, SQLite, no `.env`).
+- [scripts/dev.sh](scripts/dev.sh) — one-command dev environment for the backend, bot and web UI.
+- [.github/workflows/](.github/workflows) — CI (backend on SQLite and PostgreSQL, frontend lint/build, desktop tests) and the tag-triggered installer build.
 
 ### Local Claude (experimental)
 
@@ -327,7 +341,9 @@ An Electron window around the local backend, for local Claude only: from the
 needs no `.env` file: it makes and keeps its own encryption key in the
 operating system's secret storage, creates its SQLite database, and only its own
 window can use the backend. `npm run app` does the setup and build on the first
-run and then opens it. No installer yet; verified on Windows only. See
+run and then opens it. Tagged releases build unsigned installers (Windows NSIS
+x64, macOS arm64 DMG) with GitHub Actions; neither has been verified on a
+clean machine apart from a Windows smoke test, and there is no auto-update. See
 [docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental).
 
 ## Known limitations
@@ -340,9 +356,18 @@ run and then opens it. No installer yet; verified on Windows only. See
   id (guest or Telegram) it last linked, persisted in `localStorage`. This
   also means the permission engine's accumulated rules are only as safe as
   that identity.
-- Automated tests exist for the permission engine
-  (`backend/tests/services/`) but not yet for the rest of the app
-  (sandbox/task/schedule services, routers).
+- Automated tests cover the permission engine and git classifier, schedules,
+  local Claude (runner, stream, approvals, access policy), threads (store,
+  runtime, stream, API), settings, the SQLite and PostgreSQL schemas and
+  migrations, the desktop entry and launch token, and some task, sandbox and
+  Telegram paths (`backend/tests/`, `desktop/test/`). Boat-sandbox task and
+  sandbox services have only partial coverage, and there are no frontend
+  tests. The GitHub Actions workflows have not yet run on GitHub, so treat
+  them as untested until the first run.
+- Only the Claude Code CLI is supported. There are no named agents,
+  delegation, connectors beyond an optional search MCP, memory, or Markdown
+  rendering in the Chat page.
+- Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows
   about (see `github_classifier.py`); an unrecognized verb defaults to the
   safer "mutation" bucket rather than being assumed read-only.

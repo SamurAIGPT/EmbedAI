@@ -1,6 +1,6 @@
 # Features
 
-Shipped capabilities of the current prototype. Planned work is in [ROADMAP.md](ROADMAP.md).
+Shipped capabilities. Planned work is in [ROADMAP.md](ROADMAP.md).
 
 - Run Claude Code tasks in disposable Boat sandboxes from Telegram or the web UI.
 - Connect Claude through its OAuth login flow; optionally connect GitHub.

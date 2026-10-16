@@ -1,6 +1,6 @@
 # Roadmap
 
-Open Dots is a self-hosted workspace for personal and business agents. The current code is a prototype that runs Claude Code tasks in Boat sandboxes from Telegram or a web UI. The roadmap moves it toward a local-first agent chat that uses the Claude/Codex CLIs you already have signed in.
+Open Dots is a self-hosted workspace for personal and business agents. Today it runs Claude Code tasks in Boat sandboxes from Telegram or a web UI. The roadmap moves it toward a local-first agent chat that uses the Claude/Codex CLIs you already have signed in.
 
 This page separates **shipped** from **planned**. Planned items are not promises or dates. For shipped behavior see [FEATURES.md](FEATURES.md).
 

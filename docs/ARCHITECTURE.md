@@ -1,6 +1,6 @@
 # Architecture
 
-## Current system (prototype)
+## Current system
 
 ```text
 Next.js web UI (frontend/)        Telegram bot (backend/app/telegram_bot.py)

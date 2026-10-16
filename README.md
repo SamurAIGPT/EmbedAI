@@ -15,7 +15,7 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Dots demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Dots demo video thumbnail — click to watch on YouTube" width="720"></a></p>
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Dots demo on YouTube</b></a></p>
 
-> **Status:** Prototype / active development. See [Known limitations](#known-limitations) before running it for others.
+> **Status:** Active development. See [Known limitations](#known-limitations) before running it for others.
 
 ## Contents
 
@@ -43,7 +43,7 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 
 ## Why Open Dots
 
-Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity. The code is a small prototype: read [Known limitations](#known-limitations) before running it for others.
+Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity. Read [Known limitations](#known-limitations) before running it for others.
 
 ## Quick start
 

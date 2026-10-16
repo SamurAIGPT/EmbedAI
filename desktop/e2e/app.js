@@ -55,7 +55,7 @@ function backendPid(dataDir) {
 // `viaScript` starts it the way `npm run start` / `npm run dev` do (through
 // scripts/launch.js, which checks what is needed and starts Electron itself);
 // otherwise Electron is started directly.
-async function launchApp({ dataDir, env = {}, mode = "start", viaScript = false } = {}) {
+async function launchApp({ dataDir, env = {}, mode = "start", viaScript = false, entry = paths.desktop } = {}) {
   const binary = findElectronBinary(paths.desktop);
   if (!binary) throw new Error("Electron is not installed. Run: npm run setup");
   const debugPort = await freePort();
@@ -67,7 +67,7 @@ async function launchApp({ dataDir, env = {}, mode = "start", viaScript = false 
         env: environment,
         stdio: ["ignore", "pipe", "pipe"],
       })
-    : spawn(binary, [paths.desktop, `--mode=${mode}`, flag], {
+    : spawn(binary, [entry, `--mode=${mode}`, flag], {
         env: environment,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -90,7 +90,12 @@ async function launchApp({ dataDir, env = {}, mode = "start", viaScript = false 
 
     // The window's page, once the backend has proved itself and the app is loaded.
     async page({ timeoutMs = 180_000 } = {}) {
-      const target = await waitForPage(debugPort, "http://127.0.0.1:", timeoutMs);
+      let target;
+      try {
+        target = await waitForPage(debugPort, "http://127.0.0.1:", timeoutMs);
+      } catch (error) {
+        throw new Error(`${error.message}\n${output.join("").slice(-3000)}`);
+      }
       const page = await attach(target);
       page.origin = new URL(target.url).origin;
       page.url = target.url;

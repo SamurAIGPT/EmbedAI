@@ -319,10 +319,14 @@ async def create_thread(
     session_state: str = "new",
     provider_state: dict | None = None,
     title: str | None = None,
+    workspace_path: str | None = None,
 ) -> Thread:
     if not provider.strip():
         raise ValueError("provider is required")
     _check(session_state, SESSION_STATES, "session_state")
+    if workspace_path is None:
+        from app.services.local_claude_runner import workspace_dir
+        workspace_path = str(workspace_dir().resolve())
     await begin_write(db)
     now = utcnow()
     thread = Thread(
@@ -335,6 +339,7 @@ async def create_thread(
         provider_session_id=provider_session_id,
         session_state=session_state,
         provider_state=provider_state,
+        workspace_path=workspace_path,
     )
     db.add(thread)
     await db.flush()

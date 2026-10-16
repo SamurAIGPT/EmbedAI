@@ -10,6 +10,7 @@ from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core import app_settings
 from app.core.logging import get_logger
 from app.db.models.task import Tasks
 from app.db.session import AsyncSessionLocal
@@ -421,7 +422,9 @@ async def execute_local_task(
     if not isinstance(access, LocalAccessGrant):
         raise PermissionError("Local execution requires an access grant")
 
-    cli = await local_claude_runner.get_status()
+    snapshot = app_settings.capture()
+    with app_settings.use(snapshot):
+        cli = await local_claude_runner.get_status()
     if not cli.installed or cli.signed_in is not True:
         raise LocalRuntimeUnavailableError(
             cli.error or "Claude CLI is not ready for local use."
@@ -442,7 +445,7 @@ async def execute_local_task(
     # Registered before the run starts so a stream opened right after this
     # call returns already finds it.
     run_hub.start(task.id)
-    run = asyncio.create_task(_run_local_task(task.id))
+    run = asyncio.create_task(_run_local_task(task.id, snapshot))
     _local_runs.add(run)
     run.add_done_callback(_local_runs.discard)
     return task
@@ -472,7 +475,7 @@ def _local_run_values(
 
     error: str | None = None
     if output.timed_out:
-        error = f"Timed out after {settings.LOCAL_TASK_TIMEOUT_SECONDS} seconds"
+        error = f"Timed out after {app_settings.get('LOCAL_TASK_TIMEOUT_SECONDS')} seconds"
     elif output.output_truncated or normalizer.over_limit:
         error = "Claude produced more output than allowed"
     elif final is None:
@@ -551,11 +554,16 @@ def _handle_tool_event(
         )
 
 
-async def _run_local_task(task_id: int) -> None:
+async def _run_local_task(task_id: int, snapshot: dict | None = None) -> None:
+    with app_settings.use(snapshot if snapshot is not None else app_settings.capture()):
+        await _run_local_task_with_settings(task_id)
+
+
+async def _run_local_task_with_settings(task_id: int) -> None:
     loop = asyncio.get_running_loop()
     run_hub.start(task_id)
-    normalizer = StreamNormalizer(max_text_bytes=settings.LOCAL_MAX_OUTPUT_BYTES)
-    tools = settings.LOCAL_TOOLS_ENABLED
+    normalizer = StreamNormalizer(max_text_bytes=app_settings.get("LOCAL_MAX_OUTPUT_BYTES"))
+    tools = app_settings.get("LOCAL_TOOLS_ENABLED")
     control = local_claude_runner.RunControl() if tools else None
 
     def on_line(line: bytes) -> bool:
@@ -712,7 +720,7 @@ async def sync_active_tasks() -> None:
                 Tasks.updated_at
                 < now
                 - timedelta(
-                    seconds=settings.LOCAL_TASK_TIMEOUT_SECONDS
+                    seconds=app_settings.get("LOCAL_TASK_TIMEOUT_SECONDS")
                     + LOCAL_STALE_GRACE_SECONDS
                 ),
             )

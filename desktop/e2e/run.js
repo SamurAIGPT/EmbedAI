@@ -256,7 +256,7 @@ async function failures() {
       60_000,
     );
     assert.match(text, /Claude CLI not found/);
-    assert.match(text, /OPEN_DOTS_CLAUDE_PATH/);
+    assert.match(text, /Settings/);
     assert.doesNotMatch(text, /LOCAL_CLAUDE_CLI_PATH|backend\/\.env/);
     const u = ui(page);
     assert.equal(await u.has("Check again"), true);
@@ -417,6 +417,88 @@ async function headless() {
 
 // ---- chat, with the real Claude CLI ------------------------------------------------
 
+async function settings() {
+  console.log("\nsettings");
+  const dataDir = fresh("settings");
+  const rootA = path.join(dataDir, "workspace-a");
+  const rootB = path.join(dataDir, "workspace-b");
+  fs.mkdirSync(rootA);
+  fs.mkdirSync(rootB);
+  let app = await start({ dataDir, entry: path.join(__dirname, "picker-app.js"), env: { OPEN_DOTS_E2E_PICKER_PATH: rootA } });
+  let page = await app.page();
+  const json = (url, options = {}) => page.evaluate(`fetch(${JSON.stringify(url)}, ${JSON.stringify(options)}).then(async r => ({ status: r.status, data: await r.json() }))`);
+  const read = async () => (await json("/api/v1/settings")).data;
+  const put = async (key, value, expected_version) => {
+    if (expected_version === undefined) expected_version = (await read()).settings.find(r => r.key === key).version;
+    return json(`/api/v1/settings/${key}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value, expected_version }) });
+  };
+  const openSettings = async () => {
+    await page.waitFor(`!!document.querySelector('a[href="/settings/"]')`, "Settings link");
+    await page.evaluate(`document.querySelector('a[href="/settings/"]').click()`);
+    await page.waitFor(`!!document.getElementById('LOCAL_WORKSPACE_ROOT')`, "settings form");
+  };
+  let first, second;
+  await check("native Browse selects a workspace through the narrow sandboxed bridge", async () => {
+    await openSettings();
+    // picker-app.js stubs only the dialog; renderer -> IPC -> main is real.
+    assert.deepEqual(await page.evaluate(`({ node: typeof require, process: typeof process, bridge: Object.keys(window.openDots) })`), { node: "undefined", process: "undefined", bridge: ["choosePath"] });
+    await page.evaluate(`document.querySelector('button[aria-label="Browse Workspace root"]').click()`);
+    await page.waitFor(`document.getElementById('LOCAL_WORKSPACE_ROOT').value === ${JSON.stringify(rootA)}`, "selected folder");
+    await page.evaluate(`document.querySelector('button[aria-label="Save Workspace root"]').click()`);
+    await page.waitFor(`document.body.innerText.includes('Workspace root saved')`, "saved workspace");
+    assert.equal((await read()).settings.find(r => r.key === "LOCAL_WORKSPACE_ROOT").value, rootA);
+    await put("LOCAL_TOOLS_ENABLED", false);
+    await put("LOCAL_MAX_OUTPUT_BYTES", 100000);
+    assert.equal((await put("LOCAL_TOOLS_ENABLED", true, 0)).status, 409);
+  });
+  const ready = (await json("/api/v1/local/status")).data.available;
+  await check("workspace changes preserve existing Claude sessions and affect new threads", async () => {
+    if (!ready) { console.log("  skipped workspace conversation: Claude is not signed in"); return; }
+    first = (await json("/api/v1/threads", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).data;
+    const send = async (thread, prompt) => {
+      const response = await json(`/api/v1/threads/${thread.id}/turns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt_text: prompt }) });
+      assert.equal(response.status, 202);
+      await waitUntil(async () => {
+        const current = (await json(`/api/v1/threads/${thread.id}`)).data;
+        return current.turns.find(t => t.id === response.data.id)?.status === "succeeded";
+      }, "Claude answer in pinned workspace", 180000);
+    };
+    await send(first, "Reply with exactly WORKSPACE_A.");
+    assert.equal((await put("LOCAL_WORKSPACE_ROOT", rootB)).status, 200);
+    second = (await json("/api/v1/threads", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).data;
+    assert.notEqual(first.workspace_path, second.workspace_path);
+    await send(first, "What word did you reply with? Reply with that word only.");
+    await send(second, "Reply with exactly WORKSPACE_B.");
+    const current = (await json(`/api/v1/threads/${first.id}`)).data;
+    assert.ok(current.turns.at(-1).result.includes("WORKSPACE_A"));
+  });
+  const saved = await read();
+  const keyBefore = fs.readFileSync(path.join(dataDir, "secrets", "encryption-key.v1"));
+  await check("settings and pinned workspaces survive a normal restart and a crash", async () => {
+    const quitCode = await app.quit(page);
+    assert.equal(quitCode, 0, `settings quit: ${app.output.join("").slice(-2000)}\n${fs.readFileSync(path.join(dataDir, "logs", "backend.log"), "utf8").slice(-2000)}`);
+    page.close();
+    app = await start({ dataDir }); page = await app.page();
+    assert.deepEqual(await read(), saved);
+    if (first) {
+      assert.equal((await json(`/api/v1/threads/${first.id}`)).data.workspace_path, first.workspace_path);
+      const missing = path.join(rootB, "workspace");
+      fs.renameSync(missing, `${missing}-unavailable`);
+      const failed = await json(`/api/v1/threads/${second.id}/turns`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt_text: "Do not move my workspace." }) });
+      assert.equal(failed.status, 503);
+      assert.equal(fs.existsSync(missing), false);
+      fs.renameSync(`${missing}-unavailable`, missing);
+    }
+    const backend = app.backendPid();
+    await app.hardKill(); page.close();
+    await waitUntil(() => !alive(backend), "backend exits after crash", 30000);
+    app = await start({ dataDir }); page = await app.page();
+    assert.deepEqual(await read(), saved);
+    assert.deepEqual(fs.readFileSync(path.join(dataDir, "secrets", "encryption-key.v1")), keyBefore);
+    assert.equal(await app.quit(page), 0); page.close();
+  });
+}
+
 async function chat() {
   console.log("\nchat (real Claude)");
   const data = path.join(BASE, "chat"); // one fixed folder: one Claude project folder, not one per run
@@ -553,10 +635,11 @@ async function chat() {
     if (selected("failures")) await failures();
     if (selected("headless")) await headless();
     if (selected("chat")) await chat();
+    if (selected("settings")) await settings();
   } finally {
     for (const app of running) app.destroy();
     if (!keep) {
-      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout", "signedout", "signedout-claude-config", "headless", "headless-desktop"]) {
+      for (const name of ["life", "noclaude", "relative", "junkkey", "wrongkey", "chat", "script-start", "script-dev", "empty-checkout", "signedout", "signedout-claude-config", "headless", "headless-desktop", "settings"]) {
         // The chat folder is also where Claude's workspace is; only this run's own folders go.
         fs.rmSync(path.join(BASE, name), { recursive: true, force: true });
       }

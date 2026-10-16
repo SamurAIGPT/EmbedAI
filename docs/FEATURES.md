@@ -16,4 +16,6 @@ Shipped capabilities of the current prototype. Planned work is in [ROADMAP.md](R
 
 - **Desktop app, from a source checkout (experimental):** an Electron window around the local backend, started with `npm run start` in `desktop/`. It needs no `.env`: it keeps its own encryption key in the operating system's secret storage, creates and backs up its SQLite database, and only its own window can use the backend (a fresh launch token on every start). Local Claude only; no installer yet. Verified on Windows only. See [SETUP.md](SETUP.md#desktop-app-from-a-source-checkout-experimental).
 
+- **Desktop settings:** configure the Claude executable and default workspace root with native Browse dialogs, local tools, answer/approval timeouts and output limit. Per-field saves are versioned in the database, sensitive changes are audited, and the page shows sources, effective values and validation errors. New turns use saved configuration; running turns and existing approval deadlines stay unchanged. Conversations keep their original workspace across changes and restarts. Storage information is read-only; no onboarding wizard yet. See [SETUP.md](SETUP.md#desktop-app-from-a-source-checkout-experimental).
+
 Limitations: see "Known limitations" in the [README](../README.md).

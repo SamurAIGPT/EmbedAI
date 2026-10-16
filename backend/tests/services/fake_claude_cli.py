@@ -40,7 +40,7 @@ def emit(event):
     sys.stdout.flush()
 
 
-log(event="start", tools=tools)
+log(event="start", tools=tools, cwd=str(pathlib.Path.cwd()))
 
 if mode == "new" and session_file.exists():
     sys.stderr.write(f"Error: Session ID {sid} is already in use.\n")
@@ -65,6 +65,10 @@ log(event="session_created")
 emit({"type": "system", "subtype": "init", "session_id": sid, "model": "fake-model"})
 
 kind = step.get("type", "chat")
+if step.get("wait_for"):
+    log(event="waiting")
+    while not pathlib.Path(step["wait_for"]).exists():
+        time.sleep(0.02)
 
 
 def say(text, message_id="m1"):

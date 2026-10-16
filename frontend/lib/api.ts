@@ -309,7 +309,31 @@ async function readEventStream<T extends StreamEnvelope>(
   parser.push(decoder.decode());
 }
 
+export type ApplicationSetting = {
+  key: string;
+  value: unknown;
+  effective_value: unknown;
+  source: "database" | "default" | "environment";
+  default: unknown;
+  applies: "immediate" | "next_run" | "restart";
+  sensitive: boolean;
+  version: number;
+  error: string | null;
+  resolved_path?: string | null;
+};
+
+export type DesktopSettings = {
+  settings: ApplicationSetting[];
+  storage: Record<string, string>;
+};
+
 export const api = {
+  getDesktopSettings: () => request<DesktopSettings>("/settings"),
+  saveDesktopSetting: (key: string, value: unknown, expectedVersion: number) =>
+    request<ApplicationSetting>(`/settings/${encodeURIComponent(key)}`, {
+      method: "PUT", body: JSON.stringify({ value, expected_version: expectedVersion }),
+    }),
+  testDesktopClaude: () => request<{ available: boolean; version: string | null; error: string | null }>("/settings/test/claude", { method: "POST" }),
   createLinkCode: () => request<LinkCode>("/link", { method: "POST" }),
 
   getLinkStatus: (code: string) => request<LinkStatus>(`/link/${code}`),

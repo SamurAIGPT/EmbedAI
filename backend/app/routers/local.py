@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core import app_settings
 from app.db.session import get_db
 from app.schemas.local import (
     LocalApprovalAnswer,
@@ -56,7 +57,7 @@ async def local_status(
         available=ready,
         reason=None if ready else cli.error,
         cli_version=cli.version,
-        tools_enabled=settings.LOCAL_TOOLS_ENABLED,
+        tools_enabled=app_settings.get("LOCAL_TOOLS_ENABLED"),
     )
 
 

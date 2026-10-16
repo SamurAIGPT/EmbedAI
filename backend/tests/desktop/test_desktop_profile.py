@@ -126,7 +126,7 @@ def test_no_setting_is_left_to_the_environment_in_a_fresh_desktop_process(tmp_pa
 
 def test_the_claude_not_found_message_names_what_each_kind_of_install_actually_reads(monkeypatch, tmp_path):
     """A source install points at .env's LOCAL_CLAUDE_CLI_PATH; the desktop app has no
-    .env, so it names the launcher variable instead."""
+    .env, so it links to Settings instead."""
     from app.core.config import settings
     from app.services import local_claude_runner
 
@@ -136,8 +136,8 @@ def test_the_claude_not_found_message_names_what_each_kind_of_install_actually_r
     source = local_claude_runner._status_blocking().error
     assert "LOCAL_CLAUDE_CLI_PATH" in source and "OPEN_DOTS_CLAUDE_PATH" not in source
 
-    monkeypatch.setattr(profile, "_current", make_profile(tmp_path))
+    monkeypatch.setattr(profile, "_current", make_profile(tmp_path, claude_cli_path=str(tmp_path / "no-such-claude")))
     desktop = local_claude_runner._status_blocking().error
-    assert "OPEN_DOTS_CLAUDE_PATH" in desktop and "LOCAL_CLAUDE_CLI_PATH" not in desktop
+    assert "Settings" in desktop and "LOCAL_CLAUDE_CLI_PATH" not in desktop
     assert "Check again" in desktop
 

@@ -43,6 +43,7 @@ class ThreadResponse(BaseModel):
     title: str | None
     provider: str
     model: str | None
+    workspace_path: str | None = None
     # new | active | broken | none. `broken` means a resume failed and the
     # session must be reset before the thread can take another message.
     session_state: str

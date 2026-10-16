@@ -20,10 +20,14 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
+from pathlib import Path
 
 from app.core.config import settings
+from app.core import app_settings
 from app.core.logging import get_logger
 from app.services import thread_store as store
+from app.services import local_claude_runner
+from app.services.workspaces import require_workspace
 from app.services.claude_adapter import ClaudeAdapter
 from app.services.provider_adapter import (
     ALLOW,
@@ -98,6 +102,7 @@ class ActiveRun:
     # The person asked to stop this turn. What the provider reports after it is
     # killed is then recorded as a stop, not as a failure.
     stop_requested: bool = False
+    settings_snapshot: dict = field(default_factory=dict)
 
 
 class TurnRecorder:
@@ -155,6 +160,7 @@ class ThreadApprovalGate:
         self._runtime = runtime
         self._run = run
         self._by_request: dict[str, str] = {}
+        self._deadlines: dict[str, float] = {}
 
     async def open(
         self, *, request_id: str, tool: str, input: dict, summary: str | None, kind: str | None
@@ -178,6 +184,7 @@ class ThreadApprovalGate:
                 return None
         runtime._waiters[approval.id] = asyncio.get_running_loop().create_future()
         self._by_request[request_id] = approval.id
+        self._deadlines[approval.id] = asyncio.get_running_loop().time() + app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True)
         runtime.hub.notify(run.thread_id)
         return ApprovalHandle(approval_id=approval.id, request_id=request_id)
 
@@ -185,7 +192,8 @@ class ThreadApprovalGate:
         run, runtime = self._run, self._runtime
         loop = asyncio.get_running_loop()
         future = runtime._waiters.get(handle.approval_id)
-        deadline = loop.time() + settings.LOCAL_APPROVAL_TIMEOUT_SECONDS
+        # A cancel that landed before this wait dropped the deadline: finish at once.
+        deadline = self._deadlines.get(handle.approval_id, loop.time())
         status: str | None = None
         try:
             while status is None:
@@ -210,6 +218,7 @@ class ThreadApprovalGate:
         finally:
             runtime._waiters.pop(handle.approval_id, None)
             self._by_request.pop(handle.request_id, None)
+            self._deadlines.pop(handle.approval_id, None)
 
         if status == "allowed":
             # Re-check, atomically, that this run still owns its turn right
@@ -230,6 +239,7 @@ class ThreadApprovalGate:
         approval_id = self._by_request.get(request_id)
         if approval_id is None:
             return
+        self._deadlines.pop(approval_id, None)
         async with self._runtime.session() as db:
             await store.cancel_approval(db, approval_id)
         future = self._runtime._waiters.get(approval_id)
@@ -273,6 +283,7 @@ class ThreadRuntime:
         if adapter is None:
             raise UnknownProvider(provider)
         session_id = adapter.new_session_id()
+        workspace = local_claude_runner.workspace_dir()
         async with self.session() as db:
             return await store.create_thread(
                 db,
@@ -282,6 +293,7 @@ class ThreadRuntime:
                 title=title,
                 provider_session_id=session_id,
                 session_state="new" if session_id is not None else "none",
+                workspace_path=str(workspace.resolve()),
             )
 
     async def reset_session(self, thread_id: int) -> store.Thread:
@@ -318,7 +330,15 @@ class ThreadRuntime:
             raise UnknownProvider(thread.provider)
         if thread.session_state == "broken":
             raise SessionBroken(thread_id)
-        status = await self._provider_status(adapter)
+        if not thread.workspace_path:
+            raise ProviderUnavailable("This conversation has no pinned workspace. Upgrade its database before continuing.")
+        try:
+            require_workspace(Path(thread.workspace_path))
+        except OSError as exc:
+            raise ProviderUnavailable(str(exc)) from None
+        snapshot = app_settings.capture()
+        with app_settings.use(snapshot):
+            status = await self._provider_status(adapter)
         if not status.ready:
             raise ProviderUnavailable(status.error or f"{thread.provider} is not ready")
 
@@ -335,7 +355,7 @@ class ThreadRuntime:
             thread_id=thread_id,
             turn_id=turn.id,
             prompt=prompt_text,
-            workspace=None,
+            workspace=Path(thread.workspace_path) if thread.workspace_path else None,
             model=thread.model,
             provider_session_id=thread.provider_session_id,
             provider_state=thread.provider_state,
@@ -343,6 +363,7 @@ class ThreadRuntime:
             history=history,
         )
         run = ActiveRun(thread_id=thread_id, turn_id=turn.id, owner_token=turn.owner_token, ctx=ctx)
+        run.settings_snapshot = snapshot
         run.recorder = TurnRecorder(self, run)
         run.gate = ThreadApprovalGate(self, run)
         self._runs[turn.id] = run
@@ -368,12 +389,14 @@ class ThreadRuntime:
 
     async def _provider_status(self, adapter: ProviderAdapter) -> ProviderStatus:
         loop = asyncio.get_running_loop()
-        cached = self._status_cache.get(adapter.key)
+        cli = app_settings.resolve("LOCAL_CLAUDE_CLI_PATH")
+        cache_key = (adapter.key, cli.effective_value, cli.error)
+        cached = self._status_cache.get(cache_key)
         if cached is not None and loop.time() - cached[0] < self.status_ttl:
             return cached[1]
         status = await adapter.status()
         if status.ready:
-            self._status_cache[adapter.key] = (loop.time(), status)
+            self._status_cache[cache_key] = (loop.time(), status)
         return status
 
     # -- one turn ------------------------------------------------------------------
@@ -382,7 +405,8 @@ class ThreadRuntime:
         heartbeat = asyncio.create_task(self._heartbeat(run))
         try:
             try:
-                outcome = await adapter.run_turn(run.ctx, run.recorder, run.gate)
+                with app_settings.use(run.settings_snapshot):
+                    outcome = await adapter.run_turn(run.ctx, run.recorder, run.gate)
             except Exception:  # noqa: BLE001
                 logger.exception("provider run crashed", thread_id=run.thread_id)
                 outcome = TurnOutcome(

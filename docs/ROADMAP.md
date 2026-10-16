@@ -23,7 +23,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F06 | Multiple named agents with dedicated workspaces | Planned |
 | F07 | Codex provider (experimental until Windows sandbox issue is resolved) | Planned |
 | F08 | Browse/download agent workspace files | Planned |
-| F09 | First-run onboarding and local storage (SQLite storage first, as F09a: foundation in progress, opt-in and experimental; a desktop app that starts from a source checkout with no `.env` exists, Windows only; the settings page is not built) | In progress |
+| F09 | First-run onboarding and local storage (experimental SQLite and a desktop app from a source checkout exist; database-backed desktop settings and native workspace selection exist; conversations pin their workspace; first-run onboarding remains) | In progress |
 | F10 | Installable beta, CI and documentation | Planned |
 
 Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.

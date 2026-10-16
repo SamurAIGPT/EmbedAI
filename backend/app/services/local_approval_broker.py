@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from app.core.config import settings
+from app.core import app_settings
 from app.services.local_claude_stream import summarize_tool
 from app.services.local_run_hub import (
     APPROVAL_REQUESTED,
@@ -134,7 +134,7 @@ class ApprovalBroker:
             on_open()
         loop = asyncio.get_running_loop()
         approval.timer = loop.call_later(
-            settings.LOCAL_APPROVAL_TIMEOUT_SECONDS, self._expire, approval.id
+            app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True), self._expire, approval.id
         )
         self._hub.publish(run_id, APPROVAL_REQUESTED, approval.public())
         return approval

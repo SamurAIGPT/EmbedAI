@@ -24,7 +24,7 @@ from pathlib import Path
 
 from fastapi.concurrency import run_in_threadpool
 
-from app.core.config import settings
+from app.core import app_settings
 from app.desktop import profile
 
 # Verified against Claude Code 2.1.232: init reported tools=[], mcp_servers=[],
@@ -76,9 +76,8 @@ _NOT_FOUND = (
 )
 # The desktop app has no .env to point at (D-012): it names what it does read.
 _NOT_FOUND_DESKTOP = (
-    "Claude CLI not found. Install Claude Code, then choose Check again. If it is installed "
-    "where Open Dots cannot see it, start Open Dots with OPEN_DOTS_CLAUDE_PATH set to the "
-    "full path of the claude executable."
+    "Claude CLI not found. Install Claude Code, or choose its executable in Settings, "
+    "then choose Check again."
 )
 
 # stream-json repeats the answer (deltas, snapshots, final result) and adds
@@ -226,7 +225,10 @@ def _resolve_shim(path: Path) -> Path | None:
 
 
 def resolve_claude_executable() -> Path | None:
-    configured = settings.LOCAL_CLAUDE_CLI_PATH.strip()
+    try:
+        configured = app_settings.get("LOCAL_CLAUDE_CLI_PATH").strip()
+    except app_settings.SettingUnavailable as exc:
+        raise ClaudeCliUnavailable(str(exc)) from None
     if configured:
         path = Path(configured)
         if not path.is_file():
@@ -246,10 +248,8 @@ def resolve_claude_executable() -> Path | None:
 
 
 def workspace_dir() -> Path:
-    root = Path(settings.LOCAL_WORKSPACE_ROOT) if settings.LOCAL_WORKSPACE_ROOT else (
-        Path.home() / ".open-dots" / "local"
-    )
-    workspace = root / "workspace"
+    from app.services.workspaces import canonical_workspace
+    workspace = canonical_workspace(app_settings.get("LOCAL_WORKSPACE_ROOT"))
     workspace.mkdir(parents=True, exist_ok=True)
     return workspace
 
@@ -454,11 +454,16 @@ def user_message_line(prompt: str) -> str:
 
 
 def _status_blocking() -> CliStatus:
-    executable = resolve_claude_executable()
+    try:
+        executable = resolve_claude_executable()
+    except ClaudeCliUnavailable as exc:
+        return CliStatus(installed=False, error=str(exc))
     if executable is None:
         return CliStatus(installed=False, error=_NOT_FOUND_DESKTOP if profile.active() else _NOT_FOUND)
 
-    cwd = workspace_dir()
+    # Authentication is account-wide, independent of the default workspace.
+    # A broken default must not prevent resuming a thread in its pinned folder.
+    cwd = Path.home()
 
     def call(*extra: str) -> RunOutput:
         return run_blocking(
@@ -499,7 +504,11 @@ def _run_blocking(
     control: RunControl | None,
     resume: bool = False,
     tools: bool | None = None,
+    workspace: Path | None = None,
 ) -> RunOutput:
+    if workspace is not None:
+        from app.services.workspaces import require_workspace
+        require_workspace(workspace)
     executable = resolve_claude_executable()
     if executable is None:
         raise ClaudeCliUnavailable("Claude CLI not found.")
@@ -514,9 +523,9 @@ def _run_blocking(
     return run_blocking(
         args,
         stdin_text=user_message_line(prompt) if tools else prompt,
-        cwd=workspace_dir(),
-        timeout_seconds=settings.LOCAL_TASK_TIMEOUT_SECONDS,
-        max_output_bytes=settings.LOCAL_MAX_OUTPUT_BYTES * RAW_STREAM_SIZE_FACTOR,
+        cwd=workspace_dir() if workspace is None else workspace,
+        timeout_seconds=app_settings.get("LOCAL_TASK_TIMEOUT_SECONDS"),
+        max_output_bytes=app_settings.get("LOCAL_MAX_OUTPUT_BYTES") * RAW_STREAM_SIZE_FACTOR,
         on_stdout_line=on_stdout_line,
         control=control,
         keep_stdin_open=tools if control is not None else None,
@@ -531,6 +540,7 @@ async def run_prompt(
     *,
     resume: bool = False,
     tools: bool | None = None,
+    workspace: Path | None = None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
@@ -538,5 +548,5 @@ async def run_prompt(
     caller can still kill; `resume=True` continues the session `session_id`
     instead of creating it."""
     return await run_in_threadpool(
-        _run_blocking, prompt, session_id, on_stdout_line, control, resume, tools
+        _run_blocking, prompt, session_id, on_stdout_line, control, resume, tools, workspace
     )

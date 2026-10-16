@@ -78,6 +78,7 @@ export function ChatApp() {
   const threadId = parseThreadId(useSearchParams().get("thread"));
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
+  const [desktop, setDesktop] = useState(false);
   // Bumped by "Check again": Claude may have been installed or signed in since.
   const [statusTick, setStatusTick] = useState(0);
   const [threads, setThreads] = useState<Thread[] | null>(null);
@@ -104,7 +105,11 @@ export function ChatApp() {
     let cancelled = false;
     api
       .getLocalStatus()
-      .then((status) => !cancelled && setGate({ phase: "ready", status }))
+      .then((status) => {
+        if (cancelled) return;
+        setDesktop(Boolean(window.openDots));
+        setGate({ phase: "ready", status });
+      })
       .catch((err: unknown) => {
         if (cancelled) return;
         if (isLaunchTokenMissing(err)) return setGate({ phase: "locked" });
@@ -259,8 +264,8 @@ export function ChatApp() {
       >
         ☰
       </button>
-      <Link href="/" className="text-sm text-zinc-500 hover:underline">
-        ← Home
+      <Link href={desktop ? "/settings/" : "/"} className="text-sm text-zinc-500 hover:underline">
+        {desktop ? "Settings" : "← Home"}
       </Link>
       <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
         {thread?.title || (threadId === null ? "New chat" : "Chat")}
@@ -322,6 +327,7 @@ export function ChatApp() {
           {gate.status.enabled
             ? (gate.status.reason ?? "unknown reason")
             : "Set LOCAL_EXECUTION_ENABLED=true in backend/.env on the machine running the backend, then restart it. Chat runs Claude through your own signed-in CLI on this computer."}
+          {desktop && <p className="mt-3"><Link href="/settings/" className="underline">Open Settings</Link> to choose the Claude executable and check its status.</p>}
         </Notice>
       </div>
     );

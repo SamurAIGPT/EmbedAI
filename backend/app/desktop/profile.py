@@ -40,7 +40,7 @@ class DesktopProfile:
             "SQLITE_PATH": str(self.database_file),
             "TOKEN_ENCRYPTION_KEYS": self.encryption_key,
             # Local execution is the point of the desktop app. Tools are on
-            # because the chat page asks a person before every tool call.
+            # by default; calls the CLI asks about wait for an app approval.
             "LOCAL_EXECUTION_ENABLED": True,
             "LOCAL_TOOLS_ENABLED": True,
             "LOCAL_WORKSPACE_ROOT": str(self.data_dir / WORKSPACE_DIR_NAME),

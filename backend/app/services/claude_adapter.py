@@ -25,7 +25,7 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
-from app.core.config import settings
+from app.core import app_settings
 from app.core.logging import get_logger
 from app.services import local_claude_runner
 from app.services.local_approval_broker import (
@@ -127,7 +127,7 @@ class ClaudeAdapter:
             return TurnOutcome(
                 "failed", error="This thread has no Claude session id.", error_code="no_session"
             )
-        tools = settings.LOCAL_TOOLS_ENABLED
+        tools = app_settings.get("LOCAL_TOOLS_ENABLED")
         attempt = await self._attempt(ctx, sink, gate, resume=ctx.resume, tools=tools)
         if attempt.already_in_use and not attempt.resume and not ctx.aborted:
             attempt = await self._attempt(ctx, sink, gate, resume=True, tools=tools)
@@ -145,7 +145,7 @@ class ClaudeAdapter:
         tools: bool,
     ) -> _Attempt:
         loop = asyncio.get_running_loop()
-        normalizer = StreamNormalizer(max_text_bytes=settings.LOCAL_MAX_OUTPUT_BYTES)
+        normalizer = StreamNormalizer(max_text_bytes=app_settings.get("LOCAL_MAX_OUTPUT_BYTES"))
         attempt = _Attempt(resume=resume, normalizer=normalizer)
         control = local_claude_runner.RunControl()
         ctx.on_abort(control.kill)
@@ -272,6 +272,7 @@ class ClaudeAdapter:
                 control,
                 resume=resume,
                 tools=tools,
+                workspace=ctx.workspace,
             )
         except Exception as exc:  # noqa: BLE001
             if not isinstance(exc, local_claude_runner.ClaudeCliUnavailable):
@@ -329,7 +330,7 @@ class ClaudeAdapter:
 
         if out.timed_out:
             return failed(
-                f"Timed out after {settings.LOCAL_TASK_TIMEOUT_SECONDS} seconds", "timeout"
+                f"Timed out after {app_settings.get('LOCAL_TASK_TIMEOUT_SECONDS')} seconds", "timeout"
             )
         if out.output_truncated or n.over_limit:
             return failed("Claude produced more output than allowed", "output_too_large")

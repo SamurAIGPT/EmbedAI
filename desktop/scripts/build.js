@@ -34,7 +34,7 @@ const result = spawnSync(process.execPath, [next, "build"], {
 });
 if (result.error || result.status !== 0) fail("The page did not build.");
 
-for (const page of ["index.html", path.join("chat", "index.html")]) {
+for (const page of ["index.html", path.join("chat", "index.html"), path.join("settings", "index.html")]) {
   if (!fs.existsSync(path.join(paths.ui, page))) fail(`The build finished but ${page} is missing from ${paths.ui}.`);
 }
 console.log(`\nBuilt ${paths.ui}\nNext: npm run start`);

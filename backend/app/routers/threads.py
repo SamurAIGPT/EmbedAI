@@ -76,6 +76,8 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
         )
     except UnknownProvider:
         raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
+    except (OSError, ValueError) as exc:
+        raise _error(409, "workspace_unavailable", str(exc)) from None
 
 
 @router.get("", response_model=list[ThreadResponse])

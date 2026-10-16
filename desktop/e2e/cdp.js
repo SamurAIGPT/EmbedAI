@@ -5,7 +5,9 @@
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function listTargets(port) {
-  const response = await fetch(`http://127.0.0.1:${port}/json`);
+  const response = await fetch(`http://127.0.0.1:${port}/json`, {
+    headers: { Connection: "close" }, signal: AbortSignal.timeout(3000),
+  });
   return response.json();
 }
 

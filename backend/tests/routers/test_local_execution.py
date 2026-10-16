@@ -48,7 +48,7 @@ def ready_cli(monkeypatch):
 def no_background_run(monkeypatch):
     started = []
 
-    async def noop(task_id):
+    async def noop(task_id, snapshot=None):
         started.append(task_id)
 
     monkeypatch.setattr(task_execution_service, "_run_local_task", noop)

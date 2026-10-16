@@ -6,6 +6,7 @@ from app.routers.permission import router as permissions_router
 from app.routers.local import router as local_router
 from app.routers.providers import router as providers_router
 from app.routers.threads import router as threads_router
+from app.routers.settings import router as settings_router
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1")
@@ -17,3 +18,4 @@ router.include_router(schedule_router)
 router.include_router(local_router)
 router.include_router(providers_router)
 router.include_router(threads_router)
+router.include_router(settings_router)

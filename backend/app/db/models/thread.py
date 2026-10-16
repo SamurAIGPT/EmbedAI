@@ -45,6 +45,7 @@ class Thread(Base):
     )
     # Small, adapter-private state. Never secrets, endpoints or keys.
     provider_state: Mapped[dict | None] = mapped_column(JSONValue, nullable=True)
+    workspace_path: Mapped[str | None] = mapped_column(String, nullable=True)
     # Last event sequence number handed out in this thread.
     last_seq: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"

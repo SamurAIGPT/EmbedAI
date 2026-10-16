@@ -10,14 +10,15 @@
 // Everything that can be tested without Electron is in src/. This file only
 // connects those pieces to Electron.
 
-const { app, BrowserWindow, dialog, safeStorage, session } = require("electron");
+const { app, BrowserWindow, dialog, safeStorage, session, ipcMain } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const { layout } = require("./src/paths");
 const { createKeyStore, KeyStoreError } = require("./src/keystore");
 const { startBackend, backendEnvironment, newToken } = require("./src/backend");
-const { attachTokenTo, lockDown } = require("./src/origin");
+const { attachTokenTo, lockDown, sameOrigin } = require("./src/origin");
+const { registerPathPicker } = require("./src/path-picker");
 const { lastReason, describeFailure, describeUnexpectedExit } = require("./src/messages");
 
 const mode = process.argv.includes("--mode=dev") ? "dev" : "start";
@@ -40,6 +41,7 @@ let backend = null;
 let quitting = false;
 let backendStopped = false;
 let shutdown = null;
+let backendOrigin = null;
 
 // Stops what this launch started, once: this app's own connections first (the
 // backend waits for its connected clients, and idle keep-alive sockets held here
@@ -85,7 +87,8 @@ function createWindow() {
     title: mode === "dev" ? "Open Dots (dev)" : "Open Dots",
     backgroundColor: "#ffffff",
     webPreferences: {
-      // The page is ordinary web content: no Node, no preload, nothing to read the token from.
+      // The sandboxed preload exposes only the validated native path picker.
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -121,6 +124,7 @@ async function main() {
   });
 
   await app.whenReady();
+  registerPathPicker({ ipcMain, dialog, getWindow: () => window, getOrigin: () => backendOrigin });
   window = createWindow();
   window.on("closed", () => {
     window = null;
@@ -186,13 +190,17 @@ async function main() {
   });
 
   if (!window) return; // closed while the backend was starting
+  backendOrigin = started.origin;
   attachTokenTo(window.webContents.session, started.origin, token);
   lockDown(window.webContents, started.origin, window.webContents.session);
   try {
     await window.loadURL(`${started.origin}/chat/`);
   } catch (error) {
     // Closing the window while the page loads aborts the load: not an error to report.
-    if (!quitting) throw error;
+    // A same-origin navigation (for example opening Settings) can also replace
+    // the initial load. It must not open a fatal, blocking startup dialog.
+    const replaced = error?.code === "ERR_ABORTED" && window && sameOrigin(window.webContents.getURL(), started.origin);
+    if (!quitting && !replaced) throw error;
   }
 }
 

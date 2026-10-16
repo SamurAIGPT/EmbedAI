@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
+from app.core import app_settings
+from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.desktop.launch_auth import LaunchAuthMiddleware
 from app.routers.router import router as app_router
@@ -26,6 +28,15 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if profile.active():
+        from app.db.session import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as db:
+                await app_settings.refresh(db)
+        except Exception:  # noqa: BLE001
+            # A damaged settings row must never stop startup (D-013 4.4a);
+            # the resolver then serves the profile defaults.
+            logger.exception("could not load saved settings; using defaults")
     logger.info(f"Database in use: {settings.DATABASE_DESCRIPTION}")
     jobs = [
         asyncio.create_task(

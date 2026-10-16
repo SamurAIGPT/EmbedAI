@@ -9,6 +9,7 @@ from app.db.models.thread import Thread
 from app.db.models.turn import Turn
 from app.db.models.event import Event
 from app.db.models.approval import Approval
+from app.db.models.app_setting import AppSetting, SettingAudit
 
 __all__ = [
     "UserSandbox",
@@ -22,4 +23,6 @@ __all__ = [
     "Turn",
     "Event",
     "Approval",
+    "AppSetting",
+    "SettingAudit",
 ]

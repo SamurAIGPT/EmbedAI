@@ -26,8 +26,10 @@ export function decisionText(entry: DecisionEntry): string {
     case "allowed":
       return entry.remembered ? `You allowed ${what} and chose to always allow it` : `You allowed ${what}`;
     case "denied":
-      return `You denied ${what}`;
+      return entry.source === "plan_mode" ? `${what} was refused: plan only changes nothing` : `You denied ${what}`;
     case "auto_allowed":
+      if (entry.source === "computer_read") return `${what} ran without asking: reading inside the agent's computer`;
+      if (entry.source === "accept_edits") return `${what} ran without asking: edits are accepted for this agent`;
       return `${what} ran without asking: a saved rule allowed it`;
     case "expired":
       return `Nobody answered about ${what} in time, so it did not run`;
@@ -59,7 +61,8 @@ export function ruleScopeLabel(rule: Pick<ApprovalRule, "workspace">): string {
 // one: a shell command with text.
 export function canAlwaysAllow(tool: string, input: Record<string, unknown>): boolean {
   const command = input.command;
-  return tool === "Bash" && typeof command === "string" && command.trim() !== "";
+  // A computer's exec tool is a shell command too; its rules match the same way.
+  return (tool === "Bash" || tool === "mcp__computer__exec") && typeof command === "string" && command.trim() !== "";
 }
 
 export function csvFileName(threadId: number | null | undefined, now: Date = new Date()): string {

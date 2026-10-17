@@ -346,6 +346,69 @@ export type PermissionAsk = {
 
 export type ApprovalMode = "ask" | "accept_edits" | "plan";
 
+// An agent's own isolated machine (a Docker container) where its turns run
+// their commands and file edits. Older backends never send these fields.
+export type ComputerNetwork = "none" | "default";
+
+export type ComputerSummary = {
+  id: number;
+  provider: string;
+  name: string;
+  image: string;
+  network: ComputerNetwork;
+  // missing | creating | running | stopped | error | deleting
+  state: string;
+};
+
+export type ComputerHealth = {
+  provider: string;
+  available: boolean;
+  version: string | null;
+  error: string | null;
+};
+
+export type ComputerLastCommand = {
+  tool: string | null;
+  subject: string | null;
+  exit_code: number | null;
+  timed_out: boolean;
+  output: string;
+  at: string | null;
+};
+
+export type Computer = ComputerSummary & {
+  agent_id: number;
+  image_pinned: boolean;
+  image_id: string | null;
+  cpus: number;
+  memory_mb: number;
+  pids_limit: number;
+  idle_minutes: number;
+  auto_start: boolean;
+  // What Docker reports now; null when it was not asked or cannot be reached.
+  live_state: string | null;
+  needs_recreate: boolean;
+  problem: string | null;
+  last_error: string | null;
+  workspace_path: string | null;
+  guest_workspace: string;
+  container_id: string | null;
+  busy: boolean;
+  last_used_at: string | null;
+  last_command: ComputerLastCommand | null;
+  health: ComputerHealth | null;
+};
+
+export type ComputerSettings = {
+  image?: string;
+  cpus?: number;
+  memory_mb?: number;
+  pids_limit?: number;
+  network?: ComputerNetwork;
+  idle_minutes?: number;
+  auto_start?: boolean;
+};
+
 // A named agent: instructions, model, workspace and how much it asks first.
 // Conversations started with it keep using it.
 export type Agent = {
@@ -365,6 +428,9 @@ export type Agent = {
   archived_at: string | null;
   created_at?: string;
   updated_at?: string;
+  // Its computer, when it has one; its turns then run their tools there.
+  computer_id?: number | null;
+  computer?: ComputerSummary | null;
 };
 
 export type AgentInput = {
@@ -417,6 +483,8 @@ export type Thread = {
   model: string | null;
   // The folder Claude works in; saved command rules can be tied to it.
   workspace_path?: string | null;
+  // The computer this conversation's tools run in (its agent's), or null.
+  computer?: ComputerSummary | null;
   // new | active | broken | none. "broken": the Claude session cannot be found
   // and must be reset before the thread takes another message.
   session_state: string;
@@ -651,6 +719,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ document, include_notes: includeNotes }),
     }),
+
+  // --- Agent computers. An older backend answers 404 here: callers treat that
+  // as "computers are not available" and keep working. ---
+
+  computersHealth: () => request<ComputerHealth>("/computers/health"),
+
+  getAgentComputer: (agentId: number) => request<Computer>(`/agents/${agentId}/computer`),
+
+  // Idempotent: an agent that already has a computer gets it back unchanged.
+  createAgentComputer: (agentId: number, settings: ComputerSettings & { start?: boolean } = {}) =>
+    request<Computer>(`/agents/${agentId}/computer`, { method: "POST", body: JSON.stringify(settings) }),
+
+  getComputer: (computerId: number) => request<Computer>(`/computers/${computerId}`),
+
+  updateComputer: (computerId: number, change: ComputerSettings) =>
+    request<Computer>(`/computers/${computerId}`, { method: "PATCH", body: JSON.stringify(change) }),
+
+  // start (makes it from a local image if missing), stop, recreate, or
+  // prepare-image (the only step that downloads).
+  computerAction: (computerId: number, action: "start" | "stop" | "recreate" | "prepare-image") =>
+    request<Computer>(`/computers/${computerId}/${action}`, { method: "POST" }),
+
+  // removed: false when Docker is not answering; it is removed later.
+  deleteComputer: (computerId: number) =>
+    request<{ removed: boolean }>(`/computers/${computerId}`, { method: "DELETE" }),
 
   // 202 once the turn has started; its answer arrives on the stream. Errors with
   // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).

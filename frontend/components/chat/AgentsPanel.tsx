@@ -14,6 +14,8 @@ import {
   parseAgentFile,
   redactionNotice,
 } from "@/lib/agents";
+import { computerStateLabel } from "@/lib/computers";
+import { ComputerView } from "./ComputerPanel";
 
 type Draft = {
   id: number | null;
@@ -121,6 +123,7 @@ export function AgentsPanel({
   const [notes, setNotes] = useState<NotesState | null>(null);
   const [exporting, setExporting] = useState<ExportState | null>(null);
   const [importing, setImporting] = useState<ImportState | null>(null);
+  const [computerOf, setComputerOf] = useState<Agent | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,12 +248,15 @@ export function AgentsPanel({
         ? `Export · ${exporting.agent.name}`
         : importing
           ? "Import agent"
-          : "Agents";
+          : computerOf
+            ? `Computer · ${computerOf.name}`
+            : "Agents";
   const back = () => {
     setDraft(null);
     setNotes(null);
     setExporting(null);
     setImporting(null);
+    setComputerOf(null);
     setError(null);
   };
 
@@ -406,6 +412,13 @@ export function AgentsPanel({
                 </button>
               </div>
             </form>
+          ) : computerOf ? (
+            <div className="space-y-3">
+              <ComputerView agent={computerOf} onChanged={onChanged} />
+              <button onClick={back} className={BUTTON}>
+                Back
+              </button>
+            </div>
           ) : notes ? (
             <NotesEditor
               notes={notes}
@@ -492,6 +505,7 @@ export function AgentsPanel({
                         <p className="text-xs text-zinc-500">
                           {modelLabel(agent.model)} · {approvalModeLabel(agent.approval_mode)}
                           {agent.memory_enabled === false && " · notes off"}
+                          {agent.computer && ` · computer: ${computerStateLabel(agent.computer.state).toLowerCase()}`}
                         </p>
                         {agent.instructions && (
                           <p className="mt-1 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">{agent.instructions}</p>
@@ -503,6 +517,11 @@ export function AgentsPanel({
                           <button onClick={() => openNotes(agent)} disabled={busy} className={SMALL}>
                             Notes
                           </button>
+                          {!archived && (
+                            <button onClick={() => setComputerOf(agent)} disabled={busy} className={SMALL}>
+                              Computer
+                            </button>
+                          )}
                           {!archived && (
                             <button onClick={() => run(() => api.duplicateAgent(agent.id))} disabled={busy} className={SMALL}>
                               Duplicate

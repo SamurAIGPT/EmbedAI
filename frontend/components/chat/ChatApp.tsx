@@ -6,7 +6,9 @@ import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type Agent, type LocalStatus, type Thread } from "@/lib/api";
 import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
+import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
+import { ComputerView } from "./ComputerPanel";
 import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
 import type { Remembered } from "./items";
 import { Composer } from "./Composer";
@@ -106,6 +108,7 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [computerOpen, setComputerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // What "Always allow this command" did, by approval id, and rules undone here.
   const [remembered, setRemembered] = useState<Record<string, Remembered>>({});
@@ -185,6 +188,8 @@ export function ChatApp() {
   const thread = threads?.find((t) => t.id === threadId) ?? null;
   const names = agentNames(agents);
   const threadAgent = thread?.agent_id != null ? (agents?.find((a) => a.id === thread.agent_id) ?? null) : null;
+  // The computer this conversation's tools run in; older backends send none.
+  const threadComputer = thread?.computer ?? threadAgent?.computer ?? null;
   const choosable = activeAgents(agents);
   // The chosen agent may have been archived since: then the chat starts plain.
   const startingAgentId = choosable.some((a) => a.id === newAgentId) ? newAgentId : null;
@@ -350,7 +355,16 @@ export function ChatApp() {
             </span>
           )
         ))}
-      {gate.phase === "ready" && gate.status.available && gate.status.tools_enabled && threadId !== null && (
+      {threadComputer && threadAgent && (
+        <button
+          onClick={() => setComputerOpen(true)}
+          title={`This conversation's commands and file edits run in ${threadAgent.name}'s computer (${threadComputer.image}), not on this machine.`}
+          className="cursor-pointer rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300"
+        >
+          {computerChip(threadComputer)}
+        </button>
+      )}
+      {gate.phase === "ready" && gate.status.available && (gate.status.tools_enabled || threadComputer) && threadId !== null && (
         <span
           className="hidden rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 sm:inline dark:bg-zinc-900 dark:text-zinc-400"
           title="How much Claude may do before it asks. Set by the conversation's agent; a plain chat asks first."
@@ -380,7 +394,7 @@ export function ChatApp() {
       {gate.phase === "ready" && gate.status.available && (
         <span className="hidden text-xs text-zinc-500 sm:inline">
           {gate.status.cli_version ?? "Claude Code"}
-          {gate.status.tools_enabled ? "" : " · chat only"}
+          {gate.status.tools_enabled || threadComputer ? "" : " · chat only"}
         </span>
       )}
     </header>
@@ -446,6 +460,31 @@ export function ChatApp() {
           workspace={thread?.workspace_path ?? null}
           onClose={() => setApprovalsOpen(false)}
         />
+      )}
+      {computerOpen && threadAgent && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Computer"
+          onMouseDown={(event) => event.target === event.currentTarget && setComputerOpen(false)}
+        >
+          <div className="flex max-h-full w-full max-w-xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
+            <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">Computer · {threadAgent.name}</h2>
+              <button
+                onClick={() => setComputerOpen(false)}
+                aria-label="Close"
+                className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
+              >
+                ✕
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <ComputerView agent={threadAgent} onChanged={() => setAgentTick((n) => n + 1)} />
+            </div>
+          </div>
+        </div>
       )}
       {agentsOpen && agents !== null && (
         <AgentsPanel

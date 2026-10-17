@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { canAlwaysAllow } from "@/lib/approvals";
+import { isComputerTool, toolLabel } from "@/lib/computers";
 import type { TranscriptItem } from "@/lib/transcript";
 import { Markdown } from "./Markdown";
 
@@ -83,6 +84,7 @@ export function ToolStep({ item }: { item: Item<"tool"> }) {
     <details className="group rounded-md border border-zinc-200 text-xs dark:border-zinc-800">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
         <span className={color}>{mark}</span>
+        {isComputerTool(item.name) && <ComputerBadge />}
         <span className="font-mono text-zinc-700 dark:text-zinc-300">{item.name}</span>
         <span className="min-w-0 flex-1 truncate text-zinc-500">{item.summary}</span>
         <span className="text-zinc-400 group-open:rotate-90">›</span>
@@ -162,15 +164,31 @@ export function ApprovalCard({
           pending ? "text-amber-800 dark:text-amber-300" : "text-zinc-500"
         }`}
       >
+        {isComputerTool(item.tool) && <ComputerBadge />}
         {pending ? (
-          <>
-            Claude wants to use <span className="font-mono">{item.tool}</span>. It will not run
-            until you allow it.
-          </>
+          isComputerTool(item.tool) ? (
+            <>
+              Claude wants to {toolLabel(item.tool)}, an isolated machine, not this one. It will not run
+              until you allow it.
+            </>
+          ) : (
+            <>
+              Claude wants to use <span className="font-mono">{item.tool}</span>. It will not run
+              until you allow it.
+            </>
+          )
         ) : (
           <>
             <span className="font-mono">{item.tool}</span>:{" "}
-            {byRule && item.status === "allowed" ? "Allowed by a saved rule, without asking" : APPROVAL_LABEL[item.status]}
+            {byRule && item.status === "allowed"
+              ? "Allowed by a saved rule, without asking"
+              : item.resolvedBy === "computer_read"
+                ? "Allowed without asking: reading inside the agent's computer"
+                : item.resolvedBy === "accept_edits"
+                  ? "Allowed without asking: edits are accepted"
+                  : item.resolvedBy === "plan_mode"
+                    ? "Refused: plan only changes nothing"
+                    : APPROVAL_LABEL[item.status]}
             {!pending && item.summary && <span className="font-mono text-zinc-400"> · {item.summary}</span>}
           </>
         )}
@@ -270,5 +288,17 @@ export function SessionReset({ item }: { item: Item<"session_reset"> }) {
       {item.message ||
         "Claude's memory of this conversation was reset. The messages above are shown for reference only."}
     </p>
+  );
+}
+
+// Marks a call that runs in the agent's computer rather than on this machine.
+function ComputerBadge() {
+  return (
+    <span
+      className="mr-1 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-800 uppercase dark:bg-sky-950 dark:text-sky-300"
+      title="Runs in the agent's computer (an isolated container), not on this machine"
+    >
+      computer
+    </span>
   );
 }

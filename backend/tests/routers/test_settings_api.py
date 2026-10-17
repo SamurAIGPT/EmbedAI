@@ -37,7 +37,7 @@ async def test_read_and_write_require_the_launch_token(client):
 
 async def test_api_versions_validation_and_audit(client, configured):
     before = await client.get("/api/v1/settings", headers=TOKEN)
-    assert len(before.json()["settings"]) == 6
+    assert len(before.json()["settings"]) == 7
     assert "encryption_key" in before.json()["storage"]
     path = "/api/v1/settings/LOCAL_TOOLS_ENABLED"
     change = {"value": False, "expected_version": 0}
@@ -63,3 +63,19 @@ async def test_origin_and_proxy_headers_are_refused(client):
     for headers in ({"Origin": "https://untrusted.invalid"}, {"x-forwarded-for": "127.0.0.1"}):
         result = await client.get("/api/v1/settings", headers={**TOKEN, **headers})
         assert result.status_code == 403
+
+
+async def test_onboarding_completion_is_versioned_durable_and_desktop_only(client, configured):
+    from app.core import app_settings
+    key = "DESKTOP_ONBOARDING_COMPLETED"
+    initial = (await client.get("/api/v1/settings", headers=TOKEN)).json()
+    row = next(item for item in initial["settings"] if item["key"] == key)
+    assert row["value"] is False and row["version"] == 0
+    assert (await client.put(f"/api/v1/settings/{key}", json={"value": True, "expected_version": 0})).status_code == 401
+    result = await client.put(f"/api/v1/settings/{key}", json={"value": True, "expected_version": 0}, headers=TOKEN)
+    assert result.status_code == 200 and result.json()["value"] is True and result.json()["version"] == 1
+    async with configured() as db:
+        await app_settings.refresh(db)
+    assert app_settings.get(key, live=True) is True
+    assert (await client.put(f"/api/v1/settings/{key}", json={"value": False, "expected_version": 0}, headers=TOKEN)).status_code == 409
+    assert (await client.put(f"/api/v1/settings/{key}", json={"value": "true", "expected_version": 1}, headers=TOKEN)).status_code == 422

@@ -205,7 +205,7 @@ An Electron window around the local backend: you open one app instead of startin
 
 **Windows installer (experimental, unsigned).** `npm run package` (in `desktop/`, after `npm run setup`) builds the page, freezes the backend with PyInstaller (`backend/build.py`, needs `uv`) and makes `desktop/release/Open-Dots-Setup-<version>.exe` with electron-builder. The installed app carries its own backend, so it needs no Python; it still needs the Claude Code CLI. `npm run smoke:packaged` starts `release/win-unpacked` with no Python on `PATH` and a fresh data folder and checks that the backend serves. The installer is unsigned, so Windows SmartScreen will warn; PyInstaller does not cross-compile, so each OS needs its own build.
 
-**First start.** Nothing to configure. The first start takes longer: it creates the database and the encryption key.
+**First start.** The app creates its database and encryption key, then opens a setup flow in Settings. Choose an installed, signed-in engine (or configure ACP/API access), a default workspace root and whether tools are enabled. The flow explains Ask first, Accept edits and Plan only, and can create a starter agent with your engine/model and approval mode. Finishing selects that agent in Chat; without a new agent, Chat uses the selected engine/model. Completion is stored in the app database and survives a reload or restart. **Set up later** enters Chat without changing your preferences or creating an agent. Use **Run setup again** in Settings to revisit the choices. Existing agents are kept, and replay does not create another agent by default. Native folder selection is available from the workspace step.
 
 **What the app does for you**
 

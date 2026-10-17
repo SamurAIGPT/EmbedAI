@@ -6,7 +6,7 @@ import { api, ApiError, type Engine } from "@/lib/api";
 const FIELD = "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700";
 const BUTTON = "cursor-pointer rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900";
 
-export function EngineSettings() {
+export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engines: Engine[]) => void } = {}) {
   const [engines, setEngines] = useState<Engine[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { command: string; label: string; base_url: string; model: string; api_key: string }>>({});
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +19,7 @@ export function EngineSettings() {
     api.getEngines(refresh > 0).then((items) => {
       if (cancelled) return;
       setEngines(items);
+      onEnginesChanged?.(items);
       setDrafts((previous) => ({ ...Object.fromEntries(items.map((item) => [item.id, {
         command: typeof item.config?.command === "string" ? item.config.command : "",
         label: typeof item.config?.label === "string" ? item.config.label : "",
@@ -31,7 +32,7 @@ export function EngineSettings() {
       if (!cancelled) setError(err instanceof ApiError ? err.message : "Could not load engines. Check that the backend is running.");
     }).finally(() => { if (!cancelled) setBusy(null); });
     return () => { cancelled = true; };
-  }, [refresh]);
+  }, [refresh, onEnginesChanged]);
 
   const save = async (engine: Engine) => {
     const draft = drafts[engine.id];
@@ -42,7 +43,9 @@ export function EngineSettings() {
         ? { command: draft.command.trim(), label: draft.label.trim() || undefined }
         : { base_url: draft.base_url.trim(), model: draft.model.trim() || undefined, api_key: draft.api_key || undefined };
       const saved = await api.saveEngineConfig(engine.id, config);
-      setEngines((previous) => previous?.map((item) => item.id === engine.id ? saved : item) ?? null);
+      const updated = engines?.map((item) => item.id === engine.id ? saved : item) ?? [];
+      setEngines(updated);
+      onEnginesChanged?.(updated);
       setDrafts((previous) => ({ ...previous, [engine.id]: { ...previous[engine.id], api_key: "" } }));
       setNotice(`${engine.label} settings saved. ${saved.available ? "Ready to use." : saved.reason ?? "The engine is not ready yet."}`);
     } catch (err) { setError(err instanceof ApiError ? err.message : "Could not save engine settings."); }

@@ -23,7 +23,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F06 | Multiple named agents with dedicated workspaces | Implemented: `/api/v1/agents`, `agent_id` on threads, per-agent folder, per-agent notes (`MEMORY.md`), starter notes, export/import as one file, and the Agents panel in the Chat page; SQLite and PostgreSQL tested |
 | F07 | Multiple engines and model selection | Implemented (experimental): Claude, Codex app-server, generic ACP and OpenAI-compatible chat; agent/new-chat engine and model controls, idle conversation model changes, web/desktop engine Settings. See [ENGINES.md](ENGINES.md) for capabilities and limits |
 | F08 | Browse/download agent workspace files | Planned |
-| F09 | First-run onboarding and local storage (experimental SQLite and a desktop app from a source checkout exist; database-backed desktop settings and native workspace selection exist; conversations pin their workspace; first-run onboarding remains) | In progress |
+| F09 | First-run onboarding and local storage | Implemented (experimental): desktop setup for engine/model, workspace, tools and approval modes; optional starter agent, durable completion, skip/replay; SQLite and database-backed desktop settings; source `doctor` command. Source flow verified on macOS; packaged first-run and Linux verification remain |
 | F10 | Installable beta, CI and documentation | Planned |
 | F11 | Agent computers: an isolated Docker container per agent, tools only through an approval-gated MCP server (see [COMPUTERS.md](COMPUTERS.md)) | Implemented (experimental): lifecycle, limits, network none/default, idle stop, orphan cleanup, Computer panel; egress allowlist, SSH server and desktop computers planned |
 

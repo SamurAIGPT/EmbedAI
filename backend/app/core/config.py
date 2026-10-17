@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     LOCAL_WORKSPACE_ROOT: str = ""
     LOCAL_TASK_TIMEOUT_SECONDS: int = 300
     LOCAL_MAX_OUTPUT_BYTES: int = 1_000_000
+    # Stored as a desktop preference; headless installs do not run the wizard.
+    DESKTOP_ONBOARDING_COMPLETED: bool = False
     # Let local Claude use tools (read/write files, run commands) in its
     # workspace. Every tool call the CLI would ask about waits for a human
     # Allow/Deny in the web UI. Off by default: runs stay chat-only.

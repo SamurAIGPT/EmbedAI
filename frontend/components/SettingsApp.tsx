@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type ApplicationSetting, type DesktopSettings } from "@/lib/api";
 import { ApprovalsTabs } from "@/components/approvals/ApprovalsPanel";
 import { EngineSettings } from "@/components/EngineSettings";
+import { DesktopSetup } from "@/components/DesktopSetup";
 
 declare global {
   interface Window {
@@ -27,6 +29,7 @@ const display = (value: unknown) => value === null || value === undefined ? "Una
 const applies = (row: ApplicationSetting) => row.key === "LOCAL_WORKSPACE_ROOT" ? "New conversations" : row.key === "LOCAL_APPROVAL_TIMEOUT_SECONDS" ? "New approvals" : row.applies === "next_run" ? "Next turn" : row.applies === "restart" ? "After restart" : "Immediately";
 
 export function SettingsApp() {
+  const router = useRouter();
   const [data, setData] = useState<DesktopSettings | null>(null);
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,8 @@ export function SettingsApp() {
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [headless, setHeadless] = useState(false);
+  const [setupReplay, setSetupReplay] = useState(false);
+  const settingUp = setupReplay || data?.settings.some((row) => row.key === "DESKTOP_ONBOARDING_COMPLETED" && row.value === false) === true;
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +100,18 @@ export function SettingsApp() {
       {headless && <p className="text-sm text-zinc-500">Workspace, executable and timeout preferences use the backend environment configuration in this installation.</p>}
       {!data && !error && !headless && <p role="status">Loading settings…</p>}
       {!headless && <button className={buttonClass} disabled={busy !== null} onClick={() => setLoadTick((n) => n + 1)}>{data ? "Reload saved settings" : "Try again"}</button>}
-      {data && <>
+      {data && settingUp && <DesktopSetup settings={data} onSaved={(saved) => {
+        setData((previous) => previous && ({ ...previous, settings: previous.settings.map((item) => item.key === saved.key ? saved : item) }));
+        setDrafts((previous) => ({ ...previous, [saved.key]: saved.value }));
+      }} onFinished={(agentId, selection) => {
+        setSetupReplay(false);
+        const query = new URLSearchParams();
+        if (agentId !== undefined) query.set("agent", String(agentId));
+        else if (selection) { query.set("engine", selection.provider); if (selection.model) query.set("model", selection.model); }
+        router.push(`/chat/${query.size ? `?${query}` : ""}`);
+      }} />}
+      {data && !settingUp && <>
+        {data.settings.some((row) => row.key === "DESKTOP_ONBOARDING_COMPLETED") && <button type="button" className={buttonClass} onClick={() => setSetupReplay(true)}>Run setup again</button>}
         <section className="space-y-5 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
           <h3 className="font-semibold">Claude Code</h3>
           {data.settings.map((row) => {
@@ -123,8 +139,10 @@ export function SettingsApp() {
         </section>
         <section className="space-y-4 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="font-semibold">Storage</h3><p className="text-xs text-zinc-500">Managed by the desktop app. These locations cannot be changed here.</p><dl className="space-y-3 text-sm">{Object.entries(data.storage).map(([name, value]) => <div key={name}><dt className="font-medium capitalize">{name.replaceAll("_", " ")}</dt><dd className="mt-1 break-all text-xs text-zinc-500">{value}</dd></div>)}</dl></section>
       </>}
-      <EngineSettings />
-      <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="mb-1 font-semibold">Approvals</h3><p className="mb-4 text-xs text-zinc-500">Commands you always allow, every decision about a tool call, and a read-only health scan of recent conversations.</p><ApprovalsTabs /></section>
+      {!settingUp && <>
+        <EngineSettings />
+        <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="mb-1 font-semibold">Approvals</h3><p className="mb-4 text-xs text-zinc-500">Commands you always allow, every decision about a tool call, and a read-only health scan of recent conversations.</p><ApprovalsTabs /></section>
+      </>}
     </main>
   </div>;
 }

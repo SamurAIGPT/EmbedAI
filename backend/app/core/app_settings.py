@@ -27,6 +27,7 @@ class Definition:
 
 
 REGISTRY = {
+    "DESKTOP_ONBOARDING_COMPLETED": Definition("boolean", False, "immediate"),
     "LOCAL_CLAUDE_CLI_PATH": Definition("file", True, "next_run"),
     "LOCAL_WORKSPACE_ROOT": Definition("directory", True, "next_run"),
     "LOCAL_TOOLS_ENABLED": Definition("boolean", True, "next_run"),

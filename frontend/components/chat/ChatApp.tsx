@@ -82,7 +82,8 @@ function Notice({
 // backend, and the open one is replayed from its stored events.
 export function ChatApp() {
   const router = useRouter();
-  const threadId = parseThreadId(useSearchParams().get("thread"));
+  const params = useSearchParams();
+  const threadId = parseThreadId(params.get("thread"));
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
   // Bumped by "Check again": Claude may have been installed or signed in since.
@@ -115,10 +116,10 @@ export function ChatApp() {
   const [remembered, setRemembered] = useState<Record<string, Remembered>>({});
   const [undoneRules, setUndoneRules] = useState<number[]>([]);
   // The agent a new chat will start with (null: a plain chat).
-  const [newAgentId, setNewAgentId] = useState<number | null>(null);
+  const [newAgentId, setNewAgentId] = useState<number | null>(() => parseThreadId(params.get("agent")));
   const [engines, setEngines] = useState<Engine[] | null>(null);
-  const [newProvider, setNewProvider] = useState("claude");
-  const [newModel, setNewModel] = useState<string | null>(null);
+  const [newProvider, setNewProvider] = useState(() => params.get("engine") || "claude");
+  const [newModel, setNewModel] = useState<string | null>(() => params.get("model") || null);
   const [modelDraft, setModelDraft] = useState<{ threadId: number | null; agentId: number | null; provider: string; model: string | null } | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -128,6 +129,15 @@ export function ChatApp() {
   const ready = gate.phase === "ready" && (gate.status.available || (gate.status.enabled && engines !== null));
   const stream = useThreadStream(ready ? threadId : null);
   const { transcript } = stream;
+
+  useEffect(() => {
+    if (!window.openDots) return;
+    let cancelled = false;
+    api.getDesktopSettings().then((value) => {
+      if (!cancelled && value.settings.some((row) => row.key === "DESKTOP_ONBOARDING_COMPLETED" && row.value === false)) router.replace("/settings/");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vadoo Autonomous Agent",
+  title: "Open Dots",
   description: "Connect Telegram and Claude, then submit a task.",
 };
 

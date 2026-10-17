@@ -3,7 +3,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { ChatApp } from "@/components/chat/ChatApp";
 
 export const metadata = {
-  title: "Chat · Vadoo Autonomous Agent",
+  title: "Chat · Open Dots",
 };
 
 // The open conversation is a query string (/chat?thread=3), not a route

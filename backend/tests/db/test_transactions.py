@@ -333,3 +333,32 @@ async def test_sync_reads_current_data_even_on_a_long_lived_session(sessions, ow
         await other.commit()
         synced = await task_execution_service.sync_task_status(poller, loaded)
         assert synced.status == "running"
+
+
+# --- always-allow rules ------------------------------------------------------------
+
+
+@sqlite_only
+async def test_saving_and_deleting_a_rule_after_a_stale_read_does_not_fail(sessions, owner):
+    """Saving an "always allow" rule reads the thread first, while the turn the
+    answer woke up writes its events from another connection. The save must not
+    fail with "database is locked" because its read snapshot went stale."""
+    from app.db.models import PermissionRule
+    from app.services import approval_allowlist as allow
+
+    try:
+        async with sessions() as db, sessions() as other:
+            await count_tasks(db, owner)  # a read: opens the snapshot
+            other.add(new_task(owner))
+            await other.commit()  # the woken turn commits meanwhile
+            rule = await allow.add_rule(db, owner, allow.EXACT, "echo hi > hi.txt", "/work")
+            assert rule.id is not None
+
+            await count_tasks(db, owner)
+            other.add(new_task(owner))
+            await other.commit()
+            assert (await allow.delete_rule(db, owner, rule.id)) is not None
+    finally:
+        async with sessions() as db:
+            await db.execute(delete(PermissionRule).where(PermissionRule.user_id == owner))
+            await db.commit()

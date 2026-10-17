@@ -27,6 +27,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.permission_rule import PermissionRule
+from app.db.transactions import begin_write
 from app.services import decision_log, safety_floor
 
 BUCKET = "local_command"
@@ -127,6 +128,9 @@ async def add_rule(
     """Add a rule, or return the identical one already saved."""
     command = validate_rule(kind, command, workspace)
     stored_kind = kind if workspace is None else f"{kind}@{workspace}"
+    # Check-then-insert, often right after a read on the same session (the
+    # thread's folder) while a woken turn writes from another connection.
+    await begin_write(db)
     existing = await list_rules(db, owner_id)
     for rule in existing:
         if rule.connector == stored_kind and rule.tool == command:
@@ -166,6 +170,7 @@ async def find_rule(
 
 async def delete_rule(db: AsyncSession, owner_id: str, rule_id: int) -> PermissionRule | None:
     """Delete one rule. Returns what was deleted, or None if there was none."""
+    await begin_write(db)
     rule = (
         await db.execute(
             select(PermissionRule).where(

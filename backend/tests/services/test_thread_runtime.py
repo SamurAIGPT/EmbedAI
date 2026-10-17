@@ -304,6 +304,7 @@ async def test_a_turn_cut_off_after_the_session_exists_is_continued_with_resume(
     await rt.shutdown()  # cut off: the session exists but the thread never learned it
     assert (await reload(sessions, Turn, first.id)).status == "interrupted"
     assert (await reload(sessions, Thread, thread.id)).session_state == "new"
+    rt.reopen()  # the app starts again
 
     second = await rt.send_turn(thread.id, "carry on")
     await finished(sessions, thread.id, 2)

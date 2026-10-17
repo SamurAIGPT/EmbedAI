@@ -9,7 +9,7 @@ SQLite, ->> on PostgreSQL). No FTS index.
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Event, Thread
@@ -49,18 +49,20 @@ def _matches_all(text: str, terms: list[str]) -> bool:
     return all(term in folded for term in terms)
 
 
-def make_snippet(text: str, terms: list[str]) -> tuple[str, list[list[int]]]:
+def make_snippet(
+    text: str, terms: list[str], *, before: int = SNIPPET_BEFORE, after: int = SNIPPET_AFTER
+) -> tuple[str, list[list[int]]]:
     """About 160 characters around the first match, whitespace folded, with
     `[start, length]` of every term occurrence inside it."""
     flat = " ".join(text.split())
     folded = flat.lower()
     positions = [folded.find(term) for term in terms if folded.find(term) >= 0]
     first = min(positions) if positions else 0
-    start = max(0, first - SNIPPET_BEFORE)
+    start = max(0, first - before)
     if start > 0:
         space = flat.find(" ", start, first) if first > start else -1
         start = space + 1 if space >= 0 else start
-    end = min(len(flat), start + SNIPPET_BEFORE + SNIPPET_AFTER)
+    end = min(len(flat), start + before + after)
     head = "…" if start > 0 else ""
     tail = "…" if end < len(flat) else ""
     snippet = head + flat[start:end] + tail
@@ -170,3 +172,65 @@ async def search(
         )
     hits.sort(key=lambda hit: hit.at, reverse=True)
     return hits[:limit]
+
+
+async def search_any(
+    db: AsyncSession,
+    owner_id: str,
+    terms: list[str],
+    *,
+    agent_id: int,
+    exclude_thread_id: int | None = None,
+    candidates: int = 200,
+) -> list[tuple[SearchHit, int]]:
+    """Messages in one agent's conversations holding ANY of `terms`, newest
+    first, each with how many distinct terms it holds (for recall, which
+    ranks by that). Archived conversations and `exclude_thread_id` are left
+    out. The same portable query as `search`, with OR instead of AND."""
+    terms = [t for t in terms if t]
+    if not terms:
+        return []
+    message_text = func.coalesce(
+        Event.data["text"].as_string(), Event.data["prompt_text"].as_string()
+    )
+    statement = (
+        select(Event, Thread, message_text.label("body"))
+        .join(Thread, Thread.id == Event.thread_id)
+        .where(
+            Thread.owner_id == owner_id,
+            Thread.agent_id == agent_id,
+            Thread.archived_at.is_(None),
+            Event.type.in_(tuple(MESSAGE_TYPES)),
+            or_(*[message_text.icontains(term, autoescape=True) for term in terms]),
+        )
+        .order_by(Event.created_at.desc(), Event.id.desc())
+        .limit(candidates)
+    )
+    if exclude_thread_id is not None:
+        statement = statement.where(Thread.id != exclude_thread_id)
+    out: list[tuple[SearchHit, int]] = []
+    for event, thread, body in (await db.execute(statement)).all():
+        body = body or ""
+        folded = body.lower()
+        matched = sum(1 for term in terms if term in folded)
+        if not matched:
+            continue
+        snippet, spans = make_snippet(body, terms, before=120, after=240)
+        out.append(
+            (
+                SearchHit(
+                    thread_id=thread.id,
+                    thread_title=thread.title,
+                    agent_id=thread.agent_id,
+                    archived=False,
+                    kind=MESSAGE_TYPES[event.type],
+                    at=event.created_at,
+                    snippet=snippet,
+                    highlights=spans,
+                    seq=event.seq,
+                    turn_id=event.turn_id,
+                ),
+                matched,
+            )
+        )
+    return out

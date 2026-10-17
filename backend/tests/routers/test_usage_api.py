@@ -16,7 +16,7 @@ from app.routers.threads import get_runtime
 from app.routers.usage import router as usage_router
 from app.services import thread_store as store
 from app.services import usage_report
-from tests.services.thread_harness import cleanup, owner, rt, sessions  # noqa: F401
+from tests.services.thread_harness import cleanup, cli, owner, rt, sessions  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -136,3 +136,17 @@ async def test_another_owner_sees_none_of_it(sessions, owner, tmp_path):
     async with sessions() as db:
         body = await usage_report.month_summary(db, owner + "-other", None)
     assert body["total"]["turns"] == 0
+
+
+async def test_a_finished_turn_records_what_claude_reported(rt, cli, sessions, owner, tmp_path):
+    from tests.services.thread_harness import finished, new_thread
+
+    thread = await new_thread(sessions, owner, workspace_path=str(tmp_path))
+    await rt.send_turn(thread.id, "hello")
+    await finished(sessions, thread.id)
+    async with sessions() as db:
+        events = await store.list_all_events(db, thread.id)
+        turns = await store.list_turns(db, thread.id)
+    completed = next(e for e in events if e.type == "turn.completed")
+    reported = {"input_tokens": 3, "output_tokens": 2, "cost_usd": 0.001}
+    assert completed.data["usage"] == reported and turns[0].usage == reported

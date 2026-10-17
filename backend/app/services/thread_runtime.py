@@ -60,6 +60,9 @@ APPROVAL_POLL_SECONDS = 1.0
 # return on its own before the runtime stops waiting for it.
 STALL_GRACE_SECONDS = 5.0
 STATUS_CACHE_SECONDS = 30.0
+# The longest a turn's start waits for its engine's status. Claude's own check
+# runs two CLI calls of up to 20 seconds each.
+STATUS_TIMEOUT_SECONDS = 45.0
 SHUTDOWN_WAIT_SECONDS = 10.0
 
 
@@ -659,7 +662,19 @@ class ThreadRuntime:
         cached = self._status_cache.get(cache_key)
         if cached is not None and loop.time() - cached[0] < self.status_ttl:
             return cached[1]
-        status = await adapter.status()
+        # A broken engine says so; it never hangs or errors the request that
+        # asked (the registry's probe has the same bound).
+        try:
+            status = await asyncio.wait_for(adapter.status(), STATUS_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            return ProviderStatus(
+                ready=False,
+                error=f"This engine did not report its status within {STATUS_TIMEOUT_SECONDS:g} seconds. "
+                "Check that its command starts in a terminal.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("engine status failed", engine=getattr(adapter, "key", "?"), error=exc.__class__.__name__)
+            return ProviderStatus(ready=False, error=f"The engine's status check failed ({exc.__class__.__name__}).")
         if status.ready:
             self._status_cache[cache_key] = (loop.time(), status)
         return status
@@ -814,6 +829,10 @@ class ThreadRuntime:
                 "error_code": outcome.error_code,
                 "result": outcome.partial_text or "",
             }
+        # What the engine reported, so the transcript can show it; absent when
+        # it reported nothing (docs/EVERYDAY.md).
+        if outcome.usage:
+            event_data["usage"] = outcome.usage
         async with self.session() as db:
             recorded = await store.finish_turn(
                 db,

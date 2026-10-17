@@ -28,7 +28,9 @@ def processes_running(marker: str) -> list[str]:
 
 
 def test_a_hanging_and_a_crashing_engine_block_nothing(tmp_path):
-    hang = program(tmp_path / "hang-codex-od-test", "exec sleep 600")
+    # Not `exec`: after an exec the process is just `sleep 600` and the marker
+    # in the script path disappears from `ps` on Linux.
+    hang = program(tmp_path / "hang-codex-od-test", "sleep 600")
     crash = program(tmp_path / "crash-acp-od-test", "echo 'boom' >&2; exit 3")
     b = Backend(tmp_path / "b", env={"LOOPBACK_TRUST": "programs", "LOCAL_CODEX_CLI_PATH": str(hang)})
     started = time.monotonic()

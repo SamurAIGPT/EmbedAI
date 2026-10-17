@@ -20,7 +20,7 @@ and keep running Boat sandboxes. Routines are the local counterpart.
 | `run_limit_minutes` | 1 to 240 (default 30). Active time only: time spent waiting for your approval does not count. A run that reaches it is stopped and recorded as failed. |
 | `approval_mode` | `ask` (default), `plan` or `accept_edits`. A routine run uses the **stricter** of this and the agent's own mode, so a routine can never loosen what its agent may do. |
 | `approval_timeout_minutes` | 1 to 1440 (default 30). How long a run waits for your answer before the request is denied. |
-| `catch_up_minutes` | 0 to 1440 (default 60). How late a missed occurrence may still run (below). |
+| `catch_up_minutes` | 0 to 1440 (default 60). How late a missed occurrence may still run, on top of two minutes that always count as on time (below). |
 | webhook | Off until you enable it. The secret is shown once; only its SHA-256 hash is stored. |
 
 ## Schedule kinds
@@ -51,8 +51,8 @@ schedule poller), checking every `ROUTINE_POLL_SECONDS` (default 5).
 
 1. **Due.** For each unpaused routine whose `next_run_at` has passed, the
    latest occurrence that is due is found. If it is no more than
-   `catch_up_minutes` late it is queued; otherwise a `missed` run is recorded
-   for it. Earlier occurrences that were also missed (the app was not running)
+   `catch_up_minutes` (plus two minutes of scheduling slack) late it is
+   queued; otherwise a `missed` run is recorded for it. Earlier occurrences that were also missed (the app was not running)
    are recorded once, as one `missed` run that says how many. `next_run_at`
    then moves to the first occurrence after now: missed work is never
    replayed one by one.
@@ -141,7 +141,9 @@ backend also answers `POST /hooks/{id}` itself, for local callers.
 
 Routine events create rows in an in-app notification feed
 (`GET /notifications`, unread count, mark read): a run that needs input,
-failed, was missed, skipped or interrupted, and a run that completed. The chat
+failed, was missed or interrupted, and a run that completed. A skipped
+occurrence is only recorded in the run history, so a long run of a frequent
+routine does not flood the feed. The chat
 header shows a bell with the unread count. When `TELEGRAM_BOT_TOKEN` and
 `ROUTINE_TELEGRAM_CHAT_ID` are set, the same messages are also sent to that
 Telegram chat.

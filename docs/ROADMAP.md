@@ -32,7 +32,7 @@ Beta gate: access restricted to the local owner, streaming local Claude, working
 
 ## Sprint 2 — everyday usefulness (`v0.2.0`)
 
-Thread search, agent topic notes and automatic note upkeep (single-file agent notes exist, see F06), scheduled agent routines, run history and notifications, per-agent MCP servers, an additional connector, SKILL.md import, agent templates (an agent can already be exported and imported as one file). Quota-aware engine fallback, model prices/context windows, multiple endpoint instances and richer non-Claude capabilities remain planned.
+Thread search, agent topic notes and automatic note upkeep (single-file agent notes exist, see F06), per-agent MCP servers, an additional connector, SKILL.md import, agent templates (an agent can already be exported and imported as one file). Scheduled agent routines with run history and in-app notifications are implemented (see [ROUTINES.md](ROUTINES.md)); still planned for them: webhook delivery de-duplication, automatic retry of failed runs, keeping a sleeping computer awake for a due routine, and desktop notifications. Quota-aware engine fallback, model prices/context windows, multiple endpoint instances and richer non-Claude capabilities remain planned.
 
 ## Sprint 3 and beyond
 

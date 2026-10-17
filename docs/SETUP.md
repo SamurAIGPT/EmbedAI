@@ -168,6 +168,26 @@ After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` and the desk
 
 After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` does). It adds the `agent.memory_enabled` column (on for existing agents) and changes nothing else.
 
+## Routines
+
+A routine runs a prompt as a new conversation of one of your named agents on a schedule, by webhook, or when you press **Run now** (Chat page → **Routines**). It needs the same setup as the [Chat page](#the-chat-page) (`LOCAL_EXECUTION_ENABLED=true` and a ready engine) and no Boat key. The backend must be running: the scheduler is a background loop in it, so a stopped backend or a sleeping computer runs nothing, and occurrences it misses follow the catch-up rule. Full behaviour, states and API: [ROUTINES.md](ROUTINES.md).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ROUTINE_POLL_SECONDS` | `5` | How often the scheduler looks for due occurrences, waiting approvals, run limits and finished runs. |
+| `ROUTINE_WEBHOOK_MAX_BYTES` | `65536` | Largest webhook body accepted (larger is 413). |
+| `ROUTINE_TELEGRAM_CHAT_ID` | empty | With `TELEGRAM_BOT_TOKEN`, routine notifications are also sent to this chat. Empty: in-app notifications only. |
+
+**Approvals.** A routine run never approves by itself. It uses the stricter of the routine's approval mode and its agent's; when it needs you it shows the usual card in its conversation, the run shows **Needs your approval**, and the bell gets a notification. If nobody answers within the routine's approval wait the request is denied.
+
+**Webhooks.** **Add webhook** shows a URL and a secret once (only a hash is stored; **New webhook secret** replaces it). Call it with `Authorization: Bearer <secret>`. The main backend answers `POST /hooks/{id}` for callers on this machine. To receive webhooks from elsewhere, run the hooks-only ingress and put a tunnel in front of that port only:
+
+```
+cd backend && uv run uvicorn app.ingress:app --host 127.0.0.1 --port 8788
+```
+
+After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` and the desktop app do). It adds the `routine`, `routine_run` and `notification` tables and changes nothing else.
+
 ## Durable threads (experimental)
 
 Conversations that survive a page refresh and a backend restart, where each message continues the same Claude session. The [Chat page](#the-chat-page) is its interface; the older Local Claude card on the home page still runs one prompt at a time. It is local access only and needs the same setup as [local Claude](#local-claude-experimental) (`LOCAL_EXECUTION_ENABLED=true`, the `claude` CLI signed in). Tools and approvals follow `LOCAL_TOOLS_ENABLED` exactly as described under [Tools and approvals](#tools-and-approvals-local-claude).

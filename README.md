@@ -36,7 +36,8 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 - Connect Claude through its OAuth login flow and optionally connect a user's GitHub account.
 - Ask for approval before risky actions such as file writes, shell commands, and Git pushes.
 - Continue completed tasks in the same Claude conversation from the web UI.
-- Schedule recurring prompts and receive run results in Telegram.
+- Schedule recurring prompts and receive run results in Telegram (Boat sandboxes).
+- Run routines on your local agents (no Boat): cron, weekday, interval or one-off schedules with timezones, webhook triggers, run history, missed-run tracking, restart recovery and an in-app notification feed (see [docs/ROUTINES.md](docs/ROUTINES.md)).
 - Keep durable local conversations (threads) with streaming answers, a tool-call timeline, inline approvals, Stop, and rename/archive/delete, using your own signed-in `claude` CLI (opt-in; see [Local Claude](#local-claude-experimental)).
 - Run as a desktop app from a source checkout, or from unsigned installers built by the release workflow (experimental; see [Desktop app](#desktop-app-from-source-experimental)).
 - Store user credentials encrypted and manage sandbox, task, permission, thread, and schedule records in PostgreSQL (default) or SQLite (experimental, no Docker).
@@ -374,14 +375,15 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
 - The `git` command classifier only covers the verbs it explicitly knows
   about (see `github_classifier.py`); an unrecognized verb defaults to the
   safer "mutation" bucket rather than being assumed read-only.
-- Schedules poll on a 30s interval, so a run can start up to ~30s after its
-  exact due time.
-- A schedule missed by more than 15 minutes (e.g. the API was down) is
-  skipped rather than run late; the schedule's `last_error` records that it
-  happened.
-- Scheduled-run notifications only reach Telegram-linked users (a numeric
-  `user_id`) and only if `TELEGRAM_BOT_TOKEN` is set — a web-only guest has
-  no chat to message and only sees outcomes in the UI's schedules list.
+- Boat schedules (`/schedules`, Telegram `/schedule`) poll on a 30s
+  interval, skip an occurrence missed by more than 15 minutes (recorded in
+  `last_error`), and notify only Telegram-linked users (a numeric `user_id`)
+  when `TELEGRAM_BOT_TOKEN` is set. Local routines
+  ([docs/ROUTINES.md](docs/ROUTINES.md)) do not need Boat: they poll every
+  5s, record missed and skipped occurrences, notify in the app (and
+  optionally one Telegram chat via `ROUTINE_TELEGRAM_CHAT_ID`), but only run
+  while the backend is running, do not retry failed or interrupted runs, and
+  do not de-duplicate webhook deliveries.
 - Durable threads (`/api/v1/threads`) and the Chat page are tested on SQLite only, and store transcripts (including
   what Claude read, wrote and ran) in the database. A conversation can be deleted
   from there (not a secure erase), but the Claude CLI's own copy in your `.claude`

@@ -25,6 +25,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F08 | Browse/download agent workspace files | Planned |
 | F09 | First-run onboarding and local storage (experimental SQLite and a desktop app from a source checkout exist; database-backed desktop settings and native workspace selection exist; conversations pin their workspace; first-run onboarding remains) | In progress |
 | F10 | Installable beta, CI and documentation | Planned |
+| F11 | Agent computers: an isolated Docker container per agent, tools only through an approval-gated MCP server (see [COMPUTERS.md](COMPUTERS.md)) | Implemented (experimental): lifecycle, limits, network none/default, idle stop, orphan cleanup, Computer panel; egress allowlist, SSH server and desktop computers planned |
 
 Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
 
@@ -34,7 +35,7 @@ Permission modes, thread search, agent topic notes and automatic note upkeep (si
 
 ## Sprint 3 and beyond
 
-Usage and audit log, attachments and diffs, Docker computer provider and lifecycle, computer preview/takeover, a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
+Usage and audit log, attachments and diffs, computer egress allowlist, bring-your-own server over SSH and desktop computers with preview/takeover (the Docker computer provider exists, see F11), a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
 
 Out of scope until explicitly approved: multi-tenant paid hosting, hosting third-party subscription credentials, enterprise roles/billing.
 

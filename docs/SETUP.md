@@ -122,6 +122,19 @@ Open `/chat` (the "Open chat" link on the home page). It needs the same setup as
 - **Not yet:** search.
 - **Where it is stored.** Conversations, including what Claude read, wrote and ran, are in the database, as described under [Durable threads](#durable-threads-experimental); the page itself keeps nothing in the browser.
 
+## Agent computers (experimental)
+
+An agent can run its commands and file edits in its own Docker container instead of on this machine. Full design: [COMPUTERS.md](COMPUTERS.md).
+
+1. **Docker.** Install Docker (Docker Desktop, Colima or Docker Engine) and start it. `docker info` must answer; the Computer panel and `GET /api/v1/computers/health` say why when it does not. Open Dots finds `docker` on `PATH` and in the usual install folders; set `OPEN_DOTS_DOCKER` to its full path otherwise.
+2. **Give the agent a computer.** Agents panel → **Computer** → choose **No network** (the default) or **Internet**, then **Give it a computer**. This only records the choice.
+3. **Get the image.** **Download image** pulls the pinned default (`python:3.12-slim-bookworm`, about 45 MB). Nothing is ever downloaded without this step. To use an image you already have, put its reference in **Image** first (a `name@sha256:…` digest pins it); see [choosing another image](COMPUTERS.md#the-default-image-and-choosing-another).
+4. **Start** (or just send a message: a turn starts a stopped computer and makes a missing one from a local image, unless **Start when a turn needs it** is off).
+
+What changes for that agent: the host's tools are off in its turns; it uses the computer's `exec`, `read_file`, `write_file` and `list_files`, with its workspace folder at `/workspace`. Every call still asks you (reads are allowed without a card; Accept edits also lets writes through; Plan only refuses writes and commands), saved command rules apply to `exec` too, and the cards carry a "computer" badge. Settings: CPUs, memory, processes and idle minutes apply at once; image and network apply after **Recreate**, which keeps the workspace folder and loses everything else inside the container. **Remove computer** removes the container (never the folder) and the agent goes back to working on this machine; removing the agent removes its computer. If Docker is not running, the agent's turns fail with a clear message instead of running on this machine.
+
+After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` and the desktop app do). It adds the `computer` table and changes nothing else.
+
 ## Agent notes and agent files
 
 **Notes.** Every named agent keeps notes between conversations in one Markdown file, `MEMORY.md`, in its own folder: `agents/<id>` under `LOCAL_WORKSPACE_ROOT` (default `~/.open-dots/local/workspace/agents/<id>/MEMORY.md`). The file stays there even when the agent works in a project folder, so a project never gets an agent's notes in it. When a conversation starts, the first 200 lines, then at most 24 KB of those, are added to the agent's system prompt after its instructions (later changes to the file reach conversations started after them; the Claude CLI keeps a session's system prompt when it resumes it); anything past that does not load, and the agent is told the file was cut. The agent is told where the file is and asked to keep it short and current; when the file is inside its workspace it can edit it with its file tools, which ask for approval like any other write. The notes are given to it as background that never grants permission for anything.

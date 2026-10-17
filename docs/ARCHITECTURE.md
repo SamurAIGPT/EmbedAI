@@ -48,7 +48,7 @@ Web UI (desktop wrapper later)      Telegram (optional)
             |
      Agent workspace (restricted)
             |
-     ComputerProvider (later: host / Docker / remote)
+     ComputerProvider (Docker today, see COMPUTERS.md; later: SSH server / desktop)
 ```
 
 ### Vocabulary
@@ -71,4 +71,4 @@ Web UI (desktop wrapper later)      Telegram (optional)
 7. Storage migrations are additive. Existing task, schedule and credential data is preserved.
 8. Host CLI execution runs natively on loopback. Containers cannot see host CLI logins automatically, so Docker isolation is a separate, later feature.
 
-This section describes intent, not shipped behavior. Durable threads (F04) already follow rules 2, 5 and 6 and never replay an interrupted turn: events are stored before they are announced and a stream resumes from `Last-Event-ID`, approvals are stored and checked against the running turn, and a thread has at most one running turn. The older Local Claude card still streams from memory only. Stop and resume (F05), named agents (F06), a second provider and a computer provider are not built yet.
+This section describes intent, not shipped behavior. Durable threads (F04) already follow rules 2, 5 and 6 and never replay an interrupted turn: events are stored before they are announced and a stream resumes from `Last-Event-ID`, approvals are stored and checked against the running turn, and a thread has at most one running turn. The older Local Claude card still streams from memory only. Stop and resume (F05), named agents (F06), a second provider is not built yet. A Docker computer provider exists (experimental, [COMPUTERS.md](COMPUTERS.md)): an agent with a computer runs its tools in its own container through an approval-gated MCP server.

@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     THREAD_HEARTBEAT_SECONDS: int = 10
     THREAD_LEASE_SECONDS: int = 60
 
+    # Routines (docs/ROUTINES.md): how often the scheduler looks for due and
+    # finished runs, the largest webhook body accepted, and an optional
+    # Telegram chat that also gets routine notifications (needs
+    # TELEGRAM_BOT_TOKEN; empty means in-app notifications only).
+    ROUTINE_POLL_SECONDS: float = 5.0
+    ROUTINE_WEBHOOK_MAX_BYTES: int = 65_536
+    ROUTINE_TELEGRAM_CHAT_ID: str = ""
+
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 
     @classmethod

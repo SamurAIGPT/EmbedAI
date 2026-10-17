@@ -22,6 +22,7 @@ F04_TABLES = {"thread", "turn", "event", "approval"}
 SETTINGS_TABLES = {"app_setting", "setting_audit"}
 AGENT_TABLES = {"agent"}
 COMPUTER_TABLES = {"computer"}
+AUTH_TABLES = {"auth_owner", "auth_session", "auth_pairing_code"}
 
 
 def postgres_ddl(table_names: set[str]) -> str:
@@ -53,7 +54,7 @@ def test_thread_tables_compile_to_their_reviewed_postgres_schema():
 
 
 def test_every_table_is_covered_by_one_of_the_snapshots():
-    assert original_tables() | F04_TABLES | SETTINGS_TABLES | AGENT_TABLES | COMPUTER_TABLES == set(Base.metadata.tables)
+    assert original_tables() | F04_TABLES | SETTINGS_TABLES | AGENT_TABLES | COMPUTER_TABLES | AUTH_TABLES == set(Base.metadata.tables)
     assert not original_tables() & F04_TABLES
 
 
@@ -67,3 +68,7 @@ def test_agent_table_compiles_to_its_reviewed_postgres_schema():
 
 def test_computer_table_compiles_to_its_reviewed_postgres_schema():
     assert postgres_ddl(COMPUTER_TABLES) == snapshot_text(HERE / "postgres_schema_computers.sql")
+
+
+def test_auth_tables_compile_to_their_reviewed_postgres_schema():
+    assert postgres_ddl(AUTH_TABLES) == snapshot_text(HERE / "postgres_schema_auth.sql")

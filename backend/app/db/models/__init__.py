@@ -12,6 +12,7 @@ from app.db.models.event import Event
 from app.db.models.approval import Approval
 from app.db.models.app_setting import AppSetting, SettingAudit
 from app.db.models.computer import Computer
+from app.db.models.auth import AuthSession, OwnerAccount, PairingCode
 
 __all__ = [
     "UserSandbox",
@@ -29,4 +30,7 @@ __all__ = [
     "AppSetting",
     "SettingAudit",
     "Computer",
+    "OwnerAccount",
+    "AuthSession",
+    "PairingCode",
 ]

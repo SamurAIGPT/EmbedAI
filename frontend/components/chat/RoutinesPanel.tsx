@@ -163,7 +163,7 @@ function ScheduleFields({ value, onChange }: { value: ScheduleDraft; onChange: (
   );
 }
 
-function RunHistory({ routine, onClose }: { routine: Routine; onClose: () => void }) {
+function RunHistory({ routine, onClose, onOpen }: { routine: Routine; onClose: () => void; onOpen: () => void }) {
   const [runs, setRuns] = useState<RoutineRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -186,7 +186,7 @@ function RunHistory({ routine, onClose }: { routine: Routine; onClose: () => voi
                 <State state={run.state} />
                 <span className="text-xs text-zinc-500">{triggerLabel(run.trigger)} · {formatWhen(run.scheduled_for ?? run.created_at, routine.timezone)}</span>
                 {run.thread_id !== null && (
-                  <Link href={`/chat?thread=${run.thread_id}`} className="ml-auto text-xs underline">Open conversation</Link>
+                  <Link href={`/chat?thread=${run.thread_id}`} onClick={onOpen} className="ml-auto text-xs underline">Open conversation</Link>
                 )}
               </div>
               {(run.error || run.result) && (
@@ -257,7 +257,7 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
           {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
           {history ? (
-            <RunHistory routine={history} onClose={() => setHistory(null)} />
+            <RunHistory routine={history} onClose={() => setHistory(null)} onOpen={onClose} />
           ) : draft ? (
             <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void save(); }}>
               <label className="block text-xs text-zinc-500">Name
@@ -318,14 +318,14 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                           {routine.paused && <span className="rounded bg-zinc-200 px-1.5 text-xs dark:bg-zinc-800">paused</span>}
                           {routine.webhook_enabled && <span className="rounded bg-zinc-200 px-1.5 text-xs dark:bg-zinc-800">webhook</span>}
                         </div>
-                        <p className="text-xs text-zinc-500">{routine.summary} · {nextRunText(routine)}</p>
+                        <p className="text-xs text-zinc-500">{routine.schedule_kind === "manual" ? routine.summary : `${routine.summary} · ${nextRunText(routine)}`}</p>
                         {routine.paused_reason && <p className="text-xs text-amber-700 dark:text-amber-400">{routine.paused_reason}</p>}
                         {routine.latest_run && (
                           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                             <span className="text-zinc-500">Latest:</span>
                             <State state={routine.latest_run.state} />
                             <span className="text-zinc-500">{formatWhen(routine.latest_run.scheduled_for ?? routine.latest_run.created_at, routine.timezone)}</span>
-                            {routine.latest_run.thread_id !== null && <Link href={`/chat?thread=${routine.latest_run.thread_id}`} className="underline">Open conversation</Link>}
+                            {routine.latest_run.thread_id !== null && <Link href={`/chat?thread=${routine.latest_run.thread_id}`} onClick={onClose} className="underline">Open conversation</Link>}
                           </p>
                         )}
                         {secret?.routineId === routine.id && (

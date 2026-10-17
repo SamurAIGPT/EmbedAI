@@ -517,6 +517,10 @@ class RoutineScheduler:
         self.clock = clock
         self._lock = asyncio.Lock()
         self._kicked: asyncio.Task | None = None
+        # False in a backend that stands by while another one on the same
+        # PostgreSQL database runs routines (app/core/scheduler_lock.py): a
+        # Run now or a webhook there only queues, and the holder starts it.
+        self.enabled = True
 
     @property
     def runtime(self) -> runtime_module.ThreadRuntime:
@@ -531,6 +535,8 @@ class RoutineScheduler:
 
     def kick(self) -> None:
         """Start a pass soon (after a Run now or webhook), without waiting."""
+        if not self.enabled:
+            return
         if self._kicked is None or self._kicked.done():
             self._kicked = asyncio.get_running_loop().create_task(self._kick())
 
@@ -587,7 +593,13 @@ class RoutineScheduler:
                 )
             ).all()
             changed = []
+            live = await self._turns_still_alive(db, [run.turn_id for run, _ in rows if run.turn_id], now)
             for run, routine in rows:
+                if run.turn_id in live:
+                    # PostgreSQL only: the scheduler changed hands while this
+                    # run's turn is still heartbeating somewhere. Following it
+                    # settles the run when the turn ends.
+                    continue
                 if run.state in ("running", "needs_input"):
                     self._close_wait(run, now)
                     run.state, run.error, run.finished_at = "interrupted", INTERRUPTED_MESSAGE, now
@@ -609,6 +621,23 @@ class RoutineScheduler:
             logger.warning("routine runs settled at startup", run_ids=changed)
         await self._deliver(staged)
         return changed
+
+    async def _turns_still_alive(self, db, turn_ids: list[int], now: datetime) -> set[int]:
+        """Turns among `turn_ids` still running with a fresh heartbeat (in
+        another backend, or in this one after it lost and retook the lock).
+        Always empty on SQLite, where the file lease means a running turn at
+        recovery belongs to a process that is gone."""
+        if settings.DATABASE_KIND != "postgres" or not turn_ids:
+            return set()
+        fresh = now - timedelta(seconds=settings.THREAD_LEASE_SECONDS)
+        rows = await db.execute(
+            select(Turn.id).where(
+                Turn.id.in_(turn_ids),
+                Turn.status == "running",
+                Turn.heartbeat_at >= fresh,
+            )
+        )
+        return set(rows.scalars().all())
 
     async def shutdown(self, timeout: float = 10.0) -> None:
         """This process is stopping and its turns were just interrupted:

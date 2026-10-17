@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
-from app.core import app_settings, data_lease, shutdown
+from app.core import app_settings, data_lease, scheduler_lock, shutdown
 from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.auth.middleware import AuthMiddleware
@@ -62,13 +62,13 @@ async def _serving(app: FastAPI):
             # the resolver then serves the profile defaults.
             logger.exception("could not load saved settings; using defaults")
     logger.info(f"Database in use: {settings.DATABASE_DESCRIPTION}")
-    # Runs the previous process left running become interrupted before the
-    # scheduler's first pass, so none of them is ever started again.
-    try:
-        await routine_service.scheduler.recover()
-    except Exception:  # noqa: BLE001
-        logger.exception("could not settle routine runs left by the previous process")
-    app.state.routines_run_here = True
+    # One routine scheduler per database: on PostgreSQL only the backend that
+    # holds the advisory lock runs it; the others stand by and take over when
+    # it stops (app/core/scheduler_lock.py). SQLite's file lease already
+    # means one backend.
+    guard = scheduler_lock.SchedulerLock(settings.DATABASE_KIND)
+    routines = _GuardedRoutines(app, guard)
+    await routines.ensure()
     jobs = [
         asyncio.create_task(
             run_every(BACKGROUND_INTERVAL_SECONDS, schedule_service.poll_due_schedules)
@@ -85,7 +85,7 @@ async def _serving(app: FastAPI):
         # Docker answers, stop idle ones. Does nothing while Docker is down.
         asyncio.create_task(run_every(BACKGROUND_INTERVAL_SECONDS, thread_runtime.computers.upkeep)),
         # Local routines: due occurrences, starts, approvals, run limits, endings.
-        asyncio.create_task(run_every(settings.ROUTINE_POLL_SECONDS, routine_service.scheduler.tick)),
+        asyncio.create_task(run_every(settings.ROUTINE_POLL_SECONDS, routines.tick)),
     ]
     yield
     # Stopping (SIGTERM, Ctrl+C, the desktop launcher going away). First the
@@ -98,8 +98,43 @@ async def _serving(app: FastAPI):
     # leaving them for the lease to expire.
     await thread_runtime.shutdown()
     # Routine runs whose turns were just interrupted end interrupted now, with
-    # their notification, instead of at the next start.
-    await routine_service.scheduler.shutdown()
+    # their notification, instead of at the next start. Only the scheduler's
+    # holder settles runs; then it lets another backend take over.
+    if guard.held:
+        await routine_service.scheduler.shutdown()
+    await guard.release()
+
+
+class _GuardedRoutines:
+    """Runs the routine scheduler only while this process holds the scheduler
+    lock. The first time it gets the lock (at startup, or on taking over from a
+    backend that stopped) it first settles the runs the previous holder left
+    running, so none of them is ever started again."""
+
+    def __init__(self, app: FastAPI, guard: scheduler_lock.SchedulerLock) -> None:
+        self.app = app
+        self.guard = guard
+        self.recovered = False
+
+    async def ensure(self) -> bool:
+        held = await self.guard.ensure()
+        if held and not self.recovered:
+            self.recovered = True
+            try:
+                await routine_service.scheduler.recover()
+            except Exception:  # noqa: BLE001
+                logger.exception("could not settle routine runs left by the previous process")
+        elif not held:
+            # Recover again when the lock comes back: runs may have been left
+            # by the backend that held it meanwhile.
+            self.recovered = False
+        routine_service.scheduler.enabled = held
+        self.app.state.routines_run_here = held
+        return held
+
+    async def tick(self) -> None:
+        if await self.ensure():
+            await routine_service.scheduler.tick()
 
 
 app = FastAPI(lifespan=lifespan)

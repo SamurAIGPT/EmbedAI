@@ -67,13 +67,17 @@ def _column_default(name, family, default):
     text = _normal_default(default)
     if family == "boolean" and text is not None:
         return _BOOLEAN_DEFAULT.get(text, text)
+    # An integer default: PostgreSQL folds '1000'::integer to 1000 (a bigint
+    # keeps its quotes and cast); SQLite keeps the quoted literal it was given.
+    if family == "integer" and text is not None and re.fullmatch(r"'-?\d+'", text):
+        return text.strip("'")
     return text
 
 
 def comparable(description: dict) -> dict:
     """The parts of a schema that must be the same on PostgreSQL and SQLite,
     with the known dialect differences smoothed out: integer and datetime
-    type names, now() versus CURRENT_TIMESTAMP, casts on string defaults, true/false versus 1/0 boolean defaults, identity columns (PostgreSQL)
+    type names, now() versus CURRENT_TIMESTAMP, casts on string defaults, quoted versus bare integer defaults, true/false versus 1/0 boolean defaults, identity columns (PostgreSQL)
     versus integer primary keys (SQLite), and constraint names the database
     generated itself."""
     result = {}

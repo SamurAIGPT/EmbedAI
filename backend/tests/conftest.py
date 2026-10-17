@@ -101,6 +101,14 @@ def attachments_dir(monkeypatch, tmp_path):
     return folder
 
 
+@pytest.fixture(autouse=True)
+def engine_process_dir(monkeypatch, tmp_path):
+    """Engine processes are recorded under a data folder; never the real one."""
+    folder = tmp_path / "engine-processes"
+    monkeypatch.setattr(settings, "ENGINE_PROCESS_DIR", str(folder))
+    return folder
+
+
 @pytest.fixture
 def user_id() -> str:
     return "test-user-1"

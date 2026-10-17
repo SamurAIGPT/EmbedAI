@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Folder for files attached to messages. Empty means ~/.open-dots/attachments.
     # The desktop app uses its data folder.
     ATTACHMENTS_DIR: str = ""
+    # Folder where the backend records the engine processes it starts, so the
+    # next start can end any a hard kill left running (docs/RELIABILITY.md).
+    # Empty means an `engine-processes` folder next to the SQLite file (by
+    # default ~/.open-dots/engine-processes, also on PostgreSQL).
+    ENGINE_PROCESS_DIR: str = ""
     # Decision log months older than this many days are deleted (1 to 3650).
     DECISION_LOG_RETENTION_DAYS: int = 180
 

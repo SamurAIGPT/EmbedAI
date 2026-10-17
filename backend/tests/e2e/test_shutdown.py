@@ -3,6 +3,7 @@ routine runs in flight end interrupted, engine processes and their children
 are gone, nothing is orphaned, and a restart picks up cleanly."""
 
 import signal
+import subprocess
 import sys
 import threading
 
@@ -131,12 +132,21 @@ def test_sigkill_leaves_the_turn_for_the_next_start_to_interrupt(backend):
     b.signal(signal.SIGKILL)
     b.wait_exit(timeout=10)
     # The engine runs in its own session, so a hard kill of the backend leaves
-    # it running until it ends by itself: kill it as the operating system's
-    # service manager would (documented in docs/RELIABILITY.md).
-    if alive(engine["pid"]):
-        import os
-        os.kill(engine["pid"], signal.SIGKILL)
-    b.start(migrate=False)
+    # it running; the next start ends it (app/core/engine_processes.py) and
+    # nothing that is not verifiably the dead backend's.
+    assert alive(engine["pid"])
+    bystander = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(120)", "claude", "fake_claude_cli.py"],
+        start_new_session=True,
+    )
+    try:
+        b.start(migrate=False)
+        wait_for(lambda: not alive(engine["pid"]), 15, what="the orphaned engine to be ended")
+        assert "ended engine processes a previous backend left running" in b.log()
+        assert alive(bystander.pid)
+    finally:
+        bystander.kill()
+        bystander.wait(timeout=10)
     wait_for(lambda: b.query("SELECT status FROM turn WHERE id = ?", turn_id)[0][0] == "interrupted",
              timeout=40, what="the stale turn to be interrupted")
     error_code = b.query("SELECT error_code FROM turn WHERE id = ?", turn_id)[0][0]

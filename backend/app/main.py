@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
-from app.core import app_settings, data_lease, scheduler_lock, shutdown
+from app.core import app_settings, data_lease, engine_processes, scheduler_lock, shutdown
 from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.auth.middleware import AuthMiddleware
@@ -62,6 +62,10 @@ async def _serving(app: FastAPI):
             # the resolver then serves the profile defaults.
             logger.exception("could not load saved settings; using defaults")
     logger.info(f"Database in use: {settings.DATABASE_DESCRIPTION}")
+    # Engine processes a hard kill of an earlier backend left running (they
+    # run in sessions of their own) are ended now; only ones verifiably ours
+    # (app/core/engine_processes.py).
+    await asyncio.to_thread(engine_processes.sweep)
     # One routine scheduler per database: on PostgreSQL only the backend that
     # holds the advisory lock runs it; the others stand by and take over when
     # it stops (app/core/scheduler_lock.py). SQLite's file lease already

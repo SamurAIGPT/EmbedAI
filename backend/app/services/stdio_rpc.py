@@ -12,12 +12,20 @@ import asyncio
 import json
 import sys
 
+from app.core import engine_processes
 from app.services.cli_probe import kill_group
 from app.services.local_claude_runner import child_env
 
 STDERR_TAIL_BYTES = 4000
 # One line can carry a whole command's output.
 LINE_LIMIT_BYTES = 16 * 1024 * 1024
+
+
+async def _forget_when_done(proc: asyncio.subprocess.Process) -> None:
+    try:
+        await proc.wait()
+    finally:
+        engine_processes.forget(proc.pid)
 
 
 class RpcError(Exception):
@@ -58,7 +66,12 @@ class StdioRpc:
             start_new_session=sys.platform != "win32",
             limit=LINE_LIMIT_BYTES,
         )
-        return cls(proc, max_bytes=max_bytes)
+        # Recorded until it ends, so a hard kill of the backend leaves nothing
+        # the next start cannot find (app/core/engine_processes.py).
+        await asyncio.to_thread(engine_processes.record, proc.pid, args[0])
+        rpc = cls(proc, max_bytes=max_bytes)
+        rpc._forget = asyncio.create_task(_forget_when_done(proc))
+        return rpc
 
     @property
     def closed(self) -> bool:

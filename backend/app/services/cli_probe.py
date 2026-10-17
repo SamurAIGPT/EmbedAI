@@ -14,6 +14,7 @@ import signal
 import sys
 from dataclasses import dataclass
 
+from app.core import engine_processes
 from app.services.local_claude_runner import child_env
 
 MAX_PROBE_OUTPUT_BYTES = 64_000
@@ -62,6 +63,14 @@ async def run(args: list[str], *, timeout: float, cwd: str | None = None) -> Pro
         )
     except (OSError, ValueError) as exc:
         return ProbeRun(None, "", "", failed_to_start=exc.__class__.__name__)
+    await asyncio.to_thread(engine_processes.record, proc.pid, args[0])
+    try:
+        return await _finish_probe(proc, timeout)
+    finally:
+        engine_processes.forget(proc.pid)
+
+
+async def _finish_probe(proc: asyncio.subprocess.Process, timeout: float) -> ProbeRun:
 
     async def read(stream) -> bytes:
         data = b""

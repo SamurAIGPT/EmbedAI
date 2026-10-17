@@ -25,7 +25,7 @@ from pathlib import Path
 
 from fastapi.concurrency import run_in_threadpool
 
-from app.core import app_settings
+from app.core import app_settings, engine_processes
 from app.desktop import profile
 from app.services.approval_modes import cli_permission_mode
 
@@ -267,7 +267,9 @@ def _child_env() -> dict[str, str]:
     # outside the workspace and without asking. Not for runs this app starts;
     # the user's own use of the CLI is unaffected (only this process sees it).
     env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
-    return env
+    # Names this backend, so the next start can end what a hard kill left
+    # running (app/core/engine_processes.py).
+    return engine_processes.mark(env)
 
 
 def child_env() -> dict[str, str]:
@@ -334,6 +336,7 @@ def run_blocking(
         env=_child_env(),
         **popen_kwargs,
     )
+    engine_processes.record(proc.pid, args[0])
 
     state = {"timed_out": False, "truncated": False}
     stdout_chunks: list[bytes] = []
@@ -429,6 +432,7 @@ def run_blocking(
             reader.join(timeout=5)
         if proc.poll() is None:
             _kill_tree(proc)
+        engine_processes.forget(proc.pid)
 
     return RunOutput(
         stdout=b"".join(stdout_chunks).decode("utf-8", errors="replace"),

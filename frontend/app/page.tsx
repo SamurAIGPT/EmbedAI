@@ -25,6 +25,8 @@ export default function Home() {
   const [backendProblem, setBackendProblem] = useState<string | null>(null);
 
   useEffect(() => {
+    // Read after mount so the static export and the first client render match.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUserId(localStorage.getItem(STORAGE_KEY));
     setLoaded(true);
   }, []);

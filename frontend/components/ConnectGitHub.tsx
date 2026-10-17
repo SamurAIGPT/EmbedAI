@@ -18,6 +18,8 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
     let cancelled = false;
 
     if (!boxId) {
+      // No sandbox to ask about: nothing is being checked.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChecking(false);
       return;
     }

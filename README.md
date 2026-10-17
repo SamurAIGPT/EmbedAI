@@ -159,10 +159,11 @@ The Telegram bot walks a user through:
 
 The web UI covers the same ground from a browser:
 
-1. **Get started** — either continue as a guest (a local id, no Telegram
-   needed) or link Telegram: the page generates a one-time code, you send
-   `/link <code>` to the bot, and that links the browser to your real
-   Telegram user id instead.
+1. **Get started** — either continue as a guest (an id the server makes, no
+   Telegram needed) or link Telegram: the page generates a one-time code, you
+   send `/link <code>` to the bot, and the server links your signed-in session
+   to your real Telegram user id instead. (Sign in first: the web UI asks for
+   the owner passphrase, see [docs/AUTH.md](docs/AUTH.md).)
 2. **Connect Claude** — same OAuth flow as `/connect`, driven by REST
    endpoints instead of chat messages (get-or-create the sandbox, start
    login, paste the code back into the page).
@@ -197,7 +198,8 @@ In Telegram:
    must be running for it to actually fire — see [Scheduling
    tasks](#scheduling-tasks).
 
-In the web UI (`http://localhost:3000`):
+In the web UI (`http://localhost:3000`), after setting the owner passphrase
+on first start (or signing in):
 
 1. **Get started** — click "Continue without Telegram" for a standalone
    guest session, or "Link Telegram instead" and send `/link <code>` to the
@@ -352,10 +354,12 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   testing will accumulate them on the Boat account.
 - Link codes expire after 10 minutes; there's no rate limiting on generating
   them.
-- The web UI has no real authentication — a browser's identity is whatever
-  id (guest or Telegram) it last linked, persisted in `localStorage`. This
-  also means the permission engine's accumulated rules are only as safe as
-  that identity.
+- Authentication is single-owner: one passphrase per install, plus devices
+  paired with one-time codes ([docs/AUTH.md](docs/AUTH.md)). There are no
+  separate user accounts; every signed-in browser or paired device acts as the
+  owner (a `chat` device only within conversations), and the `user_id` older
+  routes take is not checked against the session. Sign-in lockouts are kept in
+  memory per process. Use HTTPS beyond a trusted private network.
 - Automated tests cover the permission engine and git classifier, schedules,
   local Claude (runner, stream, approvals, access policy), threads (store,
   runtime, stream, API), settings, the SQLite and PostgreSQL schemas and

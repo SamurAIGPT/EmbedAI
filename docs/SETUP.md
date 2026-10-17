@@ -8,6 +8,24 @@ The authoritative quick start is the [README](../README.md#quick-start). Summary
 
 Component-specific details: [backend/README.md](../backend/README.md), [frontend/README.md](../frontend/README.md).
 
+## Signing in and pairing devices
+
+Outside the desktop app every request needs a sign-in. Full design and tradeoffs: [AUTH.md](AUTH.md).
+
+1. Run `alembic upgrade head` (`scripts/dev.sh` does).
+2. **First start:** open the web UI on the machine that runs the backend; it asks you to set the owner passphrase (at least 10 characters). From any other machine the page tells you to run, on the server:
+
+   ```sh
+   cd backend && uv run python -m app.auth.cli set-passphrase
+   ```
+
+   The same command replaces a forgotten passphrase (every browser is then signed out).
+3. **Pair a phone or another browser:** **Settings → Devices → Create pairing code**, choose *Chat only* or *Full access*, then scan the QR code or open `/pair` on the other device and type the code (5 minutes, single use). Revoke a device from the same list. From the shell: `uv run python -m app.auth.cli pairing-code [--scope chat]`, `devices`, `revoke ID`.
+4. **Scripts:** pair them (`POST /api/v1/auth/pair` with `{"code": "…"}` returns a token once) and send `Authorization: Bearer <token>`.
+5. **An older browser** that kept its guest or Telegram id in `localStorage` hands it to the server after the first sign-in and forgets it; your tasks and schedules stay yours.
+
+Settings: `TRUSTED_HOSTS` (default `localhost,127.0.0.1,[::1]`; add your public host name when self-hosting), `LOOPBACK_TRUST` (`off` by default; `programs` lets scripts on this machine skip sign-in, `all` also local browsers, development only), `FRONTEND_ORIGINS` (also the origins allowed to send cookie requests). Self-hosting: put HTTPS in front, serve the web UI and the API from the same site, and see the checklist in [AUTH.md](AUTH.md#self-hosting-checklist).
+
 ## Database
 
 **PostgreSQL is the default** and is what the Docker setup above starts. Nothing changes for an existing installation.
@@ -57,7 +75,7 @@ Runs Claude through the `claude` CLI already installed and signed in on the mach
 2. In `backend/.env` set `LOCAL_EXECUTION_ENABLED=true` and restart the backend. Optionally set `LOCAL_CLAUDE_CLI_PATH` to the full path of the real `claude` executable (on Windows the npm `claude.cmd` shim is resolved to the real `claude.exe` automatically) and `LOCAL_WORKSPACE_ROOT` (default `~/.open-dots/local`).
 3. Open the web UI from this machine. A "Local Claude" card appears when the CLI is ready, or explains why it is not.
 
-Who can use it: only requests that come from this machine, with a `localhost`, `127.0.0.1` or `[::1]` Host header, no proxy or tunnel headers, and a browser Origin listed in `FRONTEND_ORIGINS` (for example, opening the UI at `http://127.0.0.1:3000` requires adding that origin). Anything else, including schedules, Telegram and the older task endpoints, is refused. There is no password or token: anyone who can already run programs as you on this machine can use it. Do not enable it on a shared or publicly reachable server.
+Who can use it: requests that come from this machine, with a `localhost`, `127.0.0.1` or `[::1]` Host header, no proxy or tunnel headers, and a browser Origin listed in `FRONTEND_ORIGINS` (for example, opening the UI at `http://127.0.0.1:3000` requires adding that origin), and requests from a signed-in owner or a paired device ([Signing in](#signing-in-and-pairing-devices)). Schedules, Telegram and the older task endpoints cannot use it. Every request must also pass sign-in first, so a browser on this machine signs in too unless `LOOPBACK_TRUST` says otherwise. A paired device can run Claude on this machine: pair phones with *Chat only* and revoke a lost one at once.
 
 Settings: `LOCAL_EXECUTION_ENABLED` (default `false`), `LOCAL_TOOLS_ENABLED` (default `false`), `LOCAL_APPROVAL_TIMEOUT_SECONDS` (default 300), `LOCAL_ALLOWED_HOSTS`, `LOCAL_CLAUDE_CLI_PATH`, `LOCAL_WORKSPACE_ROOT`, `LOCAL_TASK_TIMEOUT_SECONDS` (default 300), `LOCAL_MAX_OUTPUT_BYTES` (default 1000000; the limit on the answer text, and the raw CLI stream may be up to 8 times larger).
 

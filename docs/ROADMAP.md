@@ -8,7 +8,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 
 - Ship small, tested vertical slices (backend, UI, persistence, tests, docs).
 - Keep working features (Boat sandboxes, Telegram, GitHub, schedules, permission rules) while adding the local path.
-- Security first: local-machine-only access for host execution, workspace-confined files, no silent privilege escalation.
+- Security first: the owner signs in (or pairs a device) before anything runs, workspace-confined files, no silent privilege escalation.
 
 ## Sprint 1 — core beta (`v0.1.0-beta`)
 
@@ -25,6 +25,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F08 | Browse/download agent workspace files | Planned |
 | F09 | First-run onboarding and local storage | Implemented (experimental): desktop setup for engine/model, workspace, tools and approval modes; optional starter agent, durable completion, skip/replay; SQLite and database-backed desktop settings; source `doctor` command. Source flow verified on macOS; packaged first-run and Linux verification remain |
 | F10 | Installable beta, CI and documentation | Planned |
+| F12 | Owner authentication: passphrase, session cookie with CSRF, one-time pairing codes with QR, scoped and revocable device tokens, Host/Origin allowlist, opt-in loopback trust (see [AUTH.md](AUTH.md)) | Implemented; single owner, no accounts |
 | F11 | Agent computers: an isolated Docker container per agent, tools only through an approval-gated MCP server (see [COMPUTERS.md](COMPUTERS.md)) | Implemented (experimental): lifecycle, limits, network none/default, idle stop, orphan cleanup, Computer panel; egress allowlist, SSH server and desktop computers planned |
 
 Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
@@ -41,4 +42,4 @@ Out of scope until explicitly approved: multi-tenant paid hosting, hosting third
 
 ## Known limitations today
 
-See the README's "Known limitations", notably: the web UI has no real authentication yet (F01 addresses this before any local execution is exposed).
+See the README's "Known limitations". Owner authentication and paired devices exist ([AUTH.md](AUTH.md)); still planned there: separate user accounts, passkeys or a second factor, and lockout counters shared across processes.

@@ -16,6 +16,9 @@ class Event(Base):
     __table_args__ = (
         UniqueConstraint("thread_id", "seq", name="uq_event_thread_id_seq"),
         Index("ix_event_turn_id", "turn_id"),
+        # SQLite: never reuse a deleted row's id (links and the decision log name
+        # conversations by id). PostgreSQL identity columns never reuse one anyway.
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)

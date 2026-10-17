@@ -728,6 +728,23 @@ async def test_delete_removes_the_thread_its_turns_events_and_approvals_and_noth
     assert await call(sessions, store.get_approval, other_approval.id) is not None
 
 
+async def test_a_deleted_conversations_ids_are_never_given_to_a_new_one(sessions, owner):
+    """Links (/chat?thread=N) and the decision log name a conversation by id, so
+    deleting the newest conversation must not hand its id, or the ids of its
+    turns and events, to the next one (SQLite reused them before AUTOINCREMENT)."""
+    doomed, turn, _approval = await running_turn_with_approval(sessions, owner)
+    assert await call(sessions, store.finish_turn, turn.id, turn.owner_token, status="succeeded", event_type="turn.completed")
+    old_events = [e.id for e in await events_of(sessions, doomed.id)]
+
+    await call(sessions, store.delete_thread, doomed.id)
+
+    fresh = await new_thread(sessions, owner)
+    fresh_turn = await call(sessions, store.start_turn, fresh.id, "again")
+    assert fresh.id > doomed.id
+    assert fresh_turn.id > turn.id
+    assert min(e.id for e in await events_of(sessions, fresh.id)) > max(old_events)
+
+
 async def test_delete_while_a_turn_runs_is_refused_and_deletes_nothing(sessions, owner):
     thread, turn, approval = await running_turn_with_approval(sessions, owner)
     with pytest.raises(store.ThreadBusy):

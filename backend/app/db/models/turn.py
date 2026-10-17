@@ -37,6 +37,9 @@ class Turn(Base):
         ),
         # Serves the sweep for stale turns.
         Index("ix_turn_status_heartbeat", "status", "heartbeat_at"),
+        # SQLite: never reuse a deleted row's id (links and the decision log name
+        # conversations by id). PostgreSQL identity columns never reuse one anyway.
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)

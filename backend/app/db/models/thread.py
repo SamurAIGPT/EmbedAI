@@ -31,6 +31,9 @@ class Thread(Base):
             sqlite_where=text("provider_session_id IS NOT NULL"),
             postgresql_where=text("provider_session_id IS NOT NULL"),
         ),
+        # SQLite: never reuse a deleted row's id (links and the decision log name
+        # conversations by id). PostgreSQL identity columns never reuse one anyway.
+        {"sqlite_autoincrement": True},
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)

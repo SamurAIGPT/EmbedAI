@@ -8,6 +8,8 @@ import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/a
 import { pendingApprovals } from "@/lib/transcript";
 import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
+import { NotificationBell } from "./NotificationBell";
+import { RoutinesPanel } from "./RoutinesPanel";
 import { EngineModelFields } from "./EngineModelFields";
 import { ComputerView } from "./ComputerPanel";
 import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
@@ -110,6 +112,7 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [routinesOpen, setRoutinesOpen] = useState(false);
   const [computerOpen, setComputerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   // What "Always allow this command" did, by approval id, and rules undone here.
@@ -447,6 +450,15 @@ export function ChatApp() {
           Agents
         </button>
       )}
+      {ready && agents !== null && (
+        <button
+          onClick={() => setRoutinesOpen(true)}
+          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Routines
+        </button>
+      )}
+      {ready && <NotificationBell />}
       {stream.connection === "reconnecting" && (
         <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
       )}
@@ -553,6 +565,9 @@ export function ChatApp() {
             </div>
           </div>
         </div>
+      )}
+      {routinesOpen && agents !== null && (
+        <RoutinesPanel agents={agents} onClose={() => setRoutinesOpen(false)} />
       )}
       {agentsOpen && agents !== null && (
         <AgentsPanel

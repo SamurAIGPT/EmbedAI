@@ -599,6 +599,88 @@ export type DesktopSettings = {
   storage: Record<string, string>;
 };
 
+// --- Routines (docs/ROUTINES.md) ---
+
+export type ScheduleKind = "cron" | "weekdays" | "interval" | "once" | "manual";
+export type RoutineRunState =
+  | "queued"
+  | "running"
+  | "needs_input"
+  | "completed"
+  | "failed"
+  | "missed"
+  | "skipped"
+  | "interrupted";
+
+export type RoutineRun = {
+  id: number;
+  routine_id: number;
+  trigger: "schedule" | "manual" | "webhook";
+  state: RoutineRunState;
+  scheduled_for: string | null;
+  thread_id: number | null;
+  turn_id: number | null;
+  result: string | null;
+  error: string | null;
+  waiting_since: string | null;
+  waited_seconds: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+};
+
+export type Routine = {
+  id: number;
+  agent_id: number;
+  name: string;
+  prompt: string;
+  schedule_kind: ScheduleKind;
+  schedule_spec: Record<string, unknown>;
+  timezone: string;
+  paused: boolean;
+  paused_reason: string | null;
+  next_run_at: string | null;
+  run_limit_minutes: number;
+  approval_mode: ApprovalMode;
+  approval_timeout_minutes: number;
+  catch_up_minutes: number;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+  summary: string;
+  next_dates: string[];
+  webhook_enabled: boolean;
+  latest_run: RoutineRun | null;
+};
+
+export type RoutineInput = {
+  agent_id: number;
+  name: string;
+  prompt: string;
+  schedule_kind: ScheduleKind;
+  schedule_spec: Record<string, unknown>;
+  timezone: string;
+  run_limit_minutes: number;
+  approval_mode: ApprovalMode;
+  approval_timeout_minutes: number;
+  catch_up_minutes: number;
+};
+
+export type SchedulePreview = { summary: string; next_dates: string[] };
+export type WebhookSecret = { routine: Routine; secret: string; path: string };
+
+export type AppNotification = {
+  id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  routine_id: number | null;
+  run_id: number | null;
+  thread_id: number | null;
+  read_at: string | null;
+  created_at: string;
+};
+
 export const api = {
   getEngines: (refresh = false) => request<Engine[]>(`/engines${refresh ? "?refresh=true" : ""}`),
   saveEngineConfig: (engineId: string, config: EngineConfigInput) =>
@@ -915,6 +997,28 @@ export const api = {
       `/schedules/${scheduleId}?user_id=${encodeURIComponent(userId)}`,
       { method: "DELETE" }
     ),
+  listRoutines: () => request<Routine[]>("/routines"),
+  getRoutine: (id: number) => request<Routine>(`/routines/${id}`),
+  createRoutine: (input: RoutineInput & { paused?: boolean }) =>
+    request<Routine>("/routines", { method: "POST", body: JSON.stringify(input) }),
+  updateRoutine: (id: number, input: Partial<RoutineInput>) =>
+    request<Routine>(`/routines/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteRoutine: (id: number) => request<void>(`/routines/${id}`, { method: "DELETE" }),
+  pauseRoutine: (id: number) => request<Routine>(`/routines/${id}/pause`, { method: "POST" }),
+  resumeRoutine: (id: number) => request<Routine>(`/routines/${id}/resume`, { method: "POST" }),
+  runRoutineNow: (id: number) => request<RoutineRun>(`/routines/${id}/run`, { method: "POST" }),
+  listRoutineRuns: (id: number, limit = 50) => request<RoutineRun[]>(`/routines/${id}/runs?limit=${limit}`),
+  previewSchedule: (kind: ScheduleKind, spec: Record<string, unknown>, timezone: string) =>
+    request<SchedulePreview>("/routines/preview", {
+      method: "POST",
+      body: JSON.stringify({ schedule_kind: kind, schedule_spec: spec, timezone }),
+    }),
+  enableRoutineWebhook: (id: number) => request<WebhookSecret>(`/routines/${id}/webhook`, { method: "POST" }),
+  disableRoutineWebhook: (id: number) => request<Routine>(`/routines/${id}/webhook`, { method: "DELETE" }),
+  listNotifications: (limit = 30) => request<AppNotification[]>(`/notifications?limit=${limit}`),
+  unreadNotifications: () => request<{ unread: number }>("/notifications/unread-count"),
+  readNotification: (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
+  readAllNotifications: () => request<{ unread: number }>("/notifications/read-all", { method: "POST" }),
 };
 
 export { ApiError };

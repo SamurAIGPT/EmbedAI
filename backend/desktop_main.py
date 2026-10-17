@@ -7,6 +7,12 @@ import sys
 from app.desktop.entry import main
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--computer-mcp"]:
+        # The packaged app is one executable; an agent computer's MCP server
+        # (app/computers/mcp_server.py) is started through it.
+        from app.computers.mcp_server import main as computer_mcp
+
+        sys.exit(computer_mcp(sys.argv[2:]))
     code = main()
     # Leave without interpreter shutdown. A thread may still be blocked reading
     # stdin (the launcher's message, or the lifeline); Python aborts with a fatal

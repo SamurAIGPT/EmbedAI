@@ -105,8 +105,6 @@ async def _agent_or_404(rt: ThreadRuntime, agent_id: int) -> store.Agent:
 
 @router.post("", response_model=AgentResponse, status_code=201)
 async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
-    if payload.provider not in rt.adapters:
-        raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
     _check_engine(rt, payload.provider, payload.model)
     workspace = _check_workspace(payload.workspace_path)
     try:

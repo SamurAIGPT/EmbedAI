@@ -99,7 +99,7 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
             agent_id=payload.agent_id,
         )
     except UnknownProvider:
-        raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
+        raise _error(422, "unknown_provider", f"Unknown engine: {payload.provider}") from None
     except EngineModelInvalid as exc:
         raise _error(422, "unknown_model", str(exc)) from None
     except UnknownAgent:

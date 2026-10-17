@@ -153,7 +153,7 @@ async def test_a_thread_is_created_listed_and_read(api, owner):
 async def test_provider_defaults_to_claude_and_an_unknown_one_is_a_422(api):
     assert (await create(api))["provider"] == "claude"
     bad = await api.post("/api/v1/threads", json={"provider": "does-not-exist"})
-    assert bad.status_code == 422 and "does-not-exist" in bad.json()["detail"]
+    assert bad.status_code == 422 and bad.json()["detail"]["error_code"] == "unknown_provider"
     assert (await api.post("/api/v1/threads", json={"provider": ""})).status_code == 422
 
 

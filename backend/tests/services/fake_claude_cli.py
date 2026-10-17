@@ -153,7 +153,7 @@ elif kind == "hang":
     emit({"type": "stream_event", "event": {"type": "message_start", "message": {"id": "m1"}}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",
                                              "delta": {"type": "text_delta", "text": "typing"}}})
-    log(event="hanging")
+    log(event="hanging", pid=__import__("os").getpid())
     time.sleep(120)
 
 elif kind == "hang_with_child":

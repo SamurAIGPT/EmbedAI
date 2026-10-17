@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # resumed or replayed). The lease must be several heartbeats long.
     THREAD_HEARTBEAT_SECONDS: int = 10
     THREAD_LEASE_SECONDS: int = 60
+    # The turn watchdog: a turn whose engine does nothing (no event, no typing)
+    # for this long, while not waiting on an approval, is stopped and fails with
+    # `engine_stalled`. Longer than LOCAL_TASK_TIMEOUT_SECONDS by default, so it
+    # only catches an engine whose own time limit did not end it. 0 turns it off.
+    TURN_STALL_SECONDS: float = 600
 
     # Routines (docs/ROUTINES.md): how often the scheduler looks for due and
     # finished runs, the largest webhook body accepted, and an optional

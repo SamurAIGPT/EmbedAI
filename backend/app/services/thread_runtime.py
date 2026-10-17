@@ -56,6 +56,9 @@ logger = get_logger(__name__)
 # How often a waiting run looks at its approval row, so an answer recorded by
 # another process is noticed without needing a live push.
 APPROVAL_POLL_SECONDS = 1.0
+# After the watchdog has stopped a stalled engine, how long the adapter gets to
+# return on its own before the runtime stops waiting for it.
+STALL_GRACE_SECONDS = 5.0
 STATUS_CACHE_SECONDS = 30.0
 SHUTDOWN_WAIT_SECONDS = 10.0
 
@@ -134,6 +137,17 @@ class ActiveRun:
     # Seconds an approval waits before it expires (is denied); None means the
     # LOCAL_APPROVAL_TIMEOUT_SECONDS setting. Routines set their own.
     approval_timeout: float | None = None
+    # The turn watchdog: when the engine last did anything (event loop time),
+    # and whether the watchdog stopped it for doing nothing for too long.
+    last_activity: float = 0.0
+    stalled: bool = False
+    adapter_task: asyncio.Task | None = None
+
+    def touch(self) -> None:
+        try:
+            self.last_activity = asyncio.get_running_loop().time()
+        except RuntimeError:
+            pass
 
 
 class TurnRecorder:
@@ -169,6 +183,7 @@ class TurnRecorder:
         if event is None:
             self.lose()
             return False
+        run.touch()
         self._last_seq = event.seq
         if type == "assistant.message":
             self._runtime.hub.message_done(run.thread_id)
@@ -177,6 +192,7 @@ class TurnRecorder:
 
     def delta(self, text: str) -> None:
         if not self._lost:
+            self._run.touch()
             self._runtime.hub.delta(
                 self._run.thread_id, self._run.turn_id, text, after_seq=self._last_seq
             )
@@ -194,6 +210,12 @@ class ThreadApprovalGate:
         self._deadlines: dict[str, float] = {}
         # What each open approval was about, for the decision log.
         self._info: dict[str, tuple[str, str | None, str | None]] = {}
+
+    @property
+    def waiting(self) -> bool:
+        """An approval is open: the turn waits on a person, not on the engine
+        (the approval has its own timeout)."""
+        return bool(self._deadlines)
 
     def _log(self, event: str, approval_id: str, **more) -> None:
         tool, kind, summary = self._info.get(approval_id, (None, None, None))
@@ -623,6 +645,7 @@ class ThreadRuntime:
 
     async def _run(self, run: ActiveRun, adapter: ProviderAdapter, computers: bool = True) -> None:
         heartbeat = asyncio.create_task(self._heartbeat(run))
+        watchdog = None
         binding = None
         try:
             try:
@@ -636,8 +659,21 @@ class ThreadRuntime:
                     run.agent_id, run.turn_id, str(run.ctx.workspace) if run.ctx.workspace else None
                 )
                 run.ctx.computer = binding
+                # Watched from here: starting a computer can take a while, and
+                # is not the engine doing nothing.
+                run.touch()
+                watchdog = asyncio.create_task(self._watchdog(run))
                 with app_settings.use(run.settings_snapshot):
-                    outcome = await adapter.run_turn(run.ctx, run.recorder, run.gate)
+                    run.adapter_task = asyncio.ensure_future(adapter.run_turn(run.ctx, run.recorder, run.gate))
+                try:
+                    outcome = await run.adapter_task
+                except asyncio.CancelledError:
+                    task = asyncio.current_task()
+                    if not run.stalled or (task is not None and task.cancelling()):
+                        raise
+                    # The watchdog gave up on an adapter that did not return
+                    # after its engine was stopped.
+                    outcome = TurnOutcome("failed", error_code="engine_stalled")
             except _EngineWithoutComputers:
                 outcome = TurnOutcome(
                     "failed",
@@ -654,7 +690,9 @@ class ThreadRuntime:
                 )
         finally:
             heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
+            if watchdog is not None:
+                watchdog.cancel()
+            await asyncio.gather(heartbeat, *([watchdog] if watchdog else []), return_exceptions=True)
             await self.computers.release_turn(binding, run.turn_id)
         if run.stop_requested and outcome.status != "succeeded":
             # Killed on request. A turn that finished on its own just before the
@@ -662,6 +700,19 @@ class ThreadRuntime:
             outcome = TurnOutcome(
                 "cancelled",
                 error_code="stopped",
+                model=outcome.model,
+                usage=outcome.usage,
+                partial_text=outcome.partial_text,
+                session_state=outcome.session_state,
+                provider_state=outcome.provider_state,
+            )
+        elif run.stalled and outcome.status != "succeeded":
+            seconds = settings.TURN_STALL_SECONDS
+            outcome = TurnOutcome(
+                "failed",
+                error=f"The engine stopped responding: nothing happened for {seconds:g} seconds, "
+                "so it was stopped. Send the message again to retry.",
+                error_code="engine_stalled",
                 model=outcome.model,
                 usage=outcome.usage,
                 partial_text=outcome.partial_text,
@@ -678,6 +729,33 @@ class ThreadRuntime:
             self._runs.pop(run.turn_id, None)
             self.hub.message_done(run.thread_id)
             self.hub.notify(run.thread_id)
+
+    async def _watchdog(self, run: ActiveRun) -> None:
+        """Fail a turn whose engine has done nothing (no event, no typing) for
+        TURN_STALL_SECONDS: its process died without the adapter noticing, or
+        hung. A turn waiting on an approval is not stalled. The engine is
+        stopped like a Stop (its process group killed); an adapter that still
+        does not return is given up on after STALL_GRACE_SECONDS."""
+        stall = settings.TURN_STALL_SECONDS
+        if not stall or stall <= 0:
+            return
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(min(max(stall / 4, 0.05), 5.0))
+            if run.gate is not None and run.gate.waiting:
+                run.touch()
+                continue
+            if loop.time() - run.last_activity < stall:
+                continue
+            run.stalled = True
+            logger.warning("turn stalled; stopping its engine", turn_id=run.turn_id, seconds=stall)
+            run.ctx.abort()
+            await asyncio.sleep(STALL_GRACE_SECONDS)
+            task = run.adapter_task
+            if task is not None and not task.done():
+                logger.warning("engine did not stop; giving up on it", turn_id=run.turn_id)
+                task.cancel()
+            return
 
     async def _heartbeat(self, run: ActiveRun) -> None:
         while True:

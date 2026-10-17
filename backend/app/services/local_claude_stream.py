@@ -75,7 +75,12 @@ def _usage_of(event: dict) -> dict | None:
     usage: dict = {}
     raw = event.get("usage")
     if isinstance(raw, dict):
-        for key in ("input_tokens", "output_tokens"):
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+        ):
             value = raw.get(key)
             if isinstance(value, int) and not isinstance(value, bool):
                 usage[key] = value

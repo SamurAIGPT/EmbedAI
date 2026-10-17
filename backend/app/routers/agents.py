@@ -24,7 +24,7 @@ from app.schemas.agent import (
 from app.services import agent_memory, agent_package
 from app.services import agent_store as store
 from app.services.local_access_policy import require_local_access
-from app.services.thread_runtime import ThreadRuntime
+from app.services.thread_runtime import EngineModelInvalid, ThreadRuntime, UnknownProvider
 from app.services.thread_runtime import runtime as default_runtime
 from app.services.workspaces import require_workspace
 
@@ -85,6 +85,16 @@ def _start_notes(agent_id: int, notes: str | None) -> None:
         agent_memory.remove_memory(agent_id)
 
 
+def _check_engine(rt: ThreadRuntime, provider: str, model: str | None) -> None:
+    """The engine must be registered and accept the model."""
+    try:
+        rt.check_engine_model(provider, model)
+    except UnknownProvider:
+        raise _error(422, "unknown_provider", f"Unknown engine: {provider}") from None
+    except EngineModelInvalid as exc:
+        raise _error(422, "unknown_model", str(exc)) from None
+
+
 async def _agent_or_404(rt: ThreadRuntime, agent_id: int) -> store.Agent:
     async with rt.session() as db:
         agent = await store.get_agent(db, agent_id)
@@ -97,6 +107,7 @@ async def _agent_or_404(rt: ThreadRuntime, agent_id: int) -> store.Agent:
 async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
     if payload.provider not in rt.adapters:
         raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
+    _check_engine(rt, payload.provider, payload.model)
     workspace = _check_workspace(payload.workspace_path)
     try:
         async with rt.session() as db:
@@ -142,8 +153,11 @@ async def update_agent(
     notes are sent with every turn, but the Claude CLI keeps the system prompt
     a session started with when it resumes it, so in practice they reach
     conversations started after the change. A conversation's own workspace
-    stays as it was when it began."""
-    await _agent_or_404(rt, agent_id)
+    stays as it was when it began, and so does its engine: a conversation
+    started on another engine than the agent's new one keeps its engine and
+    uses that engine's default model. An agent with a computer can only move
+    to an engine that can use one (409 `engine_without_computers`)."""
+    agent = await _agent_or_404(rt, agent_id)
     changes = {
         field: getattr(payload, field)
         for field in (
@@ -151,6 +165,7 @@ async def update_agent(
             "title",
             "description",
             "instructions",
+            "provider",
             "model",
             "workspace_path",
             "approval_mode",
@@ -159,6 +174,23 @@ async def update_agent(
         )
         if field in payload.model_fields_set
     }
+    provider = changes.get("provider", agent.provider)
+    if "provider" in changes and changes["provider"] != agent.provider:
+        if "model" not in changes:
+            changes["model"] = None  # the old engine's model means nothing to the new one
+        try:
+            caps = rt.engines.capabilities(provider)
+        except Exception:  # noqa: BLE001  (an unknown engine is reported just below)
+            caps = None
+        if caps is not None and not caps.computers and await rt.computers.for_agent(agent_id) is not None:
+            raise _error(
+                409,
+                "engine_without_computers",
+                "This agent has a computer, and that engine cannot run its tools in one. "
+                "Remove the computer first, or keep an engine that supports computers.",
+            )
+    if "provider" in changes or "model" in changes:
+        _check_engine(rt, provider, changes.get("model", agent.model if provider == agent.provider else None))
     if "workspace_path" in changes:
         changes["workspace_path"] = _check_workspace(changes["workspace_path"])
     try:

@@ -185,8 +185,20 @@ async def create_agent_computer(
     """Give the agent a computer. Idempotent: an agent that already has one
     gets it back unchanged (200). From then on the agent's turns run their
     tools in it, and its host tools are off. With `start`, the machine is
-    made and started now."""
+    made and started now. Only an agent whose engine can run its tools in a
+    computer can have one (409 `engine_without_computers`)."""
     agent = await _agent_or_404(rt, agent_id)
+    try:
+        supports = rt.engines.capabilities(agent.provider).computers
+    except Exception:  # noqa: BLE001  (an engine this app no longer has)
+        supports = False
+    if not supports:
+        raise _error(
+            409,
+            "engine_without_computers",
+            f"This agent's engine ({agent.provider}) cannot run its tools in a computer. "
+            "Computers work with Claude for now.",
+        )
     service = _service(rt)
     settings = payload.model_dump(exclude={"start", "image"}, exclude_none=True)
     try:

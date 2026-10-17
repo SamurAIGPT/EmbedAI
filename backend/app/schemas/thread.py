@@ -7,9 +7,10 @@ from app.schemas.computer import ComputerSummary
 
 
 class ThreadCreateRequest(BaseModel):
-    # An unknown provider is a 422. Claude is the only one registered today.
+    # An engine id from GET /api/v1/engines; an unknown one is a 422.
     provider: str = Field(default="claude", min_length=1, max_length=64)
-    # What the person asked for; omitted means the provider's default.
+    # What the person asked for; omitted means the engine's default. Checked
+    # against the engine (422 `unknown_model`).
     model: str | None = Field(default=None, max_length=200)
     # Omitted: set from the first prompt.
     title: str | None = Field(default=None, max_length=200)
@@ -21,10 +22,13 @@ class ThreadCreateRequest(BaseModel):
 
 
 class ThreadUpdateRequest(BaseModel):
-    """Rename and/or archive. Send at least one field."""
+    """Rename, archive and/or change the model. Send at least one field.
+    `model` takes an explicit null to go back to the engine's default; the
+    engine stays the one the conversation started on."""
 
     title: str | None = Field(default=None, max_length=200)
     archived: bool | None = None
+    model: str | None = Field(default=None, max_length=200)
 
     @field_validator("title")
     @classmethod
@@ -38,8 +42,8 @@ class ThreadUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _something_to_change(self):
-        if self.title is None and self.archived is None:
-            raise ValueError("send a title, archived, or both")
+        if self.title is None and self.archived is None and "model" not in self.model_fields_set:
+            raise ValueError("send a title, archived, model, or several")
         return self
 
 

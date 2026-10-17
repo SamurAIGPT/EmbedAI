@@ -12,6 +12,7 @@ from app.routers.decisions import router as decisions_router
 from app.routers.approval_rules import router as approval_rules_router
 from app.routers.sentinel import router as sentinel_router
 from app.routers.computers import router as computers_router
+from app.routers.engines import router as engines_router
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1")
@@ -29,3 +30,4 @@ router.include_router(decisions_router)
 router.include_router(approval_rules_router)
 router.include_router(sentinel_router)
 router.include_router(computers_router)
+router.include_router(engines_router)

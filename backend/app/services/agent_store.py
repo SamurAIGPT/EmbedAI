@@ -22,6 +22,7 @@ _EDITABLE = (
     "title",
     "description",
     "instructions",
+    "provider",
     "model",
     "workspace_path",
     "approval_mode",

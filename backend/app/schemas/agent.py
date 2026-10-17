@@ -40,7 +40,8 @@ class AgentCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
     instructions: str = ""
-    # An unknown provider is a 422. Claude is the only one registered today.
+    # An engine id from GET /api/v1/engines; an unknown one is a 422, and the
+    # model is checked against it (422 `unknown_model`).
     provider: str = Field(default="claude", min_length=1, max_length=64)
     model: str | None = Field(default=None, max_length=200)
     # Omitted: the agent gets its own folder under the default workspace root.
@@ -76,6 +77,9 @@ class AgentUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
     instructions: str | None = None
+    # Another engine. Its conversations keep the engine they started on; a
+    # change without `model` goes back to the new engine's default model.
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, max_length=200)
     workspace_path: str | None = Field(default=None, max_length=1000)
     approval_mode: ApprovalMode | None = None
@@ -102,7 +106,7 @@ class AgentUpdateRequest(BaseModel):
     def _something_to_change(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for field in ("name", "instructions", "approval_mode", "pinned", "memory_enabled", "archived"):
+        for field in ("name", "instructions", "provider", "approval_mode", "pinned", "memory_enabled", "archived"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self

@@ -41,6 +41,7 @@ from app.services.thread_runtime import (
     UnknownProvider,
     AgentArchived,
     AgentProviderMismatch,
+    EngineModelInvalid,
     UnknownAgent,
 )
 from app.services.thread_runtime import runtime as default_runtime
@@ -99,6 +100,8 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
         )
     except UnknownProvider:
         raise HTTPException(status_code=422, detail=f"Unknown provider: {payload.provider}")
+    except EngineModelInvalid as exc:
+        raise _error(422, "unknown_model", str(exc)) from None
     except UnknownAgent:
         raise _error(422, "agent_not_found", "No such agent.") from None
     except AgentArchived:
@@ -144,9 +147,18 @@ async def get_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
 async def update_thread(
     thread_id: int, payload: ThreadUpdateRequest, rt: ThreadRuntime = Depends(get_runtime)
 ):
-    """Rename and/or archive. Archiving hides a conversation from the default
-    list and deletes nothing; it is refused while a turn is running."""
-    await _thread_or_404(rt, thread_id)
+    """Rename, archive and/or change the model. Archiving hides a conversation
+    from the default list and deletes nothing; it is refused while a turn is
+    running. A new model is checked against the conversation's engine (422
+    `unknown_model`) and applies from the next message."""
+    current = await _thread_or_404(rt, thread_id)
+    if "model" in payload.model_fields_set:
+        try:
+            rt.check_engine_model(current.provider, payload.model)
+        except UnknownProvider:
+            raise _error(409, "unknown_provider", f"No provider is registered for {current.provider}.") from None
+        except EngineModelInvalid as exc:
+            raise _error(422, "unknown_model", str(exc)) from None
     try:
         thread = None
         # Archiving first: if it is refused, nothing has been renamed either.
@@ -156,6 +168,9 @@ async def update_thread(
         if payload.title is not None:
             async with rt.session() as db:
                 thread = await store.rename_thread(db, thread_id, payload.title)
+        if "model" in payload.model_fields_set:
+            async with rt.session() as db:
+                thread = await store.set_model(db, thread_id, payload.model)
     except store.ThreadNotFound:
         raise HTTPException(status_code=404, detail="Thread not found")
     except store.ThreadBusy:

@@ -13,6 +13,7 @@ from typing import Protocol
 
 from fastapi import Depends, HTTPException, Request
 
+from app.auth.middleware import principal_of
 from app.core.config import settings
 
 _ISSUER = object()
@@ -70,7 +71,8 @@ def _is_loopback_address(host: str) -> bool:
 
 
 class LoopbackPolicy:
-    """The web build: only the machine's own browser may use local execution."""
+    """The web build: the machine's own browser, or a session the auth
+    middleware authenticated (a signed-in owner or a paired device)."""
 
     def authorize(self, request: Request) -> LocalAccessGrant:
         if not settings.LOCAL_EXECUTION_ENABLED:
@@ -79,6 +81,12 @@ class LoopbackPolicy:
                 "machine running the backend to enable it.",
                 status_code=403,
             )
+
+        # A signed-in browser or paired device (docs/AUTH.md): the auth
+        # middleware already checked its Host, Origin, CSRF token and scope.
+        principal = principal_of(request.scope)
+        if principal is not None and principal.kind in ("browser", "device"):
+            return _issue_grant()
 
         client = request.client
         if client is None or not _is_loopback_address(client.host):

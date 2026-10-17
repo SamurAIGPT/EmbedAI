@@ -51,7 +51,10 @@ async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, ph
             db.add(task)
             await db.commit()
             task_id = task.id
-        async with AsyncClient(transport=ASGITransport(app), base_url="http://owned.test") as client:
+        # The answering side is a trusted program on this machine (docs/AUTH.md).
+        monkeypatch.setattr(settings, "LOOPBACK_TRUST", "programs")
+        transport = ASGITransport(app, client=("127.0.0.1", 50000))
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             hook = asyncio.create_task(client.post(
                 f"/api/v1/permissions/check/{user}/{task_id}",
                 headers={"Authorization": f"Bearer {settings.HOOK_TOKEN}"},

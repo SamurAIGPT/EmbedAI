@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core import app_settings
 from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
+from app.auth.middleware import AuthMiddleware
 from app.desktop.launch_auth import LaunchAuthMiddleware
 from app.routers.router import router as app_router
 from app.routers.hooks import router as hooks_router
@@ -75,6 +76,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Owner sign-in, paired devices, Host/Origin allowlist and CSRF (docs/AUTH.md).
+# Innermost: under the desktop profile LaunchAuthMiddleware has already demanded
+# the launch token, and this one then steps aside.
+app.add_middleware(AuthMiddleware)
+
 # Desktop launches only (a no-op otherwise). Added before CORS, which makes it the
 # inner of the two: a preflight is answered by CORS without a token, and a refusal
 # still carries the CORS headers the page needs to read it.
@@ -83,6 +89,8 @@ app.add_middleware(LaunchAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.FRONTEND_ORIGIN_LIST,
+    # The web UI's session is a cookie, sent cross-port in development.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

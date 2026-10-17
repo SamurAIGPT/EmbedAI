@@ -35,7 +35,7 @@ def test_box_service_refuses_clearly_without_a_key(monkeypatch):
 def test_hook_endpoint_rejects_the_empty_bearer_when_no_token_is_set(monkeypatch):
     """With HOOK_TOKEN empty, 'Bearer ' must not authenticate."""
     monkeypatch.setattr(settings, "HOOK_TOKEN", "")
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     for header in ("Bearer ", "Bearer", ""):
         r = client.post("/api/v1/permissions/check/u/1", headers={"Authorization": header}, json={})
         assert r.status_code == 401

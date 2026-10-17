@@ -14,9 +14,19 @@ from app.routers.sentinel import router as sentinel_router
 from app.routers.computers import router as computers_router
 from app.routers.engines import router as engines_router
 from app.routers.routines import router as routines_router
+from app.auth.routes import router as auth_router
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/health")
+def health():
+    """Public: says the server is up and nothing else."""
+    return {"status": "ok"}
+
+
+router.include_router(auth_router)
 router.include_router(sandbox_router)
 router.include_router(task_router)
 router.include_router(link_router)

@@ -1,11 +1,19 @@
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import settings
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def trusted_local_program(monkeypatch):
+    """A program on this machine with loopback trust on (docs/AUTH.md)."""
+    monkeypatch.setattr(settings, "LOOPBACK_TRUST", "programs")
+
+
 async def get_providers():
-    async with AsyncClient(transport=ASGITransport(app), base_url="http://owned.test") as client:
+    transport = ASGITransport(app, client=("127.0.0.1", 50000))
+    async with AsyncClient(transport=transport, base_url="http://localhost") as client:
         return await client.get("/api/v1/providers")
 
 

@@ -174,8 +174,13 @@ def test_a_preflight_is_answered_without_a_token_and_a_refusal_is_readable_by_th
     assert refused.headers["access-control-allow-origin"] == origin
 
 
-def test_with_the_profile_off_nothing_is_asked_for(client):
-    """Server and headless installs: the middleware is a no-op."""
+def test_with_the_profile_off_nothing_is_asked_for(monkeypatch):
+    """Server and headless installs: the middleware is a no-op (owner
+    authentication, docs/AUTH.md, decides instead; loopback trust here)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LOOPBACK_TRUST", "programs")
+    client = TestClient(app, raise_server_exceptions=False, base_url="http://localhost", client=("127.0.0.1", 50000))
     assert not profile.active()
     assert client.get("/api/v1/providers").status_code == 200
     unknown = client.get("/api/v1/nothing-here")

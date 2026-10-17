@@ -83,6 +83,21 @@ class Settings(BaseSettings):
     # An approval nobody answers within this time is denied.
     LOCAL_APPROVAL_TIMEOUT_SECONDS: int = 300
 
+    # Owner authentication (docs/AUTH.md). Host names this server answers to,
+    # comma-separated; a request with any other Host header is refused (DNS
+    # rebinding). Add your public name when self-hosting, e.g.
+    # "localhost,127.0.0.1,[::1],dots.example.com". A "*.example.com" entry
+    # matches its subdomains.
+    TRUSTED_HOSTS: str = "localhost,127.0.0.1,[::1]"
+    # Whether a request from this machine needs no sign-in:
+    #   off       every request signs in (default; safest)
+    #   programs  loopback programs (curl, scripts) act as the owner; browsers
+    #             still sign in. Agents running on this machine can then call
+    #             the API as the owner too.
+    #   all       loopback programs and browsers act as the owner (development)
+    # Loopback trust never applies to a request with proxy headers.
+    LOOPBACK_TRUST: str = "off"
+
     # Durable threads: a running turn refreshes its heartbeat this often, and a
     # turn whose heartbeat is older than the lease is marked interrupted (never
     # resumed or replayed). The lease must be several heartbeats long.
@@ -126,6 +141,18 @@ class Settings(BaseSettings):
     @property
     def LOCAL_ALLOWED_HOST_LIST(self) -> list[str]:
         return [host.strip().lower() for host in self.LOCAL_ALLOWED_HOSTS.split(",") if host.strip()]
+
+    @property
+    def TRUSTED_HOST_LIST(self) -> list[str]:
+        return [host.strip().lower() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
+
+    @field_validator("LOOPBACK_TRUST")
+    @classmethod
+    def _check_loopback_trust(cls, value: str) -> str:
+        value = value.strip().lower() or "off"
+        if value not in ("off", "programs", "all"):
+            raise ValueError('LOOPBACK_TRUST must be "off", "programs" or "all"')
+        return value
 
     @field_validator("DATABASE_BACKEND")
     @classmethod

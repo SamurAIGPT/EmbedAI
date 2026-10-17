@@ -12,7 +12,8 @@ from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.desktop.launch_auth import LaunchAuthMiddleware
 from app.routers.router import router as app_router
-from app.services import schedule_service, task_execution_service
+from app.routers.hooks import router as hooks_router
+from app.services import routine_service, schedule_service, task_execution_service
 from app.services.thread_runtime import runtime as thread_runtime
 from app.services.box_operations import BoatNotConfigured
 
@@ -38,6 +39,13 @@ async def lifespan(app: FastAPI):
             # the resolver then serves the profile defaults.
             logger.exception("could not load saved settings; using defaults")
     logger.info(f"Database in use: {settings.DATABASE_DESCRIPTION}")
+    # Runs the previous process left running become interrupted before the
+    # scheduler's first pass, so none of them is ever started again.
+    try:
+        await routine_service.scheduler.recover()
+    except Exception:  # noqa: BLE001
+        logger.exception("could not settle routine runs left by the previous process")
+    app.state.routines_run_here = True
     jobs = [
         asyncio.create_task(
             run_every(BACKGROUND_INTERVAL_SECONDS, schedule_service.poll_due_schedules)
@@ -53,6 +61,8 @@ async def lifespan(app: FastAPI):
         # Agent computers: finish interrupted removals, remove orphans once
         # Docker answers, stop idle ones. Does nothing while Docker is down.
         asyncio.create_task(run_every(BACKGROUND_INTERVAL_SECONDS, thread_runtime.computers.upkeep)),
+        # Local routines: due occurrences, starts, approvals, run limits, endings.
+        asyncio.create_task(run_every(settings.ROUTINE_POLL_SECONDS, routine_service.scheduler.tick)),
     ]
     yield
     # Kill this process's provider processes and interrupt its own turns now,
@@ -83,3 +93,6 @@ async def boat_not_configured_handler(request: Request, exc: BoatNotConfigured):
 
 
 app.include_router(app_router)
+# Webhook deliveries for routines, outside /api/v1: authenticated by each
+# routine's own secret (also served alone by app/ingress.py).
+app.include_router(hooks_router)

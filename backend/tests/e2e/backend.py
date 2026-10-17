@@ -236,6 +236,9 @@ class Owner:
     def patch(self, path: str, json=None, **kw):
         return self.http.patch(path, json=json, headers=self._headers(), **kw)
 
+    def put(self, path: str, json=None, **kw):
+        return self.http.put(path, json=json, headers=self._headers(), **kw)
+
     def delete(self, path: str, **kw):
         return self.http.delete(path, headers=self._headers(), **kw)
 

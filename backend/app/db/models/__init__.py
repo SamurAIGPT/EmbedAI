@@ -11,6 +11,7 @@ from app.db.models.turn import Turn
 from app.db.models.event import Event
 from app.db.models.approval import Approval
 from app.db.models.app_setting import AppSetting, SettingAudit
+from app.db.models.computer import Computer
 
 __all__ = [
     "UserSandbox",
@@ -27,4 +28,5 @@ __all__ = [
     "Approval",
     "AppSetting",
     "SettingAudit",
+    "Computer",
 ]

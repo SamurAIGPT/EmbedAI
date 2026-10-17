@@ -111,12 +111,20 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div><p className="text-xs text-zinc-500">Turns</p><p className="text-lg tabular-nums">{total.turns}</p></div>
-                <div><p className="text-xs text-zinc-500">Input tokens</p><p className="text-lg tabular-nums">{formatTokens(total.input_tokens)}</p></div>
+                <div>
+                  <p className="text-xs text-zinc-500">Input tokens</p>
+                  <p className="text-lg tabular-nums">{formatTokens(total.input_tokens)}</p>
+                  {total.cache_read_input_tokens + total.cache_creation_input_tokens > 0 && (
+                    <p className="text-[11px] text-zinc-500">
+                      + {formatTokens(total.cache_read_input_tokens + total.cache_creation_input_tokens)} cached
+                    </p>
+                  )}
+                </div>
                 <div><p className="text-xs text-zinc-500">Output tokens</p><p className="text-lg tabular-nums">{formatTokens(total.output_tokens)}</p></div>
                 <div><p className="text-xs text-zinc-500">Cost</p><p className="text-lg tabular-nums">{formatCost(total.cost_usd)}</p></div>
               </div>
               <p className="text-xs text-zinc-500">
-                Numbers are what each engine reported; nothing is estimated.
+                Numbers are what each engine reported; nothing is estimated. Days and months are in UTC.
                 {total.unreported_turns > 0 &&
                   ` ${total.unreported_turns} of ${total.turns} turns reported no usage, so they are not in these totals (marked * where a cost is shown).`}
               </p>

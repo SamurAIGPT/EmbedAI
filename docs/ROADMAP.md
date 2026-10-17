@@ -24,7 +24,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F07 | Multiple engines and model selection | Implemented (experimental): Claude, Codex app-server, generic ACP and OpenAI-compatible chat; agent/new-chat engine and model controls, idle conversation model changes, web/desktop engine Settings. See [ENGINES.md](ENGINES.md) for capabilities and limits |
 | F08 | Browse/download agent workspace files | Planned |
 | F09 | First-run onboarding and local storage | Implemented (experimental): desktop setup for engine/model, workspace, tools and approval modes; optional starter agent, durable completion, skip/replay; SQLite and database-backed desktop settings; source `doctor` command. Source flow verified on macOS; packaged first-run and Linux verification remain |
-| F10 | Installable beta, CI and documentation | Planned |
+| F10 | Installable beta, CI and documentation | In progress: CI runs the backend on SQLite and PostgreSQL, the frontend, the desktop tests and a real-process backend smoke; reliability promises and gaps in [RELIABILITY.md](RELIABILITY.md). Installers not yet |
 | F12 | Owner authentication: passphrase, session cookie with CSRF, one-time pairing codes with QR, scoped and revocable device tokens, Host/Origin allowlist, opt-in loopback trust (see [AUTH.md](AUTH.md)) | Implemented; single owner, no accounts |
 | F11 | Agent computers: an isolated Docker container per agent, tools only through an approval-gated MCP server (see [COMPUTERS.md](COMPUTERS.md)) | Implemented (experimental): lifecycle, limits, network none/default, idle stop, orphan cleanup, Computer panel; egress allowlist, SSH server and desktop computers planned |
 
@@ -41,5 +41,7 @@ Usage and audit log, attachments and diffs, computer egress allowlist, bring-you
 Out of scope until explicitly approved: multi-tenant paid hosting, hosting third-party subscription credentials, enterprise roles/billing.
 
 ## Known limitations today
+
+Reliability gaps (PostgreSQL schedulers, engine processes after a hard kill, replay classification, scripted scenario tiers, Windows coverage of the real-process tests) are listed in [RELIABILITY.md](RELIABILITY.md#gaps).
 
 See the README's "Known limitations". Owner authentication and paired devices exist ([AUTH.md](AUTH.md)); still planned there: separate user accounts, passkeys or a second factor, and lockout counters shared across processes.

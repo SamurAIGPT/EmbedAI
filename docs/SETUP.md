@@ -219,6 +219,7 @@ What to know:
 - **One backend process for the live parts.** The typing preview and a live Allow or Deny answer are handled in the memory of the process running the turn. With several backend processes, stored events still reach every stream within about a second, and an answer recorded by another process is noticed within about a second.
 - **Databases.** Tested on SQLite. On PostgreSQL the migration applies, but the behaviour has not been verified yet, so use SQLite for this feature for now.
 - The heartbeat and expiry times (`THREAD_HEARTBEAT_SECONDS`, default 10, and `THREAD_LEASE_SECONDS`, default 60) are internal tuning values; you should not need to change them.
+- A turn whose engine does nothing (no event, no typing) for `TURN_STALL_SECONDS` (default 600) while not waiting on an approval is stopped and fails with `engine_stalled`; set `0` to turn this off, or raise it for long silent tool runs. Only one backend can use a SQLite database at a time: a second one refuses to start and names the process using it. See [RELIABILITY.md](RELIABILITY.md).
 - Tested with Claude Code 2.1.232 on Windows. The code is written for Windows, macOS and Linux, but macOS and Linux have not been run yet.
 
 ## Desktop app (from a source checkout, experimental)

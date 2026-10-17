@@ -99,6 +99,11 @@ class OpenAIChatAdapter:
     models: list[ModelOption] = []
     custom_models = True
     needs_config = True
+    # No session: every turn replays the stored conversation, folded when it
+    # outgrows the budget (context_compaction.py). `context_tokens` in the
+    # saved configuration (the model's context window) sets the budget.
+    replays_history = True
+    compact_at_tokens = 24_000
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.config: dict | None = None
@@ -127,6 +132,11 @@ class OpenAIChatAdapter:
             except InvalidModel as exc:
                 raise InvalidConfig(str(exc)) from None
             config["model"] = model.strip()
+        window = payload.get("context_tokens")
+        if window is not None:
+            if isinstance(window, bool) or not isinstance(window, int) or not 1_024 <= window <= 10_000_000:
+                raise InvalidConfig("The context window must be a whole number of tokens from 1024 to 10000000.")
+            config["context_tokens"] = window
         key = payload.get("api_key")
         if payload.get("clear_api_key"):
             pass
@@ -143,11 +153,14 @@ class OpenAIChatAdapter:
     def public_config(self, config: dict | None) -> dict | None:
         if not config:
             return None
-        return {
+        public = {
             "base_url": config.get("base_url"),
             "model": config.get("model"),
             "has_api_key": bool(config.get("api_key")),
         }
+        if config.get("context_tokens"):
+            public["context_tokens"] = config["context_tokens"]
+        return public
 
     def _headers(self, config: dict) -> dict:
         headers = {"Accept": "application/json"}
@@ -216,6 +229,10 @@ class OpenAIChatAdapter:
         messages = chat_messages(await ctx.history(), ctx.instructions)
         if not messages or messages[-1].get("role") != "user":
             messages.append({"role": "user", "content": ctx.prompt})
+        else:
+            # The stored message is what the person typed; the engine gets the
+            # turn's prompt (attached text files, recalled passages).
+            messages[-1] = {"role": "user", "content": ctx.prompt}
         loop = asyncio.get_running_loop()
         state = {"text": "", "usage": None, "finish": None, "error": None, "code": None}
         max_text = app_settings.get("LOCAL_MAX_OUTPUT_BYTES")

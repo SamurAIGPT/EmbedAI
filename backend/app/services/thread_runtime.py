@@ -26,7 +26,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_memory, agent_store, attachments
+from app.services import agent_memory, agent_store, attachments, context_compaction, memory_recall
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
@@ -581,6 +581,8 @@ class ThreadRuntime:
             async with self.session() as db:
                 agent = await agent_store.get_agent(db, thread.agent_id)
 
+        recall = await self._recall(agent, thread_id, prompt_text)
+
         async with self.session() as db:
             turn = await store.start_turn(
                 db,
@@ -589,15 +591,33 @@ class ThreadRuntime:
                 owner_instance=self.instance_id,
                 attachments=[a.public() for a, _ in attached] or None,
             )
+        if recall is not None:
+            # Shown as the "Recalled" chip; never hidden (docs/MEMORY.md).
+            async with self.session() as db:
+                await store.append_turn_event(db, turn.id, turn.owner_token, "memory.recalled", recall.event_data())
+
+        budget = context_compaction.budget_for(adapter, config)
 
         async def history() -> list[dict]:
             async with self.session() as db:
-                return store.history_items(await store.list_all_events(db, thread_id))
+                items = store.history_items(await store.list_all_events(db, thread_id))
+            # An engine that replays the transcript gets it folded once it
+            # outgrows the engine's budget (context_compaction.py).
+            plan = context_compaction.plan(
+                items,
+                current_turn_id=turn.id,
+                budget_tokens=budget,
+                engine=thread.provider,
+                extra_chars=len(ctx.instructions or ""),
+            )
+            if plan.record is not None and run.recorder is not None:
+                await run.recorder.emit("context.compacted", plan.record)
+            return plan.items
 
         ctx = TurnContext(
             thread_id=thread_id,
             turn_id=turn.id,
-            prompt=attachments.prompt_with_text_files(prompt_text, attached),
+            prompt=memory_recall.with_recall(recall, attachments.prompt_with_text_files(prompt_text, attached)),
             images=[
                 {"path": str(path), "mime": a.mime, "name": a.name}
                 for a, path in attached
@@ -635,6 +655,20 @@ class ThreadRuntime:
         run.task = asyncio.create_task(self._run(run, adapter, capabilities_of(adapter).computers))
         self.hub.notify(thread_id)
         return turn
+
+    async def _recall(self, agent, thread_id: int, prompt_text: str):
+        """Passages from the agent's topic notes and other conversations for
+        this message (memory_recall.py), or None. Never fails a turn."""
+        if agent is None or not agent.memory_enabled or not getattr(agent, "recall_enabled", True):
+            return None
+        try:
+            async with self.session() as db:
+                return await memory_recall.build(
+                    db, owner_id=self.owner_id, agent_id=agent.id, thread_id=thread_id, message=prompt_text
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("recall failed; the turn goes on without it", thread_id=thread_id)
+            return None
 
     async def stop_turn(self, thread_id: int) -> int:
         """Stop the thread's running turn: the provider process is killed, the

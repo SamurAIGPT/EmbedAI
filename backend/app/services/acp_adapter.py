@@ -160,6 +160,10 @@ class AcpAdapter:
     models: list[ModelOption] = []
     custom_models = False
     needs_config = True
+    # An agent that cannot reload its session is sent the conversation as a
+    # preamble, folded when it outgrows the budget (context_compaction.py).
+    replays_history = True
+    compact_at_tokens = 24_000
 
     def __init__(self) -> None:
         self.config: dict | None = None

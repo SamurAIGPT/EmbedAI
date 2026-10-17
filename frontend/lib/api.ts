@@ -241,11 +241,17 @@ export type ApprovalMode = "ask" | "accept_edits" | "plan";
 export type Agent = {
   id: number;
   name: string;
+  // A short role line and a longer description; neither is sent to Claude.
+  title?: string | null;
+  description?: string | null;
   instructions: string | null;
   provider: string;
   model: string | null;
   workspace_path: string | null;
   approval_mode: ApprovalMode;
+  pinned?: boolean;
+  // Off: the agent's notes (MEMORY.md) are not loaded into its conversations.
+  memory_enabled?: boolean;
   archived_at: string | null;
   created_at?: string;
   updated_at?: string;
@@ -253,11 +259,43 @@ export type Agent = {
 
 export type AgentInput = {
   name: string;
+  title?: string | null;
+  description?: string | null;
   instructions?: string | null;
   provider?: string;
   model?: string | null;
   workspace_path?: string | null;
   approval_mode?: ApprovalMode;
+  pinned?: boolean;
+  memory_enabled?: boolean;
+  // Create only: the first contents of the agent's notes.
+  starter_notes?: string | null;
+};
+
+// An agent's notes and how much of them loads into each turn.
+export type AgentMemory = {
+  path: string;
+  text: string;
+  // Send back as expected_hash so a save never overwrites the agent's own edit.
+  hash: string;
+  lines: number;
+  bytes: number;
+  loaded_lines: number;
+  loaded_bytes: number;
+  truncated: boolean;
+  max_lines: number;
+  max_bytes: number;
+  enabled: boolean;
+  // After a save: how many things that looked like secrets were replaced.
+  redacted: number;
+};
+
+// One agent as a portable file. `redacted` names the parts where something that
+// looked like a secret was replaced.
+export type AgentExport = {
+  file_name: string;
+  document: Record<string, unknown>;
+  redacted: string[];
 };
 
 export type Thread = {
@@ -476,6 +514,31 @@ export const api = {
     request<Agent>(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(change) }),
 
   deleteAgent: (agentId: number) => request<void>(`/agents/${agentId}`, { method: "DELETE" }),
+
+  // A copy with the same settings, named "<name> copy". Notes are not copied.
+  duplicateAgent: (agentId: number) =>
+    request<Agent>(`/agents/${agentId}/duplicate`, { method: "POST" }),
+
+  getAgentMemory: (agentId: number) => request<AgentMemory>(`/agents/${agentId}/memory`),
+
+  // 409 memory_changed when the notes changed since `expectedHash` was read;
+  // leave it out to overwrite on purpose.
+  saveAgentMemory: (agentId: number, text: string, expectedHash?: string | null) =>
+    request<AgentMemory>(`/agents/${agentId}/memory`, {
+      method: "PUT",
+      body: JSON.stringify(expectedHash ? { text, expected_hash: expectedHash } : { text }),
+    }),
+
+  exportAgent: (agentId: number, includeNotes = false) =>
+    request<AgentExport>(`/agents/${agentId}/export${includeNotes ? "?include_notes=true" : ""}`),
+
+  // A new agent from an agent file; it always starts on "Ask first".
+  // 422 invalid_agent_file when the file is not one.
+  importAgent: (document: unknown, includeNotes = true) =>
+    request<Agent>("/agents/import", {
+      method: "POST",
+      body: JSON.stringify({ document, include_notes: includeNotes }),
+    }),
 
   // 202 once the turn has started; its answer arrives on the stream. Errors with
   // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).

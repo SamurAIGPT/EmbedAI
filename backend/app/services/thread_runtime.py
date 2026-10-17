@@ -131,6 +131,9 @@ class ActiveRun:
     settings_snapshot: dict = field(default_factory=dict)
     # The named agent the turn runs as, if any (its computer is attached at start).
     agent_id: int | None = None
+    # Seconds an approval waits before it expires (is denied); None means the
+    # LOCAL_APPROVAL_TIMEOUT_SECONDS setting. Routines set their own.
+    approval_timeout: float | None = None
 
 
 class TurnRecorder:
@@ -245,7 +248,10 @@ class ThreadApprovalGate:
         future = asyncio.get_running_loop().create_future()
         runtime._waiters[approval.id] = future
         self._by_request[request_id] = approval.id
-        self._deadlines[approval.id] = asyncio.get_running_loop().time() + app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True)
+        timeout = run.approval_timeout
+        if timeout is None:
+            timeout = app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True)
+        self._deadlines[approval.id] = asyncio.get_running_loop().time() + timeout
         self._info[approval.id] = (tool, kind, summary)
         auto = computer_policy.automatic(tool, run.ctx.approval_mode or approval_modes.DEFAULT_MODE)
         if auto is not None:
@@ -488,10 +494,21 @@ class ThreadRuntime:
 
     # -- sending a turn ----------------------------------------------------------
 
-    async def send_turn(self, thread_id: int, prompt_text: str) -> store.Turn:
+    async def send_turn(
+        self,
+        thread_id: int,
+        prompt_text: str,
+        *,
+        approval_mode: str | None = None,
+        approval_timeout: float | None = None,
+    ) -> store.Turn:
         """Start a turn and run it in the background. Raises ThreadNotFound,
         UnknownProvider, SessionBroken, ProviderUnavailable, or ThreadBusy (a
-        turn is already running)."""
+        turn is already running).
+
+        `approval_mode` replaces the agent's mode for this turn (a routine
+        passes the stricter of its own and the agent's); `approval_timeout`
+        replaces the approval timeout setting for this turn's approvals."""
         async with self.session() as db:
             thread = await store.get_thread(db, thread_id)
         if thread is None:
@@ -546,7 +563,9 @@ class ThreadRuntime:
             history=history,
             # The agent's instructions, then its notes (MEMORY.md) when on.
             instructions=agent_memory.turn_instructions(agent) if agent is not None else None,
-            approval_mode=agent.approval_mode if agent is not None else None,
+            approval_mode=approval_mode
+            if approval_mode is not None
+            else (agent.approval_mode if agent is not None else None),
             engine_config=config,
         )
         run = ActiveRun(
@@ -555,6 +574,7 @@ class ThreadRuntime:
             owner_token=turn.owner_token,
             ctx=ctx,
             agent_id=agent.id if agent is not None else None,
+            approval_timeout=approval_timeout,
         )
         run.settings_snapshot = snapshot
         run.recorder = TurnRecorder(self, run)

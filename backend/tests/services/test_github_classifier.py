@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.github_classifier import classify_bash_command
 
 
@@ -71,3 +73,46 @@ def test_inline_equals_flag_is_not_treated_as_taking_a_separate_value() -> None:
     # is the real subcommand, not something to skip.
     command = "git --git-dir=/home/user/git-test/.git push"
     assert classify_bash_command(command) == ("publish", "github", "git.push")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git status\ngit push origin --force main",  # newline
+        "git status\r\ngit push origin main",  # CRLF
+        "git status & git push origin main",  # background operator
+        "git status || git push origin main",
+        "git status; git push origin main",
+        "echo $(git push origin main)",  # command substitution
+        "echo `git push origin main`",
+        "(git status; git push origin main)",  # subshell
+        "{ git status; git push origin main; }",  # group
+        "git status | xargs git push",
+        "sudo git push origin main",  # wrapper commands
+        "env GIT_TRACE=1 git push origin main",
+        "/usr/bin/git push origin main",
+        "bash -c 'git status && git push origin main'",  # nested script
+        'sh -c "git push origin main"',
+        "git status\ngit commit -m x\ngit push",
+        "git 'unterminated\ngit push origin main",  # unbalanced quotes still seen
+    ],
+)
+def test_push_hidden_behind_another_command_is_still_publish(command: str) -> None:
+    assert classify_bash_command(command) == ("publish", "github", "git.push")
+
+
+def test_newline_does_not_hide_a_mutation_behind_a_read() -> None:
+    assert classify_bash_command("git status\ngit commit -m x") == (
+        "create",
+        "github",
+        "git.commit",
+    )
+
+
+def test_wrapped_read_only_git_stays_read() -> None:
+    assert classify_bash_command("git status\ngit log --oneline") == (
+        "read",
+        "github",
+        "git.log",
+    )
+    assert classify_bash_command("cat .gitignore") is None

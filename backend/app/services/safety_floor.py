@@ -98,7 +98,11 @@ def _verdict(rule: str) -> FloorVerdict:
 def _tokens(command: str) -> list[str] | None:
     """Words and operators, quotes removed. None when it cannot be read."""
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        # A newline starts the next command, exactly like `;`. Left as plain
+        # whitespace it would glue `echo hi` and `rm -rf ~` into one command
+        # and hide the second from every rule below.
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+        lexer.whitespace = " \t\r"
         lexer.whitespace_split = True
         lexer.commenters = ""
         return list(lexer)
@@ -109,7 +113,7 @@ def _tokens(command: str) -> list[str] | None:
 def _split(tokens: list[str]) -> list[list[str]]:
     commands: list[list[str]] = [[]]
     for token in tokens:
-        if token and all(ch in ";&|()" for ch in token):
+        if token and all(ch in ";&|()\n" for ch in token):
             commands.append([])
         else:
             commands[-1].append(token)

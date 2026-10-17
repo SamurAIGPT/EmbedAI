@@ -167,3 +167,23 @@ def test_no_preserve_root_without_recursion_is_read_not_raised():
     # rm without -r cannot delete a directory, but the line must still be read.
     assert floor_reading("rm --no-preserve-root /").verdict.rule == "delete-root"
     assert floor_reading("rm --no-preserve-root ./x").verdict is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "echo hi\nrm -rf ~",
+        "echo hi\r\nrm -rf $HOME",
+        "ls\ngit push --force origin main",
+        "true\n\nmkfs.ext4 /dev/sda1",
+    ],
+)
+def test_a_newline_does_not_hide_a_dangerous_command(command: str) -> None:
+    """A newline starts the next command like `;`, it is not a space."""
+    assert clears_floor(command) is False
+
+
+def test_newlines_inside_quotes_and_harmless_lines_still_clear() -> None:
+    assert clears_floor("echo 'a\nb'") is True
+    assert clears_floor("ls\n") is True
+    assert clears_floor("echo hi\n\n\nls -la") is True

@@ -10,8 +10,11 @@ export type ApprovalStatus = "pending" | "allowed" | "denied" | "expired" | "can
 
 export type TurnEndStatus = "completed" | "failed" | "cancelled" | "interrupted";
 
+// A file attached to a message: metadata only, the bytes are fetched by id.
+export type AttachmentRef = { id: string; name: string; mime: string; bytes: number; kind: string };
+
 export type TranscriptItem =
-  | { kind: "user"; key: string; turnId: number | null; text: string }
+  | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[] }
   | {
       kind: "assistant";
       key: string;
@@ -58,6 +61,8 @@ export type TranscriptItem =
       errorCode: string;
       // Why a turn was interrupted ("shutdown", "lease_expired", ...).
       reason: string;
+      // What the engine reported it used, or null when it reported nothing.
+      usage: Record<string, unknown> | null;
     }
   | { kind: "session_reset"; key: string; message: string };
 
@@ -83,6 +88,20 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function attachmentRefs(value: unknown): AttachmentRef[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(record)
+    .filter((a) => typeof a.id === "string" && /^[0-9a-f]{32}$/.test(a.id))
+    .map((a) => ({
+      id: a.id as string,
+      name: text(a.name) || "attachment",
+      mime: text(a.mime),
+      bytes: typeof a.bytes === "number" ? a.bytes : 0,
+      kind: text(a.kind),
+    }));
 }
 
 function turnId(event: ThreadEvent): number | null {
@@ -146,7 +165,10 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
         ...base,
         runningTurnId: id,
         typing: null,
-        items: [...state.items, { kind: "user", key, turnId: id, text: text(data.prompt_text) }],
+        items: [
+          ...state.items,
+          { kind: "user", key, turnId: id, text: text(data.prompt_text), attachments: attachmentRefs(data.attachments) },
+        ],
       };
 
     case "assistant.message":
@@ -265,6 +287,7 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
             error: text(data.error),
             errorCode: text(data.error_code),
             reason: text(data.reason),
+            usage: Object.keys(record(data.usage)).length ? record(data.usage) : null,
           },
         ],
       };

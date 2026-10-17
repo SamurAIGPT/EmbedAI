@@ -887,10 +887,14 @@ export const api = {
 
   // 202 once the turn has started; its answer arrives on the stream. Errors with
   // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).
-  sendTurn: (threadId: number, promptText: string) =>
+  // `attachmentIds` from uploadAttachment. 422 images_unsupported: this
+  // conversation's engine cannot read images.
+  sendTurn: (threadId: number, promptText: string, attachmentIds: string[] = []) =>
     request<ThreadTurn>(`/threads/${threadId}/turns`, {
       method: "POST",
-      body: JSON.stringify({ prompt_text: promptText }),
+      body: JSON.stringify(
+        attachmentIds.length ? { prompt_text: promptText, attachment_ids: attachmentIds } : { prompt_text: promptText }
+      ),
     }),
 
   // Stop the running answer. 202 once Claude was told to stop; the end arrives as
@@ -1047,6 +1051,138 @@ export const api = {
   unreadNotifications: () => request<{ unread: number }>("/notifications/unread-count"),
   readNotification: (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
   readAllNotifications: () => request<{ unread: number }>("/notifications/read-all", { method: "POST" }),
+
+  // --- Everyday features (docs/EVERYDAY.md) ---
+  searchConversations: (query: string, filter: SearchFilter = {}) =>
+    request<SearchResponse>(`/search${searchQuery(query, filter)}`),
+  uploadAttachment: (threadId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return requestForm<UploadedAttachment>(`/threads/${threadId}/attachments`, form);
+  },
+  // Object URLs for bytes behind the session (an <img> cannot send the CSRF or
+  // launch headers some setups need). The caller revokes them.
+  attachmentBlobUrl: (threadId: number, attachmentId: string) =>
+    requestBlobUrl(`/threads/${threadId}/attachments/${encodeURIComponent(attachmentId)}`),
+  listWorkspaceFiles: (threadId: number, path = "") =>
+    request<FolderListing>(`/threads/${threadId}/files?path=${encodeURIComponent(path)}`),
+  previewWorkspaceFile: (threadId: number, path: string) =>
+    request<FilePreview>(`/threads/${threadId}/files/content?path=${encodeURIComponent(path)}`),
+  workspaceImageUrl: (threadId: number, path: string) =>
+    requestBlobUrl(`/threads/${threadId}/files/raw?path=${encodeURIComponent(path)}`),
+  workspaceDownloadUrl: (threadId: number, path: string) =>
+    requestBlobUrl(`/threads/${threadId}/files/download?path=${encodeURIComponent(path)}`),
+  getUsage: (month?: string) => request<UsageSummary>(`/usage${month ? `?month=${encodeURIComponent(month)}` : ""}`),
+  usageCsv: (month: string) => requestText(`/usage.csv?month=${encodeURIComponent(month)}`),
 };
+
+export type SearchFilter = { agentId?: number | null; since?: string; until?: string; includeArchived?: boolean; limit?: number };
+
+export function searchQuery(query: string, filter: SearchFilter = {}): string {
+  const params = new URLSearchParams({ q: query });
+  if (filter.agentId != null) params.set("agent_id", String(filter.agentId));
+  if (filter.since) params.set("since", filter.since);
+  if (filter.until) params.set("until", filter.until);
+  if (filter.includeArchived) params.set("include_archived", "true");
+  if (filter.limit != null) params.set("limit", String(filter.limit));
+  return `?${params.toString()}`;
+}
+
+export type SearchHit = {
+  thread_id: number;
+  thread_title: string | null;
+  agent_id: number | null;
+  archived: boolean;
+  kind: "title" | "user" | "assistant";
+  at: string;
+  snippet: string;
+  // [start, length] pairs into `snippet`.
+  highlights: number[][];
+  seq: number | null;
+  turn_id: number | null;
+};
+
+export type SearchResponse = { query: string; hits: SearchHit[] };
+
+export type UploadedAttachment = { id: string; name: string; mime: string; bytes: number; kind: "image" | "text" };
+
+export type FileEntry = {
+  name: string;
+  path: string;
+  // "hidden": a secret file, listed but never shown.
+  type: "dir" | "file" | "hidden";
+  bytes: number | null;
+  modified: string | null;
+};
+
+export type FolderListing = { path: string; entries: FileEntry[]; truncated: boolean };
+
+export type FilePreview = {
+  path: string;
+  name: string;
+  bytes: number;
+  mime: string;
+  kind: "text" | "image" | "binary";
+  text: string | null;
+  truncated: boolean;
+};
+
+export type UsageTotals = {
+  key: string;
+  label: string;
+  turns: number;
+  reported_turns: number;
+  unreported_turns: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  // null: no turn in this group reported a cost.
+  cost_usd: number | null;
+  thread_id?: number;
+  provider?: string;
+  model?: string;
+};
+
+export type UsageSummary = {
+  month: string;
+  total: UsageTotals;
+  by_thread: UsageTotals[];
+  by_engine: UsageTotals[];
+  by_day: UsageTotals[];
+};
+
+async function errorFrom(res: Response): Promise<ApiError> {
+  let detail = res.statusText;
+  let code: string | null = null;
+  try {
+    const body = await res.json();
+    detail = formatErrorDetail(body?.detail, detail);
+    if (typeof body?.detail?.error_code === "string") code = body.detail.error_code;
+  } catch {
+    // not JSON
+  }
+  const error = new ApiError(res.status, detail, code);
+  if (res.status === 401 && isSignedOutError(error)) onSignedOut?.();
+  return error;
+}
+
+// A multipart POST: the browser sets the Content-Type with its boundary.
+async function requestForm<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    body,
+    credentials: "include",
+    headers: authHeaders("POST"),
+  });
+  if (!res.ok) throw await errorFrom(res);
+  return (await res.json()) as T;
+}
+
+async function requestBlobUrl(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!res.ok) throw await errorFrom(res);
+  return URL.createObjectURL(await res.blob());
+}
 
 export { ApiError };

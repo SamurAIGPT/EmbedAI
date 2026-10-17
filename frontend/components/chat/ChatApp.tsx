@@ -6,6 +6,9 @@ import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type Agent, type Engine, type LocalStatus, type Thread } from "@/lib/api";
 import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
+import { attachmentProblem, conversationUsage, formatCost, formatTokens, MAX_ATTACHMENTS } from "@/lib/everyday";
+import { FilesPanel } from "./FilesPanel";
+import { UsagePanel } from "./UsagePanel";
 import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
 import { NotificationBell } from "./NotificationBell";
@@ -115,6 +118,11 @@ export function ChatApp() {
   const [routinesOpen, setRoutinesOpen] = useState(false);
   const [computerOpen, setComputerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
+  // Files chosen for the next message, and why one was refused.
+  const [attached, setAttached] = useState<File[]>([]);
+  const [attachNotice, setAttachNotice] = useState<string | null>(null);
   // What "Always allow this command" did, by approval id, and rules undone here.
   const [remembered, setRemembered] = useState<Record<string, Remembered>>({});
   const [undoneRules, setUndoneRules] = useState<number[]>([]);
@@ -234,6 +242,14 @@ export function ChatApp() {
   const selectedAgent = threadId === null ? startingAgent : threadAgent?.provider === thread?.provider ? threadAgent : null;
   const selectedModel = (threadId === null ? newModel : thread?.model) ?? selectedAgent?.model ?? null;
   const waiting = pendingApprovals(transcript).length > 0;
+  const totals = conversationUsage(
+    transcript.items.flatMap((item) => (item.kind === "turn_end" ? [{ usage: item.usage }] : []))
+  );
+  const conversationTotal =
+    totals.turns === 0
+      ? "Tokens and cost by month"
+      : `This conversation: ${formatTokens(totals.tokens)} tokens, ${formatCost(totals.cost)}` +
+        (totals.reported < totals.turns ? ` (${totals.turns - totals.reported} turn(s) reported nothing)` : "");
 
   let blockedReason: string | null = null;
   if (stream.connection === "failed") blockedReason = "This conversation cannot be opened.";
@@ -243,6 +259,24 @@ export function ChatApp() {
   else if (waiting) blockedReason = "The engine is waiting for your answer above.";
   else if (transcript.runningTurnId !== null) blockedReason = "An answer is running…";
   else if (selectedEngine && !selectedEngine.available) blockedReason = selectedEngine.reason ?? "This engine is unavailable. Check its settings.";
+
+  const imagesAttached = attached.some((file) => file.type.startsWith("image/"));
+  const imagesRefused = imagesAttached && selectedEngine !== undefined && !selectedEngine.capabilities.images;
+  if (blockedReason === null && imagesRefused)
+    blockedReason = `${selectedEngine?.label ?? "This engine"} can't read images. Remove the image to send.`;
+
+  const addFiles = (files: File[]) => {
+    const problems: string[] = [];
+    const accepted = files.filter((file) => {
+      const problem = attachmentProblem(file);
+      if (problem) problems.push(problem);
+      return problem === null;
+    });
+    const room = Math.max(0, MAX_ATTACHMENTS - attached.length);
+    if (accepted.length > room) problems.push(`Attach at most ${MAX_ATTACHMENTS} files to one message.`);
+    setAttached((previous) => [...previous, ...accepted.slice(0, room)]);
+    setAttachNotice(problems.length ? problems.join(" ") : null);
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -256,8 +290,12 @@ export function ChatApp() {
         // Open it now: the stream replays from the start, so nothing is missed.
         router.replace(`/chat?thread=${id}`);
       }
-      await api.sendTurn(id, text);
+      const ids: string[] = [];
+      for (const file of attached) ids.push((await api.uploadAttachment(id, file)).id);
+      await api.sendTurn(id, text, ids);
       setDraft("");
+      setAttached([]);
+      setAttachNotice(null);
     } catch (err) {
       setSendError(sendErrorText(err));
     } finally {
@@ -458,6 +496,24 @@ export function ChatApp() {
           Routines
         </button>
       )}
+      {ready && threadId !== null && thread !== null && (
+        <button
+          onClick={() => setFilesOpen(true)}
+          title="Browse and download the files in this conversation's workspace"
+          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Files
+        </button>
+      )}
+      {ready && (
+        <button
+          onClick={() => setUsageOpen(true)}
+          title={conversationTotal}
+          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Usage
+        </button>
+      )}
       {ready && <NotificationBell />}
       {stream.connection === "reconnecting" && (
         <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
@@ -534,6 +590,10 @@ export function ChatApp() {
           <div className="flex gap-2"><button type="submit" disabled={modelBusy} className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700">{modelBusy ? "Saving…" : "Use model"}</button><button type="button" disabled={modelBusy} onClick={() => setModelDraft(null)} className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">Cancel</button><button type="button" disabled={modelBusy} onClick={() => { setModelBusy(true); api.getEngines(true).then(setEngines).catch(() => setModelError("Could not refresh engines.")).finally(() => setModelBusy(false)); }} className="px-2 text-sm underline disabled:opacity-50">Refresh status</button></div>
         </form>
       </div>}
+      {filesOpen && threadId !== null && (
+        <FilesPanel threadId={threadId} workspace={thread?.workspace_path ?? null} onClose={() => setFilesOpen(false)} />
+      )}
+      {usageOpen && <UsagePanel onClose={() => setUsageOpen(false)} />}
       {approvalsOpen && (
         <ApprovalsPanel
           threadId={threadId}
@@ -599,6 +659,12 @@ export function ChatApp() {
             <Notice title="Cannot open this conversation">{stream.error}</Notice>
           ) : (
             <Conversation
+              threadId={threadId}
+              emptyHint={
+                selectedEngine && !selectedEngine.available
+                  ? `${selectedEngine.label} is not ready: ${selectedEngine.reason ?? "check it in Settings"}.`
+                  : undefined
+              }
               transcript={transcript}
               answering={answering}
               approvalErrors={approvalErrors}
@@ -640,6 +706,13 @@ export function ChatApp() {
             running={transcript.runningTurnId !== null}
             stopping={stoppingTurn !== null && stoppingTurn === transcript.runningTurnId}
             onStop={stop}
+            files={attached}
+            onAddFiles={addFiles}
+            onRemoveFile={(index) => {
+              setAttached((previous) => previous.filter((_, i) => i !== index));
+              setAttachNotice(null);
+            }}
+            attachNotice={attachNotice}
           />
         </main>
       </div>

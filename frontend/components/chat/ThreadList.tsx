@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Thread } from "@/lib/api";
+import { ConversationSearch } from "./ConversationSearch";
 
 function when(iso: string): string {
   const date = new Date(iso);
@@ -211,6 +212,7 @@ export function ThreadList({
   // the backend has no agents.
   agentNames?: Map<number, string>;
 }) {
+  const [searching, setSearching] = useState(false);
   return (
     <nav aria-label="Conversations" className="flex min-h-0 flex-1 flex-col">
       <div className="p-3">
@@ -222,11 +224,14 @@ export function ThreadList({
           New chat
         </Link>
       </div>
-      <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+      <div className={searching ? "min-h-0 flex-1 overflow-y-auto" : ""}>
+        <ConversationSearch agentNames={agentNames} onActive={setSearching} onNavigate={onNavigate} />
+      </div>
+      <ul className={`min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3 ${searching ? "hidden" : ""}`}>
         {threads === null && <li className="px-3 py-2 text-xs text-zinc-500">Loading…</li>}
         {threads?.length === 0 && (
           <li className="px-3 py-2 text-xs text-zinc-500">
-            {showArchived ? "No conversations." : "No conversations yet."}
+            {showArchived ? "No conversations." : "No conversations yet. Start one with New chat; they are kept on this computer."}
           </li>
         )}
         {threads?.map((thread) => (

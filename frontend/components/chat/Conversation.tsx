@@ -24,7 +24,13 @@ export function Conversation({
   remembered = {},
   undoneRules = [],
   onUndo,
+  threadId = null,
+  emptyHint,
 }: {
+  // The conversation the transcript belongs to: attachments are fetched from it.
+  threadId?: number | null;
+  // What to say when there is nothing yet (depends on whether an engine is ready).
+  emptyHint?: string;
   transcript: Transcript;
   answering: string | null;
   approvalErrors: Record<string, string>;
@@ -55,15 +61,18 @@ export function Conversation({
     <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-6">
         {transcript.items.length === 0 && transcript.typing === null && (
-          <p className="py-16 text-center text-sm text-zinc-500">
-            Ask your agent something. Conversation history is kept on this computer.
-          </p>
+          <div className="py-16 text-center text-sm text-zinc-500">
+            <p>{emptyHint ?? "Ask your agent something."}</p>
+            <p className="mt-2 text-xs">
+              History stays on this computer. Attach images or text files with 📎, paste, or drop them on the message box.
+            </p>
+          </div>
         )}
 
         {transcript.items.map((item) => {
           switch (item.kind) {
             case "user":
-              return <UserMessage key={item.key} item={item} />;
+              return <UserMessage key={item.key} item={item} threadId={threadId} />;
             case "assistant":
               return <AssistantMessage key={item.key} text={item.text} incomplete={item.incomplete} />;
             case "tool":

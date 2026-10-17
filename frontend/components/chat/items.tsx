@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { canAlwaysAllow } from "@/lib/approvals";
 import { isComputerTool, toolLabel } from "@/lib/computers";
+import { failureNextStep, turnUsageText } from "@/lib/everyday";
 import type { TranscriptItem } from "@/lib/transcript";
 import { Markdown } from "./Markdown";
+import { MessageAttachments } from "./Attachments";
 
 type Item<K extends TranscriptItem["kind"]> = Extract<TranscriptItem, { kind: K }>;
 
@@ -37,9 +39,10 @@ function LongText({ value }: { value: string }) {
   );
 }
 
-export function UserMessage({ item }: { item: Item<"user"> }) {
+export function UserMessage({ item, threadId = null }: { item: Item<"user">; threadId?: number | null }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex flex-col items-end gap-2">
+      <MessageAttachments threadId={threadId} items={item.attachments ?? []} />
       <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
         {item.text}
       </p>
@@ -267,18 +270,30 @@ const END_TEXT: Record<Item<"turn_end">["status"], (item: Item<"turn_end">) => s
 
 export function TurnEnd({ item }: { item: Item<"turn_end"> }) {
   const message = END_TEXT[item.status](item);
-  if (!message) return null;
+  const usage = item.status === "completed" || item.usage ? turnUsageText(item.usage) : null;
+  const next = item.status === "failed" ? failureNextStep(item.errorCode) : null;
   const bad = item.status === "failed";
   return (
-    <p
-      className={`rounded-md border px-3 py-2 text-xs ${
-        bad
-          ? "border-red-300 text-red-700 dark:border-red-900 dark:text-red-400"
-          : "border-zinc-200 text-zinc-500 dark:border-zinc-800"
-      }`}
-    >
-      {message}
-    </p>
+    <>
+      {message && (
+        <div
+          role={bad ? "alert" : undefined}
+          className={`rounded-md border px-3 py-2 text-xs ${
+            bad
+              ? "border-red-300 text-red-700 dark:border-red-900 dark:text-red-400"
+              : "border-zinc-200 text-zinc-500 dark:border-zinc-800"
+          }`}
+        >
+          <p className="whitespace-pre-wrap break-words">{message}</p>
+          {next && <p className="mt-1 text-zinc-600 dark:text-zinc-400">{next}</p>}
+        </div>
+      )}
+      {usage && (
+        <p className="text-right text-[11px] text-zinc-400 dark:text-zinc-500" title="As reported by the engine">
+          {usage}
+        </p>
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-Open Dots is a self-hosted workspace for personal and business agents. Today it runs Claude Code tasks in Boat sandboxes from Telegram or a web UI. The roadmap moves it toward a local-first agent chat that uses the Claude/Codex CLIs you already have signed in.
+Open Dots is a self-hosted workspace for personal and business agents. It runs Claude Code tasks in Boat sandboxes from Telegram or a web UI, and durable local conversations through Claude, Codex, a generic ACP command or an OpenAI-compatible endpoint.
 
 This page separates **shipped** from **planned**. Planned items are not promises or dates. For shipped behavior see [FEATURES.md](FEATURES.md).
 
@@ -21,7 +21,7 @@ This page separates **shipped** from **planned**. Planned items are not promises
 | F04 | Durable threads, turns, events and approvals, and a thread list (named agents are F06) | Implemented, with a Chat page; SQLite supported, PostgreSQL behaviour not yet verified |
 | F05 | Stop, restart and resume | Stop implemented (Chat page and API); a stopped or interrupted message is never resumed or sent again, the conversation continues from the same session |
 | F06 | Multiple named agents with dedicated workspaces | Implemented: `/api/v1/agents`, `agent_id` on threads, per-agent folder, per-agent notes (`MEMORY.md`), starter notes, export/import as one file, and the Agents panel in the Chat page; SQLite and PostgreSQL tested |
-| F07 | Codex provider (experimental until Windows sandbox issue is resolved) | Planned |
+| F07 | Multiple engines and model selection | Implemented (experimental): Claude, Codex app-server, generic ACP and OpenAI-compatible chat; agent/new-chat engine and model controls, idle conversation model changes, web/desktop engine Settings. See [ENGINES.md](ENGINES.md) for capabilities and limits |
 | F08 | Browse/download agent workspace files | Planned |
 | F09 | First-run onboarding and local storage (experimental SQLite and a desktop app from a source checkout exist; database-backed desktop settings and native workspace selection exist; conversations pin their workspace; first-run onboarding remains) | In progress |
 | F10 | Installable beta, CI and documentation | Planned |
@@ -31,7 +31,7 @@ Beta gate: access restricted to the local owner, streaming local Claude, working
 
 ## Sprint 2 — everyday usefulness (`v0.2.0`)
 
-Permission modes, thread search, agent topic notes and automatic note upkeep (single-file agent notes exist, see F06), scheduled agent routines, run history and notifications, per-agent MCP servers, an additional connector, SKILL.md import, agent templates (an agent can already be exported and imported as one file), API-key (OpenAI-compatible) provider.
+Thread search, agent topic notes and automatic note upkeep (single-file agent notes exist, see F06), scheduled agent routines, run history and notifications, per-agent MCP servers, an additional connector, SKILL.md import, agent templates (an agent can already be exported and imported as one file). Quota-aware engine fallback, model prices/context windows, multiple endpoint instances and richer non-Claude capabilities remain planned.
 
 ## Sprint 3 and beyond
 

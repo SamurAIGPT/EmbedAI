@@ -23,8 +23,9 @@ class ThreadCreateRequest(BaseModel):
 
 class ThreadUpdateRequest(BaseModel):
     """Rename, archive and/or change the model. Send at least one field.
-    `model` takes an explicit null to go back to the engine's default; the
-    engine stays the one the conversation started on."""
+    `model` takes an explicit null to follow the agent's model (on the same
+    engine), otherwise the engine default. The engine stays the one the
+    conversation started on."""
 
     title: str | None = Field(default=None, max_length=200)
     archived: bool | None = None

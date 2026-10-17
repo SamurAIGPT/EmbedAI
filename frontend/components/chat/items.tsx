@@ -168,12 +168,12 @@ export function ApprovalCard({
         {pending ? (
           isComputerTool(item.tool) ? (
             <>
-              Claude wants to {toolLabel(item.tool)}, an isolated machine, not this one. It will not run
+              Your agent wants to {toolLabel(item.tool)}, an isolated machine, not this one. It will not run
               until you allow it.
             </>
           ) : (
             <>
-              Claude wants to use <span className="font-mono">{item.tool}</span>. It will not run
+              Your agent wants to use <span className="font-mono">{item.tool}</span>. It will not run
               until you allow it.
             </>
           )
@@ -261,8 +261,8 @@ const END_TEXT: Record<Item<"turn_end">["status"], (item: Item<"turn_end">) => s
   cancelled: () => "You stopped this answer.",
   interrupted: (i) =>
     i.reason === "shutdown"
-      ? "The app was closed while Claude was working. This message was not resumed or sent again."
-      : "The app stopped while Claude was working. This message was not resumed or sent again.",
+      ? "The app was closed while the agent was working. This message was not resumed or sent again."
+      : "The app stopped while the agent was working. This message was not resumed or sent again.",
 };
 
 export function TurnEnd({ item }: { item: Item<"turn_end"> }) {
@@ -286,7 +286,7 @@ export function SessionReset({ item }: { item: Item<"session_reset"> }) {
   return (
     <p className="border-y border-dashed border-zinc-300 py-2 text-center text-xs text-zinc-500 dark:border-zinc-700">
       {item.message ||
-        "Claude's memory of this conversation was reset. The messages above are shown for reference only."}
+        "The engine's session for this conversation was reset. The messages above are shown for reference only."}
     </p>
   );
 }

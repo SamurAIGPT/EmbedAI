@@ -1,21 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Agent, type AgentInput, type AgentMemory, type ApprovalMode } from "@/lib/api";
+import { api, ApiError, type Agent, type AgentInput, type AgentMemory, type ApprovalMode, type Engine } from "@/lib/api";
 import {
   APPROVAL_MODES,
-  MODEL_SUGGESTIONS,
   agentFileHasNotes,
   agentFileText,
   approvalModeLabel,
   memoryGauge,
-  modelFromInput,
   modelLabel,
   parseAgentFile,
   redactionNotice,
 } from "@/lib/agents";
 import { computerStateLabel } from "@/lib/computers";
 import { ComputerView } from "./ComputerPanel";
+import { EngineModelFields } from "./EngineModelFields";
 
 type Draft = {
   id: number | null;
@@ -23,7 +22,8 @@ type Draft = {
   title: string;
   description: string;
   instructions: string;
-  model: string;
+  provider: string;
+  model: string | null;
   workspace_path: string;
   approval_mode: ApprovalMode;
   memory_enabled: boolean;
@@ -37,7 +37,8 @@ const EMPTY: Draft = {
   title: "",
   description: "",
   instructions: "",
-  model: "default",
+  provider: "claude",
+  model: null,
   workspace_path: "",
   approval_mode: "ask",
   memory_enabled: true,
@@ -51,7 +52,8 @@ function toDraft(agent: Agent): Draft {
     title: agent.title ?? "",
     description: agent.description ?? "",
     instructions: agent.instructions ?? "",
-    model: modelLabel(agent.model),
+    provider: agent.provider,
+    model: agent.model,
     workspace_path: agent.workspace_path ?? "",
     approval_mode: agent.approval_mode,
     memory_enabled: agent.memory_enabled ?? true,
@@ -64,8 +66,9 @@ function toInput(draft: Draft): AgentInput {
     name: draft.name.trim(),
     title: draft.title.trim() || null,
     description: draft.description.trim() || null,
-    instructions: draft.instructions.trim() || null,
-    model: modelFromInput(draft.model),
+    instructions: draft.instructions.trim(),
+    provider: draft.provider,
+    model: draft.model?.trim() || null,
     workspace_path: draft.workspace_path.trim() || null,
     approval_mode: draft.approval_mode,
     memory_enabled: draft.memory_enabled,
@@ -127,7 +130,14 @@ export function AgentsPanel({
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [engines, setEngines] = useState<Engine[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getEngines().then((items) => { if (!cancelled) setEngines(items); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
@@ -346,21 +356,8 @@ export function AgentsPanel({
                   <span className="mt-1 block">The agent&apos;s first notes (MEMORY.md). It keeps them up to date itself.</span>
                 </label>
               )}
-              <label className="block text-xs text-zinc-500">
-                Model
-                <input
-                  list="agent-model-suggestions"
-                  value={draft.model}
-                  onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-                  className={`${FIELD} mt-1`}
-                />
-                <datalist id="agent-model-suggestions">
-                  {MODEL_SUGGESTIONS.map((model) => (
-                    <option key={model} value={model} />
-                  ))}
-                </datalist>
-                <span className="mt-1 block">&quot;default&quot; uses whatever Claude Code picks. Any model name it accepts works.</span>
-              </label>
+              <EngineModelFields engines={engines} provider={draft.provider} model={draft.model} disabled={busy} hasComputer={agents.some((agent) => agent.id === draft.id && agent.computer != null)} onChange={(provider, model) => setDraft({ ...draft, provider, model })} />
+              <p className="text-xs text-zinc-500">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
               <label className="block text-xs text-zinc-500">
                 Workspace folder
                 <input
@@ -503,7 +500,7 @@ export function AgentsPanel({
                           {archived && <span className="ml-2 text-xs font-normal text-zinc-500">archived</span>}
                         </p>
                         <p className="text-xs text-zinc-500">
-                          {modelLabel(agent.model)} · {approvalModeLabel(agent.approval_mode)}
+                          {engines.find((engine) => engine.id === agent.provider)?.label ?? agent.provider} · {modelLabel(agent.model)} · {approvalModeLabel(agent.approval_mode)}
                           {agent.memory_enabled === false && " · notes off"}
                           {agent.computer && ` · computer: ${computerStateLabel(agent.computer.state).toLowerCase()}`}
                         </p>

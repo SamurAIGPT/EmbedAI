@@ -39,7 +39,7 @@ HISTORY_CHARS = 120_000
 MAX_ERROR_CHARS = 500
 MAX_MODELS = 200
 
-NOT_CONFIGURED = "Set the endpoint's address (and key, if it needs one) in the Agents panel (Engines)."
+NOT_CONFIGURED = "Set the endpoint's address (and key, if it needs one) in Settings → Engines."
 
 
 class InvalidConfig(ValueError):

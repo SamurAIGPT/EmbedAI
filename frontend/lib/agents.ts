@@ -7,7 +7,7 @@ export const APPROVAL_MODES: { value: ApprovalMode; label: string; description: 
   {
     value: "ask",
     label: "Ask first",
-    description: "Claude asks before it writes a file or runs a command. Reading is allowed.",
+    description: "Your agent asks before it writes a file or runs a command. Reading is allowed.",
   },
   {
     value: "accept_edits",
@@ -17,7 +17,7 @@ export const APPROVAL_MODES: { value: ApprovalMode; label: string; description: 
   {
     value: "plan",
     label: "Plan only",
-    description: "Claude looks around and writes a plan, but changes nothing.",
+    description: "Your agent looks around and writes a plan, but changes nothing.",
   },
 ];
 

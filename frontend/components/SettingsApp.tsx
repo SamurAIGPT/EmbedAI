@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type ApplicationSetting, type DesktopSettings } from "@/lib/api";
 import { ApprovalsTabs } from "@/components/approvals/ApprovalsPanel";
+import { EngineSettings } from "@/components/EngineSettings";
 
 declare global {
   interface Window {
@@ -34,17 +35,21 @@ export function SettingsApp() {
   const [loadTick, setLoadTick] = useState(0);
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [headless, setHeadless] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     api.getDesktopSettings().then((value) => {
       if (cancelled) return;
       setData(value);
+      setHeadless(false);
       setDrafts(Object.fromEntries(value.settings.map((row) => [row.key, row.value])));
       setError(null);
       setNotice(null);
     }).catch((err: unknown) => {
-      if (!cancelled) setError(isLaunchTokenMissing(err) ? "Open Settings inside the Open Dots app window." : err instanceof ApiError ? err.message : "Could not reach the backend. Check that the app is running.");
+      if (cancelled) return;
+      if (err instanceof ApiError && err.status === 404) { setHeadless(true); setError(null); }
+      else setError(isLaunchTokenMissing(err) ? "Open Settings inside the Open Dots app window." : err instanceof ApiError ? err.message : "Could not reach the backend. Check that the app is running.");
     });
     return () => { cancelled = true; };
   }, [loadTick]);
@@ -84,11 +89,12 @@ export function SettingsApp() {
   return <div className="min-h-dvh">
     <header className="flex h-12 items-center gap-4 border-b border-zinc-200 px-4 dark:border-zinc-800"><Link href="/chat/" className="text-sm text-zinc-500 hover:underline">← Chat</Link><h1 className="text-sm font-semibold">Settings</h1></header>
     <main className="mx-auto max-w-2xl space-y-6 px-5 py-8">
-      <div><h2 className="text-xl font-semibold">Desktop settings</h2><p className="mt-2 text-sm text-zinc-500">Save each setting when ready. Conversations and running answers keep their existing context.</p></div>
+      <div><h2 className="text-xl font-semibold">Settings</h2><p className="mt-2 text-sm text-zinc-500">Configure engines and approvals. Desktop preferences can be saved below when using the app.</p></div>
       {error && <p role="alert" className="rounded-md border border-red-300 p-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-zinc-300 p-3 text-sm dark:border-zinc-700">{notice}</p>}
-      {!data && !error && <p role="status">Loading settings…</p>}
-      <button className={buttonClass} disabled={busy !== null} onClick={() => setLoadTick((n) => n + 1)}>{data ? "Reload saved settings" : "Try again"}</button>
+      {headless && <p className="text-sm text-zinc-500">Workspace, executable and timeout preferences use the backend environment configuration in this installation.</p>}
+      {!data && !error && !headless && <p role="status">Loading settings…</p>}
+      {!headless && <button className={buttonClass} disabled={busy !== null} onClick={() => setLoadTick((n) => n + 1)}>{data ? "Reload saved settings" : "Try again"}</button>}
       {data && <>
         <section className="space-y-5 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
           <h3 className="font-semibold">Claude Code</h3>
@@ -117,6 +123,7 @@ export function SettingsApp() {
         </section>
         <section className="space-y-4 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="font-semibold">Storage</h3><p className="text-xs text-zinc-500">Managed by the desktop app. These locations cannot be changed here.</p><dl className="space-y-3 text-sm">{Object.entries(data.storage).map(([name, value]) => <div key={name}><dt className="font-medium capitalize">{name.replaceAll("_", " ")}</dt><dd className="mt-1 break-all text-xs text-zinc-500">{value}</dd></div>)}</dl></section>
       </>}
+      <EngineSettings />
       <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="mb-1 font-semibold">Approvals</h3><p className="mb-4 text-xs text-zinc-500">Commands you always allow, every decision about a tool call, and a read-only health scan of recent conversations.</p><ApprovalsTabs /></section>
     </main>
   </div>;

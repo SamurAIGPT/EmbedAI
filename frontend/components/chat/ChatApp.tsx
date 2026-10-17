@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, ApiError, isLaunchTokenMissing, type Agent, type LocalStatus, type Thread } from "@/lib/api";
+import { api, ApiError, isLaunchTokenMissing, type Agent, type Engine, type LocalStatus, type Thread } from "@/lib/api";
 import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
 import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
+import { EngineModelFields } from "./EngineModelFields";
 import { ComputerView } from "./ComputerPanel";
 import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
 import type { Remembered } from "./items";
@@ -41,9 +42,9 @@ function manageErrorText(err: unknown): string {
 // Says what went wrong in words a person can act on.
 function sendErrorText(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.code === "turn_running") return "Claude is still answering the last message.";
+    if (err.code === "turn_running") return "An answer to the last message is still running.";
     if (err.code === "session_broken")
-      return "Claude can no longer find this conversation. Start a new session to continue.";
+      return "The engine can no longer find this conversation. Start a new session to continue.";
     return err.message || "Could not send the message.";
   }
   return "Could not reach the backend.";
@@ -84,10 +85,10 @@ export function ChatApp() {
   const threadId = parseThreadId(useSearchParams().get("thread"));
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
-  const [desktop, setDesktop] = useState(false);
   // Bumped by "Check again": Claude may have been installed or signed in since.
   const [statusTick, setStatusTick] = useState(0);
   const [threads, setThreads] = useState<Thread[] | null>(null);
+  const [openedThread, setOpenedThread] = useState<Thread | null>(null);
   // Bumped to ask for a fresh thread list (after a send, a reset, a poll).
   const [listTick, setListTick] = useState(0);
   const [listOpen, setListOpen] = useState(false);
@@ -115,17 +116,25 @@ export function ChatApp() {
   const [undoneRules, setUndoneRules] = useState<number[]>([]);
   // The agent a new chat will start with (null: a plain chat).
   const [newAgentId, setNewAgentId] = useState<number | null>(null);
+  const [engines, setEngines] = useState<Engine[] | null>(null);
+  const [newProvider, setNewProvider] = useState("claude");
+  const [newModel, setNewModel] = useState<string | null>(null);
+  const [modelDraft, setModelDraft] = useState<{ threadId: number | null; agentId: number | null; provider: string; model: string | null } | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
 
-  const stream = useThreadStream(gate.phase === "ready" && gate.status.available ? threadId : null);
+  // Engine discovery also grants access to history and setup when Claude is
+  // absent. Starting a turn is checked against the selected engine below.
+  const ready = gate.phase === "ready" && (gate.status.available || (gate.status.enabled && engines !== null));
+  const stream = useThreadStream(ready ? threadId : null);
   const { transcript } = stream;
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getLocalStatus()
-      .then((status) => {
+    Promise.all([api.getLocalStatus(), api.getEngines().catch(() => null)])
+      .then(([status, items]) => {
         if (cancelled) return;
-        setDesktop(Boolean(window.openDots));
+        setEngines(items);
         setGate({ phase: "ready", status });
       })
       .catch((err: unknown) => {
@@ -144,8 +153,6 @@ export function ChatApp() {
     setStatusTick((n) => n + 1);
   };
 
-  const ready = gate.phase === "ready" && gate.status.available;
-
   // The list is read whenever the tick changes, and again when a turn starts or
   // ends (that changes the order, the title and the session state).
   useEffect(() => {
@@ -161,6 +168,21 @@ export function ChatApp() {
       cancelled = true;
     };
   }, [ready, listTick, showArchived, transcript.runningTurnId]);
+
+  // A bookmarked archived conversation may be absent from the sidebar. Its
+  // engine and model still come from the conversation, never new-chat defaults.
+  useEffect(() => {
+    if (!ready || threadId === null) return;
+    let cancelled = false;
+    api.getThread(threadId).then((value) => { if (!cancelled) setOpenedThread(value); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [ready, threadId, listTick, transcript.runningTurnId]);
+
+  useEffect(() => {
+    const closeModel = () => setModelDraft(null);
+    window.addEventListener("popstate", closeModel);
+    return () => window.removeEventListener("popstate", closeModel);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -185,7 +207,7 @@ export function ChatApp() {
     return () => clearInterval(timer);
   }, [ready]);
 
-  const thread = threads?.find((t) => t.id === threadId) ?? null;
+  const thread = (openedThread?.id === threadId ? openedThread : null) ?? threads?.find((t) => t.id === threadId) ?? null;
   const names = agentNames(agents);
   const threadAgent = thread?.agent_id != null ? (agents?.find((a) => a.id === thread.agent_id) ?? null) : null;
   // The computer this conversation's tools run in; older backends send none.
@@ -193,14 +215,21 @@ export function ChatApp() {
   const choosable = activeAgents(agents);
   // The chosen agent may have been archived since: then the chat starts plain.
   const startingAgentId = choosable.some((a) => a.id === newAgentId) ? newAgentId : null;
+  const startingAgent = choosable.find((agent) => agent.id === startingAgentId);
+  const selectedProvider = thread?.provider ?? startingAgent?.provider ?? newProvider;
+  const selectedEngine = engines?.find((engine) => engine.id === selectedProvider);
+  const selectedAgent = threadId === null ? startingAgent : threadAgent?.provider === thread?.provider ? threadAgent : null;
+  const selectedModel = (threadId === null ? newModel : thread?.model) ?? selectedAgent?.model ?? null;
   const waiting = pendingApprovals(transcript).length > 0;
 
   let blockedReason: string | null = null;
   if (stream.connection === "failed") blockedReason = "This conversation cannot be opened.";
+  else if (threadId !== null && thread === null) blockedReason = "Loading conversation…";
   else if (thread?.session_state === "broken")
     blockedReason = "Start a new session to continue this conversation.";
-  else if (waiting) blockedReason = "Claude is waiting for your answer above.";
-  else if (transcript.runningTurnId !== null) blockedReason = "Claude is answering…";
+  else if (waiting) blockedReason = "The engine is waiting for your answer above.";
+  else if (transcript.runningTurnId !== null) blockedReason = "An answer is running…";
+  else if (selectedEngine && !selectedEngine.available) blockedReason = selectedEngine.reason ?? "This engine is unavailable. Check its settings.";
 
   const send = async () => {
     const text = draft.trim();
@@ -210,7 +239,7 @@ export function ChatApp() {
     try {
       let id = threadId;
       if (id === null) {
-        id = (await api.createThread(startingAgentId)).id;
+        id = (await api.createThread(startingAgentId, startingAgentId !== null ? { model: newModel } : { provider: newProvider, model: newModel })).id;
         // Open it now: the stream replays from the start, so nothing is missed.
         router.replace(`/chat?thread=${id}`);
       }
@@ -222,6 +251,25 @@ export function ChatApp() {
       setSending(false);
       setListTick((n) => n + 1);
     }
+  };
+
+  const saveModel = async () => {
+    if (!modelDraft) return;
+    const target = modelDraft;
+    setModelBusy(true); setModelError(null);
+    const model = target.model?.trim() || null;
+    try {
+      if (target.threadId !== null) {
+        const updated = await api.updateThread(target.threadId, { model });
+        setThreads((previous) => previous?.map((item) => item.id === target.threadId ? updated : item) ?? null);
+        setOpenedThread((previous) => previous?.id === target.threadId ? updated : previous);
+      } else {
+        setNewProvider(target.provider);
+        setNewModel(model);
+      }
+      setModelDraft((previous) => previous === target ? null : previous);
+    } catch (err) { setModelError(err instanceof ApiError ? err.message : "Could not change the model."); }
+    finally { setModelBusy(false); }
   };
 
   const stop = async () => {
@@ -324,8 +372,8 @@ export function ChatApp() {
       >
         ☰
       </button>
-      <Link href={desktop ? "/settings/" : "/"} className="text-sm text-zinc-500 hover:underline">
-        {desktop ? "Settings" : "← Home"}
+      <Link href="/settings/" className="text-sm text-zinc-500 hover:underline">
+        Settings
       </Link>
       <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
         {thread?.title || (threadId === null ? "New chat" : "Chat")}
@@ -334,7 +382,7 @@ export function ChatApp() {
         (threadId === null ? (
           <select
             value={startingAgentId ?? ""}
-            onChange={(e) => setNewAgentId(e.target.value === "" ? null : Number(e.target.value))}
+            onChange={(e) => { setNewAgentId(e.target.value === "" ? null : Number(e.target.value)); setNewModel(null); setModelDraft(null); }}
             aria-label="Agent for this chat"
             className="max-w-40 cursor-pointer truncate rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
           >
@@ -351,10 +399,11 @@ export function ChatApp() {
               className="hidden max-w-48 truncate text-xs text-zinc-500 sm:inline"
               title={`${modelLabel(threadAgent.model)} · ${approvalModeLabel(threadAgent.approval_mode)}`}
             >
-              {threadAgent.name} · {modelLabel(threadAgent.model)}
+              {threadAgent.name}
             </span>
           )
         ))}
+      {ready && engines && (threadId === null || thread !== null) && <button aria-label="Choose engine and model" disabled={modelBusy || sending || transcript.runningTurnId !== null} onClick={() => { setModelError(null); setModelDraft({ threadId, agentId: startingAgentId, provider: selectedProvider, model: threadId === null ? newModel : thread?.model ?? null }); }} className="max-w-52 cursor-pointer truncate rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-50 dark:border-zinc-700">{selectedEngine?.label ?? selectedProvider} · {modelLabel(selectedModel)}</button>}
       {threadComputer && threadAgent && (
         <button
           onClick={() => setComputerOpen(true)}
@@ -364,15 +413,15 @@ export function ChatApp() {
           {computerChip(threadComputer)}
         </button>
       )}
-      {gate.phase === "ready" && gate.status.available && (gate.status.tools_enabled || threadComputer) && threadId !== null && (
+      {ready && gate.phase === "ready" && (gate.status.tools_enabled || threadComputer) && threadId !== null && (
         <span
           className="hidden rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 sm:inline dark:bg-zinc-900 dark:text-zinc-400"
-          title="How much Claude may do before it asks. Set by the conversation's agent; a plain chat asks first."
+          title="How much the engine may do before it asks. Set by the conversation's agent; a plain chat asks first."
         >
           {approvalModeLabel(threadAgent?.approval_mode ?? "ask")}
         </span>
       )}
-      {gate.phase === "ready" && gate.status.available && (
+      {ready && (
         <button
           onClick={() => setApprovalsOpen(true)}
           className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -391,10 +440,10 @@ export function ChatApp() {
       {stream.connection === "reconnecting" && (
         <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
       )}
-      {gate.phase === "ready" && gate.status.available && (
+      {ready && selectedEngine && (
         <span className="hidden text-xs text-zinc-500 sm:inline">
-          {gate.status.cli_version ?? "Claude Code"}
-          {gate.status.tools_enabled || threadComputer ? "" : " · chat only"}
+          {selectedEngine.available ? selectedEngine.version ?? "Ready" : "Unavailable"}
+          {selectedEngine.capabilities.tools ? "" : " · chat only"}
         </span>
       )}
     </header>
@@ -434,18 +483,18 @@ export function ChatApp() {
     );
   }
 
-  if (!gate.status.available) {
+  if (!ready) {
     return (
       <div className="flex h-dvh flex-col">
         {header}
         <Notice
-          title={gate.status.enabled ? "Local Claude is not available" : "Local Claude is turned off"}
+          title={gate.status.enabled ? "Engines are not available" : "Local execution is turned off"}
           action={gate.status.enabled ? { label: "Check again", onClick: checkAgain } : undefined}
         >
           {gate.status.enabled
             ? (gate.status.reason ?? "unknown reason")
-            : "Set LOCAL_EXECUTION_ENABLED=true in backend/.env on the machine running the backend, then restart it. Chat runs Claude through your own signed-in CLI on this computer."}
-          {desktop && <p className="mt-3"><Link href="/settings/" className="underline">Open Settings</Link> to choose the Claude executable and check its status.</p>}
+            : "Set LOCAL_EXECUTION_ENABLED=true in backend/.env on the machine running the backend, then restart it."}
+          <p className="mt-3"><Link href="/settings/" className="underline">Open Settings</Link> to configure an engine and check its status.</p>
         </Notice>
       </div>
     );
@@ -454,6 +503,15 @@ export function ChatApp() {
   return (
     <div className="relative flex h-dvh flex-col">
       {header}
+      {modelDraft && modelDraft.threadId === threadId && (threadId !== null || modelDraft.agentId === startingAgentId) && engines && <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Engine and model">
+        <form onSubmit={(event) => { event.preventDefault(); void saveModel(); }} className="w-full max-w-md space-y-4 rounded-lg border border-zinc-200 bg-background p-5 shadow-xl dark:border-zinc-800">
+          <h2 className="font-semibold">Engine and model</h2>
+          <EngineModelFields engines={engines} provider={modelDraft.provider} model={modelDraft.model} onChange={(provider, model) => setModelDraft({ ...modelDraft, provider, model })} disabled={modelBusy} lockProvider={threadId !== null || startingAgentId !== null} defaultLabel={selectedAgent ? `Agent default (${modelLabel(selectedAgent.model)})` : undefined} />
+          {threadId !== null && <p className="text-xs text-zinc-500">The model changes on the next message. This conversation keeps its engine.</p>}
+          {modelError && <p role="alert" className="text-sm text-red-600">{modelError}</p>}
+          <div className="flex gap-2"><button type="submit" disabled={modelBusy} className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700">{modelBusy ? "Saving…" : "Use model"}</button><button type="button" disabled={modelBusy} onClick={() => setModelDraft(null)} className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">Cancel</button><button type="button" disabled={modelBusy} onClick={() => { setModelBusy(true); api.getEngines(true).then(setEngines).catch(() => setModelError("Could not refresh engines.")).finally(() => setModelBusy(false)); }} className="px-2 text-sm underline disabled:opacity-50">Refresh status</button></div>
+        </form>
+      </div>}
       {approvalsOpen && (
         <ApprovalsPanel
           threadId={threadId}
@@ -502,7 +560,7 @@ export function ChatApp() {
           <ThreadList
             threads={threads}
             selectedId={threadId}
-            onNavigate={() => setListOpen(false)}
+            onNavigate={() => { setListOpen(false); setModelDraft(null); }}
             showArchived={showArchived}
             onToggleArchived={() => setShowArchived((on) => !on)}
             actions={listActions}
@@ -530,7 +588,7 @@ export function ChatApp() {
             <div className="border-t border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
               <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
                 <p className="min-w-0 flex-1 text-amber-900 dark:text-amber-200">
-                  Claude can no longer find this conversation&apos;s session, so it cannot continue it. A new
+                  The engine can no longer find this conversation&apos;s session, so it cannot continue it. A new
                   session keeps the messages above but starts without them as context.
                 </p>
                 <button

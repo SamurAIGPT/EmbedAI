@@ -56,7 +56,7 @@ export function Conversation({
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-6">
         {transcript.items.length === 0 && transcript.typing === null && (
           <p className="py-16 text-center text-sm text-zinc-500">
-            Ask Claude something. Everything is kept on this computer.
+            Ask your agent something. Conversation history is kept on this computer.
           </p>
         )}
 
@@ -93,7 +93,7 @@ export function Conversation({
         )}
 
         {working && !waitingOnYou && (
-          <p className="animate-pulse text-xs text-zinc-500">Claude is working…</p>
+          <p className="animate-pulse text-xs text-zinc-500">Working…</p>
         )}
       </div>
     </div>

@@ -437,7 +437,7 @@ export type AgentInput = {
   name: string;
   title?: string | null;
   description?: string | null;
-  instructions?: string | null;
+  instructions?: string;
   provider?: string;
   model?: string | null;
   workspace_path?: string | null;
@@ -446,6 +446,32 @@ export type AgentInput = {
   memory_enabled?: boolean;
   // Create only: the first contents of the agent's notes.
   starter_notes?: string | null;
+};
+
+export type EngineModel = { id: string; label: string; default: boolean };
+export type Engine = {
+  id: string;
+  label: string;
+  kind: "cli" | "acp" | "api";
+  installed: boolean;
+  version: string | null;
+  signed_in: boolean | null;
+  available: boolean;
+  reason: string | null;
+  models: EngineModel[];
+  default_model: string | null;
+  custom_models: boolean;
+  capabilities: { tools: boolean; approvals: boolean; mcp: boolean; images: boolean; resume: boolean; computers: boolean };
+  configurable: boolean;
+  config: Record<string, unknown> | null;
+};
+export type EngineConfigInput = {
+  command?: string;
+  label?: string;
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+  clear_api_key?: boolean;
 };
 
 // An agent's notes and how much of them loads into each turn.
@@ -574,6 +600,10 @@ export type DesktopSettings = {
 };
 
 export const api = {
+  getEngines: (refresh = false) => request<Engine[]>(`/engines${refresh ? "?refresh=true" : ""}`),
+  saveEngineConfig: (engineId: string, config: EngineConfigInput) =>
+    request<Engine>(`/engines/${encodeURIComponent(engineId)}/config`, { method: "PUT", body: JSON.stringify(config) }),
+  deleteEngineConfig: (engineId: string) => request<void>(`/engines/${encodeURIComponent(engineId)}/config`, { method: "DELETE" }),
   getDesktopSettings: () => request<DesktopSettings>("/settings"),
   saveDesktopSetting: (key: string, value: unknown, expectedVersion: number) =>
     request<ApplicationSetting>(`/settings/${encodeURIComponent(key)}`, {
@@ -674,10 +704,10 @@ export const api = {
 
   getThread: (threadId: number) => request<ThreadDetail>(`/threads/${threadId}`),
 
-  createThread: (agentId?: number | null) =>
+  createThread: (agentId?: number | null, selection?: { provider?: string; model?: string | null }) =>
     request<Thread>("/threads", {
       method: "POST",
-      body: JSON.stringify(agentId != null ? { agent_id: agentId } : {}),
+      body: JSON.stringify({ ...(agentId != null ? { agent_id: agentId } : {}), ...selection }),
     }),
 
   // --- Named agents (/agents). An older backend answers 404: callers treat that
@@ -760,7 +790,7 @@ export const api = {
     request<{ status: string; turn_id: number }>(`/threads/${threadId}/stop`, { method: "POST" }),
 
   // Rename and/or archive. 409 turn_running: stop the answer first (archive only).
-  updateThread: (threadId: number, change: { title?: string; archived?: boolean }) =>
+  updateThread: (threadId: number, change: { title?: string; archived?: boolean; model?: string | null }) =>
     request<Thread>(`/threads/${threadId}`, { method: "PATCH", body: JSON.stringify(change) }),
 
   // Permanent: the conversation's messages, tool calls and approvals in this app's

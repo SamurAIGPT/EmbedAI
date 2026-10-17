@@ -12,6 +12,30 @@ UI do not know which engine they are talking to.
 | `acp` | ACP agent | acp | any agent CLI that speaks the Agent Client Protocol, from a saved command |
 | `openai_compat` | OpenAI-compatible | api | `POST {base_url}/chat/completions`, streamed (Ollama, LM Studio, vLLM, hosted APIs) |
 
+## Choose and configure an engine
+
+Open **Settings → Engines** in the web UI or desktop app. **Refresh status**
+checks installation, login and endpoint readiness. An unavailable engine shows
+its reason without blocking the others. Sign in to Claude or Codex in a terminal;
+the app does not install engines or complete their login for you.
+
+For ACP, save the command and optional display name. For an OpenAI-compatible
+endpoint, save its base URL (including `/v1` when required), optional default
+model and optional API key. Configuration is encrypted at rest. A blank key
+keeps the saved key for the same URL; changing the URL drops it unless you
+enter a key again. **Forget settings** deletes the configuration and credential.
+
+Choose an engine and model in the Agents panel or before sending a new chat.
+The model field offers catalog suggestions and accepts a custom ID only when
+the engine supports it. The generic ACP engine uses its CLI's configured model;
+its picker exposes only the agent default. A computer attached to an agent
+requires a computer-capable engine (currently Claude).
+
+An existing conversation keeps its engine. Its header lets you change the
+model while idle. An explicit thread model overrides the agent; an unset one
+follows the agent's model only while they share a provider, otherwise it uses
+the engine default. Changing an agent's engine affects new conversations.
+
 ## The contract
 
 `backend/app/services/provider_adapter.py`. An adapter has:

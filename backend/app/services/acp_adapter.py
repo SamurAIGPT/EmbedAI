@@ -63,7 +63,7 @@ MAX_LABEL_CHARS = 60
 # How much of the conversation an agent that cannot load sessions is given.
 HISTORY_CHARS = 60_000
 
-NOT_CONFIGURED = "Set the agent's command in the Agents panel (Engines), for example `gemini --acp`."
+NOT_CONFIGURED = "Set the agent's command in Settings → Engines, for example `gemini --acp`."
 
 
 class InvalidConfig(ValueError):

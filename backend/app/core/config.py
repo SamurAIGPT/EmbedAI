@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     LOCAL_ALLOWED_HOSTS: str = "localhost,127.0.0.1,[::1]"
     # Full path to the real `claude` executable. Leave empty to auto-detect.
     LOCAL_CLAUDE_CLI_PATH: str = ""
+    # Full path to the `codex` executable for the Codex engine. Empty means
+    # auto-detect on PATH.
+    LOCAL_CODEX_CLI_PATH: str = ""
     # Working directory for local runs. Empty means ~/.open-dots/local.
     LOCAL_WORKSPACE_ROOT: str = ""
     LOCAL_TASK_TIMEOUT_SECONDS: int = 300

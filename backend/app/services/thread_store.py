@@ -677,11 +677,15 @@ async def create_approval(
     return approval
 
 
-async def decide_approval(db: AsyncSession, approval_id: str, decision: str) -> bool:
+async def decide_approval(
+    db: AsyncSession, approval_id: str, decision: str, *, by: dict | None = None
+) -> bool:
     """The person's decision. One statement: it wins only if the approval is
     still pending AND its turn is still running. False means nothing changed
     (decided already, cancelled, or the turn is no longer running) and the
-    caller must answer 409 and authorize nothing."""
+    caller must answer 409 and authorize nothing. `by` is added to the
+    `approval.resolved` event when something other than a person decided
+    (for example {"by": "saved_rule", "rule_id": 3}), so the chat can say so."""
     _check(decision, DECISIONS, "decision")
     await begin_write(db)
     updated = await db.execute(
@@ -696,7 +700,9 @@ async def decide_approval(db: AsyncSession, approval_id: str, decision: str) -> 
         await db.rollback()
         return False
     thread_id, turn_id = row
-    await _add_event(db, thread_id, "approval.resolved", {"approval_id": approval_id, "status": decision}, turn_id)
+    await _add_event(
+        db, thread_id, "approval.resolved", {**(by or {}), "approval_id": approval_id, "status": decision}, turn_id
+    )
     await db.commit()
     return True
 

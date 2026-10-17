@@ -6,13 +6,18 @@ of a call: the summary is cut short and has anything that looks like a secret
 removed. A write that fails is logged and ignored; an approval never fails
 because its record could not be written.
 
-Events: shown, allowed, denied, auto_allowed, expired, cancelled.
-`source` says who or what decided (user, saved_rule, timeout, provider) and
+Events: shown, allowed, denied, auto_allowed, expired, cancelled, undone.
+`undone` is a person taking back a standing "always allow" (deleting a saved
+rule, from the card's Undo or the rules list); `rule` names the rule.
+`source` says who or what decided (user, saved_rule, timeout, provider),
 `rule` which rule did (a saved command, or the safety-floor rule that made a
-call ask instead of being auto-allowed). Months older than the retention window
+call ask instead of being auto-allowed), and `mode` the conversation's
+approval mode at the time. Months older than the retention window
 (`DECISION_LOG_RETENTION_DAYS`, default 180) are deleted, at most once an hour.
 """
 
+import csv
+import io
 import json
 import os
 import re
@@ -27,11 +32,16 @@ from app.desktop import profile
 
 logger = get_logger(__name__)
 
-EVENTS = ("shown", "allowed", "denied", "auto_allowed", "expired", "cancelled")
+EVENTS = ("shown", "allowed", "denied", "auto_allowed", "expired", "cancelled", "undone")
 FILE_PREFIX = "decisions-"
 FILE_SUFFIX = ".ndjson"
 MAX_SUMMARY_CHARS = 300
 MAX_PAGE = 200
+MAX_EXPORT = 10_000
+CSV_COLUMNS = (
+    "at", "event", "source", "mode", "tool", "kind", "summary", "rule", "remembered",
+    "thread_id", "turn_id", "approval_id", "id",
+)
 
 # Order matters: whole tokens first, then `NAME=value` assignments.
 _SECRET_PATTERNS = (
@@ -100,6 +110,7 @@ def record(
     source: str | None = None,
     rule: str | None = None,
     remembered: bool = False,
+    mode: str | None = None,
 ) -> None:
     """Append one decision. Never raises."""
     if event not in EVENTS:
@@ -119,6 +130,7 @@ def record(
             "source": source,
             "rule": redact(rule)[:MAX_SUMMARY_CHARS] if rule else None,
             "remembered": remembered or None,
+            "mode": mode,
         }
         line = (json.dumps(entry, ensure_ascii=False) + "\n").encode("utf-8")
         directory = log_dir()
@@ -177,27 +189,21 @@ def _prune_if_due(directory: Path, now: datetime) -> None:
         prune(directory, retention_days(), now)
 
 
-def read_page(
+def iter_entries(
     *,
-    limit: int = 50,
     before: str | None = None,
     event: str | None = None,
     thread_id: int | None = None,
-) -> tuple[list[dict], str | None]:
-    """Newest first. `before` is the id of the last entry of the previous page;
-    the returned cursor is None on the last page. Entries are never altered, so
-    a cursor stays valid while new ones are appended. Unreadable lines are
-    skipped."""
-    limit = max(1, min(limit, MAX_PAGE))
+):
+    """Every readable entry, newest first, optionally filtered. Unreadable
+    lines and files are skipped."""
     directory = log_dir()
     if not directory.is_dir():
-        return [], None
+        return
     files = sorted(
         (p for p in directory.iterdir() if p.name.startswith(FILE_PREFIX) and p.name.endswith(FILE_SUFFIX)),
         reverse=True,
     )
-    items: list[dict] = []
-    more = False
     for path in files:
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -216,10 +222,48 @@ def read_page(
                 continue
             if thread_id is not None and entry.get("thread_id") != thread_id:
                 continue
-            if len(items) == limit:
-                more = True
-                break
-            items.append(entry)
-        if more:
+            yield entry
+
+
+def read_page(
+    *,
+    limit: int = 50,
+    before: str | None = None,
+    event: str | None = None,
+    thread_id: int | None = None,
+) -> tuple[list[dict], str | None]:
+    """Newest first. `before` is the id of the last entry of the previous page;
+    the returned cursor is None on the last page. Entries are never altered, so
+    a cursor stays valid while new ones are appended."""
+    limit = max(1, min(limit, MAX_PAGE))
+    items: list[dict] = []
+    more = False
+    for entry in iter_entries(before=before, event=event, thread_id=thread_id):
+        if len(items) == limit:
+            more = True
             break
+        items.append(entry)
     return items, (items[-1]["id"] if more and items else None)
+
+
+def _csv_cell(value) -> str:
+    """One cell. Redacted again, so an export never carries more than the log,
+    and a cell a spreadsheet would run as a formula is made plain text."""
+    if value is None:
+        return ""
+    if value is True:
+        return "yes"
+    text = redact(str(value)).replace("\r", " ").replace("\n", " ")
+    if text[:1] in ("=", "+", "-", "@", "\t"):
+        text = "'" + text
+    return text
+
+
+def to_csv(entries) -> str:
+    """The entries as CSV with a header row, in the order given."""
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(CSV_COLUMNS)
+    for entry in entries:
+        writer.writerow([_csv_cell(entry.get(column)) for column in CSV_COLUMNS])
+    return out.getvalue()

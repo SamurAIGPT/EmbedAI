@@ -277,3 +277,36 @@ async def test_always_allow_on_a_floor_command_is_allowed_once_and_not_saved(rt,
     assert cli.log("reply")[0]["reply"]["response"]["response"]["behavior"] == "allow"
     async with rt.session() as db:
         assert await allow.list_rules(db, owner) == []
+
+
+async def test_an_auto_allow_says_so_on_the_timeline(rt, sessions, cli, tools_on, owner):
+    async with rt.session() as db:
+        rule = await allow.add_rule(db, rt.owner_id, allow.EXACT, "git status -s")
+    thread = await new_thread(sessions, owner)
+    cli.script(BASH)
+    await rt.send_turn(thread.id, "status")
+    await finished(sessions, thread.id)
+    [resolved] = [e for e in await events_of(sessions, thread.id) if e.type == "approval.resolved"]
+    assert resolved.data["status"] == "allowed"
+    assert (resolved.data["by"], resolved.data["rule_id"]) == ("saved_rule", rule.id)
+
+
+async def test_a_persons_answer_carries_no_by_field(rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script(BASH)
+    await rt.send_turn(thread.id, "status")
+    approval = await pending_approval(sessions, thread.id)
+    assert await rt.answer_approval(approval.id, "allow")
+    await finished(sessions, thread.id)
+    [resolved] = [e for e in await events_of(sessions, thread.id) if e.type == "approval.resolved"]
+    assert "by" not in resolved.data
+
+
+async def test_every_record_names_the_approval_mode(rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script(BASH)
+    await rt.send_turn(thread.id, "status")
+    approval = await pending_approval(sessions, thread.id)
+    assert await rt.answer_approval(approval.id, "deny")
+    await finished(sessions, thread.id)
+    assert [e["mode"] for e in logged()] == ["ask", "ask"]  # no agent: the default

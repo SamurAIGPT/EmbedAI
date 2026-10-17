@@ -154,3 +154,43 @@ def test_a_nonsense_retention_setting_falls_back(monkeypatch):
         assert log.retention_days() == 180
     monkeypatch.setattr(settings, "DECISION_LOG_RETENTION_DAYS", 30)
     assert log.retention_days() == 30
+
+
+def test_undone_is_an_event_and_mode_is_recorded(decision_log_dir):
+    log.record("undone", source="user", rule="exact@/w: ls")
+    log.record("shown", approval_id="a", mode="accept_edits")
+    undone, shown = reversed(log.read_page()[0])
+    assert (undone["event"], undone["rule"]) == ("undone", "exact@/w: ls")
+    assert shown["mode"] == "accept_edits"
+
+
+def test_csv_has_a_header_and_one_row_per_entry(decision_log_dir):
+    log.record("denied", thread_id=7, tool="Bash", summary="ls -la", source="user", mode="ask")
+    log.record("allowed", thread_id=7, tool="Bash", summary="pwd", source="user", remembered=True)
+    lines = log.to_csv(log.iter_entries()).splitlines()
+    assert lines[0].split(",") == list(log.CSV_COLUMNS)
+    assert len(lines) == 3
+    assert lines[1].split(",")[:4] and ",allowed,user," in lines[1] and ",yes," in lines[1]
+    assert ",denied,user,ask,Bash,," in lines[2]
+
+
+@pytest.mark.parametrize("dangerous", ["=HYPERLINK(1)", "+1+1", "-2+3", "@SUM(A1)"])
+def test_csv_cells_are_never_formulas(dangerous):
+    out = log.to_csv([{"summary": dangerous, "event": "shown"}])
+    assert "'" + dangerous in out
+
+
+def test_csv_redacts_again():
+    out = log.to_csv([{"summary": "token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123", "event": "shown"}])
+    assert "sk-ant" not in out and "[redacted]" in out
+
+
+def test_iter_entries_filters_and_skips_bad_lines(decision_log_dir):
+    log.record("shown", thread_id=1, approval_id="x")
+    log.record("denied", thread_id=2, approval_id="y")
+    [name] = files(decision_log_dir)
+    with open(decision_log_dir / name, "a") as f:
+        f.write("not json\n[1]\n")
+    assert [e["approval_id"] for e in log.iter_entries()] == ["y", "x"]
+    assert [e["approval_id"] for e in log.iter_entries(thread_id=1)] == ["x"]
+    assert [e["approval_id"] for e in log.iter_entries(event="denied")] == ["y"]

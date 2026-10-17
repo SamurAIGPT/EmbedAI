@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.routers.approval_rules import router as rules_router
 from app.routers.decisions import router as decisions_router
+from app.routers.sentinel import router as sentinel_router
 from app.routers.threads import get_runtime
 from app.routers.threads import router as threads_router
 from app.services import decision_log
@@ -34,7 +35,7 @@ def local_enabled(monkeypatch):
 
 def app_for(rt) -> FastAPI:
     app = FastAPI()
-    for router in (threads_router, rules_router, decisions_router):
+    for router in (threads_router, rules_router, decisions_router, sentinel_router):
         app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_runtime] = lambda: rt
     return app
@@ -55,6 +56,8 @@ ROUTES = [
     ("GET", "/api/v1/approval-rules", None),
     ("POST", "/api/v1/approval-rules", {"match": "exact", "command": "ls"}),
     ("DELETE", "/api/v1/approval-rules/1", None),
+    ("GET", "/api/v1/decisions/export.csv", None),
+    ("GET", "/api/v1/sentinel/scan", None),
 ]
 
 
@@ -165,3 +168,74 @@ async def test_remember_defaults_to_off(api, rt, sessions, cli, tools_on, owner)
     assert (await api.post(f"/api/v1/threads/{thread.id}/approvals/{approval.id}", json={"decision": "allow"})).status_code == 200
     await finished(sessions, thread.id)
     assert (await api.get("/api/v1/approval-rules")).json() == []
+
+
+async def test_remember_returns_the_rule_it_saved_and_undo_removes_it(api, rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script(BASH)
+    await rt.send_turn(thread.id, "status")
+    approval = await pending_approval(sessions, thread.id)
+    body = (await api.post(
+        f"/api/v1/threads/{thread.id}/approvals/{approval.id}", json={"decision": "allow", "remember": True}
+    )).json()
+    await finished(sessions, thread.id)
+    [rule] = (await api.get("/api/v1/approval-rules")).json()
+    assert body["rule_id"] == rule["id"] and "remember_error" not in body
+    undone = await api.delete(f"/api/v1/approval-rules/{rule['id']}", params={"thread_id": thread.id})
+    assert undone.status_code == 204
+    assert (await api.get("/api/v1/approval-rules")).json() == []
+    [entry] = (await api.get("/api/v1/decisions", params={"event": "undone"})).json()["items"]
+    assert (entry["thread_id"], entry["source"]) == (thread.id, "user")
+    assert "git status -s" in entry["rule"]
+
+
+async def test_remember_says_why_nothing_was_saved(api, rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script({"type": "tool", "tool_name": "Bash", "tool_input": {"command": "git push --force"}})
+    await rt.send_turn(thread.id, "push")
+    approval = await pending_approval(sessions, thread.id)
+    body = (await api.post(
+        f"/api/v1/threads/{thread.id}/approvals/{approval.id}", json={"decision": "allow", "remember": True}
+    )).json()
+    await finished(sessions, thread.id)
+    assert "rule_id" not in body and "safety floor" in body["remember_error"]
+
+
+async def test_an_answer_without_remember_has_no_rule_fields(api, rt, sessions, cli, tools_on, owner):
+    thread = await new_thread(sessions, owner)
+    cli.script(BASH)
+    await rt.send_turn(thread.id, "status")
+    approval = await pending_approval(sessions, thread.id)
+    body = (await api.post(f"/api/v1/threads/{thread.id}/approvals/{approval.id}", json={"decision": "deny"})).json()
+    await finished(sessions, thread.id)
+    assert body == {"status": "recorded", "decision": "deny"}
+
+
+async def test_rules_can_be_listed_for_one_folder(api):
+    here = (await api.post("/api/v1/approval-rules", json={"command": "ls", "workspace": "/work/a"})).json()
+    anywhere = (await api.post("/api/v1/approval-rules", json={"command": "pwd"})).json()
+    await api.post("/api/v1/approval-rules", json={"command": "ls", "workspace": "/work/b"})
+    listed = (await api.get("/api/v1/approval-rules", params={"workspace": "/work/a"})).json()
+    assert {r["id"] for r in listed} == {here["id"], anywhere["id"]}
+    assert len((await api.get("/api/v1/approval-rules")).json()) == 3
+
+
+async def test_csv_export_is_newest_first_and_filtered(api):
+    decision_log.record("shown", thread_id=1, approval_id="a1", summary="=cmd")
+    decision_log.record("denied", thread_id=2, approval_id="a2")
+    response = await api.get("/api/v1/decisions/export.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+    header, first, second = response.text.splitlines()
+    assert header.startswith("at,event,") and ",denied," in first and ",shown," in second
+    assert "'=cmd" in second
+    only = (await api.get("/api/v1/decisions/export.csv", params={"thread_id": 1})).text.splitlines()
+    assert len(only) == 2
+    assert len((await api.get("/api/v1/decisions/export.csv", params={"limit": 1})).text.splitlines()) == 2
+
+
+async def test_sentinel_scan_reports_and_validates(api):
+    report = (await api.get("/api/v1/sentinel/scan")).json()
+    assert report["issues"] == [] and report["scanned_events"] == 0
+    assert (await api.get("/api/v1/sentinel/scan", params={"hours": 0})).status_code == 422

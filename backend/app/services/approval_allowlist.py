@@ -21,8 +21,9 @@ Commands that contain a credential cannot be saved.
 
 import re
 import shlex
+from pathlib import Path
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.permission_rule import PermissionRule
@@ -141,16 +142,44 @@ async def add_rule(
     return rule
 
 
-async def delete_rule(db: AsyncSession, owner_id: str, rule_id: int) -> bool:
-    result = await db.execute(
-        delete(PermissionRule).where(
-            PermissionRule.id == rule_id,
-            PermissionRule.user_id == owner_id,
-            PermissionRule.bucket == BUCKET,
+def rule_label(rule: PermissionRule) -> str:
+    """How the decision log names a rule: `exact@/work: git status`."""
+    return f"{rule.connector}: {rule.tool}"
+
+
+def applies_in(rule: PermissionRule, workspace: str | None) -> bool:
+    """A rule with no folder applies everywhere; one with a folder only there."""
+    _kind, scope = split_scope(rule.connector or "")
+    return scope is None or scope == workspace
+
+
+async def find_rule(
+    db: AsyncSession, owner_id: str, kind: str, command: str, workspace: str | None
+) -> PermissionRule | None:
+    """The saved rule with exactly this match kind, command and folder."""
+    stored_kind = kind if workspace is None else f"{kind}@{workspace}"
+    for rule in await list_rules(db, owner_id):
+        if rule.connector == stored_kind and rule.tool == command.strip():
+            return rule
+    return None
+
+
+async def delete_rule(db: AsyncSession, owner_id: str, rule_id: int) -> PermissionRule | None:
+    """Delete one rule. Returns what was deleted, or None if there was none."""
+    rule = (
+        await db.execute(
+            select(PermissionRule).where(
+                PermissionRule.id == rule_id,
+                PermissionRule.user_id == owner_id,
+                PermissionRule.bucket == BUCKET,
+            )
         )
-    )
+    ).scalar_one_or_none()
+    if rule is None:
+        return None
+    await db.execute(delete(PermissionRule).where(PermissionRule.id == rule.id))
     await db.commit()
-    return bool(result.rowcount)
+    return rule
 
 
 async def matching_rule(
@@ -176,3 +205,24 @@ async def matching_rule(
         if command_matches(kind, rule.tool, command):
             return rule
     return None
+
+
+async def remembered_rule(
+    db: AsyncSession, owner_id: str, tool: str, tool_input: dict, workspace: str | None
+) -> tuple[PermissionRule | None, str | None]:
+    """After an Allow with `remember`: the rule it saved, or why none was saved
+    (the call was then allowed this once only)."""
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if tool != BASH_TOOL or not isinstance(command, str):
+        return None, "only shell commands can be always allowed"
+    if not workspace:
+        return None, "this conversation has no folder to tie the rule to"
+    workspace = str(Path(workspace))  # spelled as the runtime saves it
+    rule = await find_rule(db, owner_id, EXACT, command, workspace)
+    if rule is not None:
+        return rule, None
+    try:
+        validate_rule(EXACT, command, workspace)
+    except InvalidRule as exc:
+        return None, str(exc)
+    return None, "the rule could not be saved"

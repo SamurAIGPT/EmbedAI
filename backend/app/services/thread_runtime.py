@@ -30,7 +30,7 @@ from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
 from app.services.claude_adapter import ClaudeAdapter
-from app.services import approval_allowlist, decision_log, safety_floor
+from app.services import approval_allowlist, approval_modes, decision_log, safety_floor
 from app.services.provider_adapter import (
     ALLOW,
     CANCELLED,
@@ -188,6 +188,7 @@ class ThreadApprovalGate:
             tool=tool,
             kind=kind,
             summary=summary,
+            mode=self._run.ctx.approval_mode or approval_modes.DEFAULT_MODE,
             **more,
         )
 
@@ -245,11 +246,13 @@ class ThreadApprovalGate:
             # Still recorded as an approval, answered at once, so the timeline
             # shows what ran and the usual ownership re-check still applies.
             async with runtime.session() as db:
-                won = await store.decide_approval(db, approval.id, "allowed")
+                won = await store.decide_approval(
+                    db, approval.id, "allowed", by={"by": "saved_rule", "rule_id": rule.id}
+                )
             if won:
                 future.set_result("allowed")
                 self._log(
-                    "auto_allowed", approval.id, source="saved_rule", rule=f"{rule.connector}: {rule.tool}"
+                    "auto_allowed", approval.id, source="saved_rule", rule=approval_allowlist.rule_label(rule)
                 )
         else:
             self._log("shown", approval.id, rule=f"safety_floor:{held}" if held else None)
@@ -635,12 +638,20 @@ class ThreadRuntime:
                     summary=approval.summary,
                     source="user",
                     remembered=remember and decision == ALLOW,
+                    mode=self._mode_of(approval.turn_id),
                 )
             if remember and decision == ALLOW and approval is not None:
                 await self._remember(approval)
         if approval is not None:
             self.hub.notify(approval.thread_id)
         return won
+
+    def _mode_of(self, turn_id: int) -> str | None:
+        """The approval mode a turn running here uses; None if it is not here."""
+        run = self._runs.get(turn_id)
+        if run is None:
+            return None
+        return run.ctx.approval_mode or approval_modes.DEFAULT_MODE
 
     async def _remember(self, approval) -> None:
         command = approval.input.get("command") if isinstance(approval.input, dict) else None

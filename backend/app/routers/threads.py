@@ -28,6 +28,7 @@ from app.schemas.thread import (
     TurnCreateRequest,
     TurnResponse,
 )
+from app.services import approval_allowlist
 from app.services import thread_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import (
@@ -293,7 +294,12 @@ async def list_approvals(
         return await store.list_approvals(db, thread_id, status=status)
 
 
-@router.post("/{thread_id}/approvals/{approval_id}", response_model=ApprovalAnswerResponse)
+@router.post(
+    "/{thread_id}/approvals/{approval_id}",
+    response_model=ApprovalAnswerResponse,
+    # `rule_id` and `remember_error` appear only when they say something.
+    response_model_exclude_none=True,
+)
 async def answer_approval(
     thread_id: int,
     approval_id: str,
@@ -312,4 +318,13 @@ async def answer_approval(
         raise _error(
             409, "approval_not_waiting", "That request is no longer waiting for an answer."
         )
-    return ApprovalAnswerResponse(decision=payload.decision)
+    if not (payload.remember and payload.decision == "allow"):
+        return ApprovalAnswerResponse(decision=payload.decision)
+    async with rt.session() as db:
+        thread = await store.get_thread(db, thread_id)
+        rule, why = await approval_allowlist.remembered_rule(
+            db, rt.owner_id, approval.tool, approval.input, thread.workspace_path if thread else None
+        )
+    return ApprovalAnswerResponse(
+        decision=payload.decision, rule_id=rule.id if rule else None, remember_error=why
+    )

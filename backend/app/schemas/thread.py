@@ -148,3 +148,8 @@ class ApprovalAnswerRequest(BaseModel):
 class ApprovalAnswerResponse(BaseModel):
     status: Literal["recorded"] = "recorded"
     decision: Literal["allow", "deny"]
+    # With `remember`: the saved rule (DELETE /api/v1/approval-rules/{id}
+    # undoes it), or null with `remember_error` saying why it was allowed this
+    # once only (a credential, the safety floor, no folder, ...).
+    rule_id: int | None = None
+    remember_error: str | None = None

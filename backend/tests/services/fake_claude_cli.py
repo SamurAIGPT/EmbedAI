@@ -156,6 +156,23 @@ elif kind == "hang":
     log(event="hanging")
     time.sleep(120)
 
+elif kind == "hang_with_child":
+    # Like a CLI running a long tool: a child process of its own (in its
+    # process group), whose pid the test reads to prove nothing is orphaned.
+    import subprocess
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"])
+    emit({"type": "stream_event", "event": {"type": "message_start", "message": {"id": "m1"}}})
+    emit({"type": "stream_event", "event": {"type": "content_block_delta",
+                                             "delta": {"type": "text_delta", "text": "working"}}})
+    log(event="hanging", pid=__import__("os").getpid(), child_pid=child.pid)
+    time.sleep(300)
+
+elif kind == "silent":
+    # Started, then says nothing more and never exits: a wedged engine.
+    log(event="hanging", pid=__import__("os").getpid())
+    time.sleep(300)
+
 elif kind == "partial_fail":
     emit({"type": "stream_event", "event": {"type": "message_start", "message": {"id": "m1"}}})
     emit({"type": "stream_event", "event": {"type": "content_block_delta",

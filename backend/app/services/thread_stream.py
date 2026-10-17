@@ -24,6 +24,7 @@ import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
+from app.core import shutdown
 from app.services import thread_store as store
 from app.services.thread_hub import ThreadHub
 
@@ -128,6 +129,8 @@ async def event_frames(
             woke = await subscription.wait(poll_seconds)
             if subscription.closed:
                 return  # the thread was deleted
+            if shutdown.stopping():
+                return  # the server is stopping: let the connection close
             read_stored = (not woke) or subscription.wake.is_set()
             if not woke and loop.time() - last_sent >= keepalive_seconds:
                 yield KEEPALIVE_FRAME

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
-from app.core import app_settings, data_lease
+from app.core import app_settings, data_lease, shutdown
 from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.auth.middleware import AuthMiddleware
@@ -47,6 +47,11 @@ async def lifespan(app: FastAPI):
 
 @asynccontextmanager
 async def _serving(app: FastAPI):
+    # Event streams end as soon as a stop signal arrives, so the server's wait
+    # for open connections never holds the shutdown below up (app/core/shutdown.py).
+    shutdown.reset()
+    shutdown.install_signal_hooks()
+    thread_runtime.reopen()
     if profile.active():
         from app.db.session import AsyncSessionLocal
         try:
@@ -83,12 +88,18 @@ async def _serving(app: FastAPI):
         asyncio.create_task(run_every(settings.ROUTINE_POLL_SECONDS, routine_service.scheduler.tick)),
     ]
     yield
-    # Kill this process's provider processes and interrupt its own turns now,
-    # rather than leaving them for the lease to expire.
-    await thread_runtime.shutdown()
+    # Stopping (SIGTERM, Ctrl+C, the desktop launcher going away). First the
+    # background jobs, so no routine starts a new turn while we stop.
     for job in jobs:
         job.cancel()
     await asyncio.gather(*jobs, return_exceptions=True)
+    # Kill this process's provider processes (and their MCP servers, which
+    # share their process group) and interrupt its own turns now, rather than
+    # leaving them for the lease to expire.
+    await thread_runtime.shutdown()
+    # Routine runs whose turns were just interrupted end interrupted now, with
+    # their notification, instead of at the next start.
+    await routine_service.scheduler.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)

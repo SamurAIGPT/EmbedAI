@@ -18,6 +18,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from app.core import shutdown
+
 TURN_STARTED = "turn.started"
 TEXT_DELTA = "text.delta"
 TURN_COMPLETED = "turn.completed"
@@ -216,6 +218,8 @@ async def stream_frames(
             try:
                 item = await asyncio.wait_for(subscription.queue.get(), heartbeat_seconds)
             except TimeoutError:
+                if shutdown.stopping():
+                    return  # the server is stopping: let the connection close
                 yield format_comment("keepalive")
                 continue
             if isinstance(item, RunEvent):

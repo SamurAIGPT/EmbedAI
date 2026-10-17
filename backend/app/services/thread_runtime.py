@@ -373,6 +373,8 @@ class ThreadRuntime:
     computers: computer_service.ComputerService | None = None
     # The engine registry over `adapters` (app/services/engine_registry.py).
     engines: EngineRegistry | None = None
+    # Set by shutdown(): no new turn starts in a process that is stopping.
+    _closing: bool = False
 
     def __post_init__(self) -> None:
         if self.computers is None:
@@ -509,6 +511,8 @@ class ThreadRuntime:
         `approval_mode` replaces the agent's mode for this turn (a routine
         passes the stricter of its own and the agent's); `approval_timeout`
         replaces the approval timeout setting for this turn's approvals."""
+        if self._closing:
+            raise ProviderUnavailable("The app is shutting down; send this again after it restarts.")
         async with self.session() as db:
             thread = await store.get_thread(db, thread_id)
         if thread is None:
@@ -812,9 +816,14 @@ class ThreadRuntime:
             logger.warning("interrupted turns whose owner stopped", turn_ids=interrupted)
         return interrupted
 
+    def reopen(self) -> None:
+        """The app is (re)starting in this process: turns may start again."""
+        self._closing = False
+
     async def shutdown(self) -> None:
         """This process is stopping. Kill its provider processes and interrupt
         its own turns at once, instead of leaving them for the lease to expire."""
+        self._closing = True
         runs = list(self._runs.values())
         for run in runs:
             run.recorder.lose()

@@ -610,6 +610,25 @@ class RoutineScheduler:
         await self._deliver(staged)
         return changed
 
+    async def shutdown(self, timeout: float = 10.0) -> None:
+        """This process is stopping and its turns were just interrupted:
+        settle the runs that followed them (interrupted, with a notification),
+        so nothing is left "running" until the next start. Never starts a run,
+        never raises, and gives up after `timeout` (the next start's `recover`
+        then settles what is left)."""
+        if self._kicked is not None and not self._kicked.done():
+            self._kicked.cancel()
+            await asyncio.gather(self._kicked, return_exceptions=True)
+
+        async def settle() -> None:
+            async with self._lock:
+                await self._follow_active()
+
+        try:
+            await asyncio.wait_for(settle(), timeout)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not settle routine runs on shutdown")
+
     # -- due occurrences
 
     def _too_late(self, routine: Routine, due: datetime | None, now: datetime) -> bool:

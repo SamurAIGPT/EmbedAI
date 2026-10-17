@@ -189,7 +189,13 @@ def _prepared_and_served(desktop, message, lifeline, sock, port) -> int:
             timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
     )
-    lifeline.on_gone(lambda: setattr(server, "should_exit", True))
+    from app.core import shutdown
+
+    def stop() -> None:
+        shutdown.begin()  # event streams end, so the window's connections close
+        server.should_exit = True
+
+    lifeline.on_gone(stop)
     threading.Thread(target=_announce, args=(server, port, lifeline), name="announce", daemon=True).start()
     log(f"Serving on {desktop.origin} (process {os.getpid()}); data in {Path(desktop.data_dir)}")
     serve(server, sock)

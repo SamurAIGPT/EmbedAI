@@ -197,8 +197,11 @@ An Electron window around the local backend: you open one app instead of startin
 | `npm run build` | Builds the page the app shows, as plain files. Run it once, and again after the page's code changes. |
 | `npm run start` | Opens Open Dots. |
 | `npm run dev` | The same, with its own data folder and window title, so developing never touches the data you use. |
+| `npm run doctor` | Checks source prerequisites and finds Claude/Codex executables without starting the app or modifying data. |
 
 `start` and `dev` never install or build anything. If something is missing they say which command to run and stop. (If the page's code is newer than the last build, they tell you, and open the older build.)
+
+**Diagnostics.** From `desktop/`, run `npm run doctor` before a first launch or when setup fails. It reports the Node requirement, missing Electron/Python/UI files, a stale UI build and CLI executables on `PATH`, with the command to fix each problem. Exit 0 means source prerequisites are present; exit 1 means setup is incomplete; unknown options exit 2. For machine-readable output, use `npm run --silent doctor -- --json`. Finding a CLI does not prove sign-in or model access: check **Settings → Engines** for authenticated readiness and configured ACP/API endpoints. Doctor reads files only; it does not start CLIs, inspect credentials, install anything or change app data.
 
 **Windows installer (experimental, unsigned).** `npm run package` (in `desktop/`, after `npm run setup`) builds the page, freezes the backend with PyInstaller (`backend/build.py`, needs `uv`) and makes `desktop/release/Open-Dots-Setup-<version>.exe` with electron-builder. The installed app carries its own backend, so it needs no Python; it still needs the Claude Code CLI. `npm run smoke:packaged` starts `release/win-unpacked` with no Python on `PATH` and a fresh data folder and checks that the backend serves. The installer is unsigned, so Windows SmartScreen will warn; PyInstaller does not cross-compile, so each OS needs its own build.
 

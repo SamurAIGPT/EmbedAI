@@ -3,33 +3,37 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { auth } from "@/lib/auth";
+import { AuthGate, useSession } from "@/components/AuthGate";
 import { ConnectTelegram } from "@/components/ConnectTelegram";
 import { ConnectClaude } from "@/components/ConnectClaude";
 import { ConnectGitHub } from "@/components/ConnectGitHub";
 import { SubmitTask } from "@/components/SubmitTask";
 import { LocalClaude } from "@/components/LocalClaude";
 
-const STORAGE_KEY = "vadoo_user_id";
+export default function HomePage() {
+  return (
+    <AuthGate>
+      <Home />
+    </AuthGate>
+  );
+}
 
-export default function Home() {
-  const [userId, setUserId] = useState<string | null>(null);
+function Home() {
+  // Who the web UI acts as comes from the signed-in session (docs/AUTH.md),
+  // never from this browser's storage.
+  const { session, setUserId } = useSession();
+  const userId = session?.user_id ?? null;
+  const [identityError, setIdentityError] = useState<string | null>(null);
   // Claude is signed in inside the sandbox: tasks can be submitted.
   const [boxId, setBoxId] = useState<string | null>(null);
   // The sandbox exists, signed in or not: enough to connect GitHub.
   const [sandboxId, setSandboxId] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
   // null until the backend has said whether Boat sandboxes are configured.
   const [boatEnabled, setBoatEnabled] = useState<boolean | null>(null);
   const [boatReason, setBoatReason] = useState<string | null>(null);
   // Set when the backend could not be reached at all (not when it answered with an error).
   const [backendProblem, setBackendProblem] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Read after mount so the static export and the first client render match.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUserId(localStorage.getItem(STORAGE_KEY));
-    setLoaded(true);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,13 +63,24 @@ export default function Home() {
     };
   }, []);
 
-  const handleLinked = (linkedUserId: string) => {
-    localStorage.setItem(STORAGE_KEY, linkedUserId);
-    setUserId(linkedUserId);
+  const handleLinked = async (identity: { link_code: string } | { guest: true }) => {
+    setIdentityError(null);
+    try {
+      const { user_id } = await auth.setIdentity(identity);
+      setUserId(user_id);
+    } catch (err) {
+      setIdentityError(err instanceof ApiError ? err.message : "Could not save who you are.");
+    }
   };
 
-  const handleReset = () => {
-    localStorage.removeItem(STORAGE_KEY);
+  const handleReset = async () => {
+    setIdentityError(null);
+    try {
+      await auth.clearIdentity();
+    } catch (err) {
+      setIdentityError(err instanceof ApiError ? err.message : "Could not start over.");
+      return;
+    }
     setUserId(null);
     setBoxId(null);
     setSandboxId(null);
@@ -89,13 +104,14 @@ export default function Home() {
             <h2 className="text-base font-semibold">Backend not reachable</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{backendProblem}</p>
           </section>
-        ) : !loaded || boatEnabled === null ? (
+        ) : boatEnabled === null ? (
           <p className="text-center text-sm text-zinc-500">Loading…</p>
         ) : (
           <>
             <LocalClaude />
 
             <ConnectTelegram userId={userId} onLinked={handleLinked} onReset={handleReset} />
+            {identityError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{identityError}</p>}
 
             {boatEnabled ? (
               <>

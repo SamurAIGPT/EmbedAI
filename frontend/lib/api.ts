@@ -102,10 +102,35 @@ export function createSseParser<T extends StreamEnvelope = RunEvent>(onEvent: (e
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// --- Owner session (docs/AUTH.md) ---
+// The session itself is an HttpOnly cookie the page never sees. Writes carry
+// the CSRF token the server returned with the session; it lives in memory only.
+let csrfToken: string | null = null;
+let onSignedOut: (() => void) | null = null;
+
+export function setCsrfToken(token: string | null) {
+  csrfToken = token;
+}
+
+// Called when the server says this browser is not (or no longer) signed in.
+export function setSignedOutHandler(handler: (() => void) | null) {
+  onSignedOut = handler;
+}
+
+export function isSignedOutError(err: unknown): boolean {
+  return err instanceof ApiError && (err.code === "auth_required" || err.code === "session_invalid");
+}
+
+function authHeaders(method: string | undefined): Record<string, string> {
+  const safe = !method || ["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
+  return !safe && csrfToken ? { "X-CSRF-Token": csrfToken } : {};
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...authHeaders(init?.method), ...(init?.headers ?? {}) },
   });
 
   if (!res.ok) {
@@ -118,7 +143,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // response body wasn't JSON — fall back to statusText
     }
-    throw new ApiError(res.status, detail, code);
+    const error = new ApiError(res.status, detail, code);
+    if (res.status === 401 && isSignedOutError(error)) onSignedOut?.();
+    throw error;
   }
 
   if (res.status === 204) return undefined as T;
@@ -127,7 +154,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // For a body that is not JSON (a CSV export). Errors are read like request()'s.
 async function requestText(path: string): Promise<string> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
   if (!res.ok) {
     let detail = res.statusText;
     let code: string | null = null;
@@ -564,6 +591,7 @@ async function readEventStream<T extends StreamEnvelope>(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Accept: "text/event-stream", ...extraHeaders },
+    credentials: "include",
     signal,
   });
   if (!res.ok || !res.body) {

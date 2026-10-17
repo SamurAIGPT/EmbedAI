@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { AuthGate } from "@/components/AuthGate";
 import { ChatApp } from "@/components/chat/ChatApp";
 
 export const metadata = {
@@ -11,7 +12,9 @@ export const metadata = {
 export default function ChatPage() {
   return (
     <Suspense fallback={<p className="p-6 text-center text-sm text-zinc-500">Loading…</p>}>
-      <ChatApp />
+      <AuthGate>
+        <ChatApp />
+      </AuthGate>
     </Suspense>
   );
 }

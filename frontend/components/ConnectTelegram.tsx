@@ -10,17 +10,14 @@ function isGuestId(userId: string) {
   return userId.startsWith("web_");
 }
 
-function makeGuestId() {
-  return `web_${crypto.randomUUID()}`;
-}
-
 export function ConnectTelegram({
   userId,
   onLinked,
   onReset,
 }: {
   userId: string | null;
-  onLinked: (userId: string) => void;
+  // The server sets the identity: from the link code it saw claimed, or a new guest id.
+  onLinked: (identity: { link_code: string } | { guest: true }) => void;
   onReset: () => void;
 }) {
   const [mode, setMode] = useState<"choice" | "telegram">("choice");
@@ -48,7 +45,7 @@ export function ConnectTelegram({
           if (status.status === "claimed" && status.user_id) {
             if (pollRef.current) clearInterval(pollRef.current);
             setLinkCode(null);
-            onLinked(status.user_id);
+            onLinked({ link_code: code.code });
           } else if (status.status === "expired") {
             if (pollRef.current) clearInterval(pollRef.current);
             setError("Code expired — generate a new one.");
@@ -99,7 +96,7 @@ export function ConnectTelegram({
           link Telegram if you want the same account/history there too.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => onLinked(makeGuestId())}>
+          <Button onClick={() => onLinked({ guest: true })}>
             Continue without Telegram
           </Button>
           <button

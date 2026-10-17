@@ -89,6 +89,24 @@ jobs:
       - run: uv run alembic upgrade head
       - run: uv run pytest -q
 
+  # The real backend process end to end: scratch SQLite, a fake claude CLI,
+  # sign-in, an agent turn, an approval, a routine, a refused second backend,
+  # SIGTERM mid-turn and a restart (scripts/smoke-backend.py, under a minute).
+  backend-smoke:
+    name: Backend smoke (real process)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: uv sync --frozen
+      - run: uv run python ../scripts/smoke-backend.py
+
   frontend:
     name: Frontend lint and build
     needs: changes
@@ -128,7 +146,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, backend-sqlite, backend-postgres, frontend, desktop]
+    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, frontend, desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Check results

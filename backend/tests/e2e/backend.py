@@ -20,8 +20,6 @@ from pathlib import Path
 
 import httpx
 
-from tests.db.sqlite_helpers import run_alembic
-
 BACKEND_DIR = Path(__file__).parents[2]
 FAKE_CLAUDE = Path(__file__).with_name("fake_claude.py")
 # The throwaway key CI uses (a valid Fernet key; protects nothing).
@@ -132,8 +130,14 @@ class Backend:
         }
 
     def migrate(self) -> None:
+        # Alembic in its own process with this backend's settings, the way a
+        # user runs it (and without importing the app's settings here, so the
+        # smoke script needs no environment of its own).
         self.database.parent.mkdir(parents=True, exist_ok=True)
-        result = run_alembic(self.database, "upgrade", "head")
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=BACKEND_DIR, env=self.env(), capture_output=True, text=True, timeout=180,
+        )
         assert result.returncode == 0, result.stderr
 
     def start(self, *, wait: bool = True, migrate: bool = True) -> "Backend":

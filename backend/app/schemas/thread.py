@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.computer import ComputerSummary
+
 
 class ThreadCreateRequest(BaseModel):
     # An unknown provider is a 422. Claude is the only one registered today.
@@ -52,6 +54,9 @@ class ThreadResponse(BaseModel):
     # The agent this conversation was started from; null if none, or if it
     # was deleted.
     agent_id: int | None = None
+    # The computer this conversation's turns run their tools in (its agent's),
+    # or null when they run on this machine.
+    computer: ComputerSummary | None = None
     # new | active | broken | none. `broken` means a resume failed and the
     # session must be reset before the thread can take another message.
     session_state: str

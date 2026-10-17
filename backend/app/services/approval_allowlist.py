@@ -4,7 +4,9 @@ Stored in `permission_rule` (no new table): bucket `local_command`, `connector`
 holds the match kind and the folder the rule applies in (`exact` or
 `exact@/path/to/workspace`, likewise `prefix`), `tool` holds the command text,
 and `decision` is always `allow`. Only the Bash tool is covered, and only here:
-anything that does not match still asks, and a command on the safety floor
+a computer's `exec` tool
+(docs/COMPUTERS.md) is matched the same way, as a shell command; anything that
+does not match still asks, and a command on the safety floor
 (services/safety_floor.py) always asks, whatever rule it matches.
 
   exact   the whole command, character for character
@@ -38,6 +40,8 @@ MAX_COMMAND_CHARS = 1000
 MAX_WORKSPACE_CHARS = 4096
 MAX_RULES = 200
 BASH_TOOL = "Bash"
+# Tools whose `command` is a shell command a rule can match.
+COMMAND_TOOLS = (BASH_TOOL, "mcp__computer__exec")
 
 _SHELL_OPERATORS = (";", "&", "|", "<", ">", "`", "$(", "\n", "\r")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -195,8 +199,9 @@ async def matching_rule(
     workspace: str | None = None,
 ) -> PermissionRule | None:
     """The saved rule that allows this call in `workspace`, if any. Only a Bash
-    call whose `command` is a string can match, and never one on the floor."""
-    if tool != BASH_TOOL:
+    call (on the host or in a computer) whose `command` is a string can
+    match, and never one on the floor."""
+    if tool not in COMMAND_TOOLS:
         return None
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():
@@ -218,7 +223,7 @@ async def remembered_rule(
     """After an Allow with `remember`: the rule it saved, or why none was saved
     (the call was then allowed this once only)."""
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
-    if tool != BASH_TOOL or not isinstance(command, str):
+    if tool not in COMMAND_TOOLS or not isinstance(command, str):
         return None, "only shell commands can be always allowed"
     if not workspace:
         return None, "this conversation has no folder to tie the rule to"

@@ -86,6 +86,28 @@ def say(text, message_id="m1"):
     emit({"type": "assistant", "message": {"id": message_id, "content": [{"type": "text", "text": text}]}})
 
 
+def call_mcp(config, tool_name, tool_input):
+    """Start the stdio MCP server, initialize it and make one tools/call."""
+    import os
+    import subprocess
+
+    _, server_name, short = tool_name.split("__", 2)
+    server = config["mcpServers"][server_name]
+    proc = subprocess.Popen(
+        [server["command"], *server["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        env={**os.environ, **server.get("env", {})}, text=True,
+    )
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": short, "arguments": tool_input}},
+    ]
+    out, _ = proc.communicate("".join(json.dumps(r) + "\n" for r in requests), timeout=60)
+    replies = [json.loads(line) for line in out.splitlines() if line.strip()]
+    result = next(r for r in replies if r.get("id") == 2)["result"]
+    return "".join(c.get("text", "") for c in result["content"]), bool(result.get("isError"))
+
+
 def finish(result, **more):
     emit({"type": "result", "is_error": False, "result": result,
           "usage": {"input_tokens": 3, "output_tokens": 2}, "total_cost_usd": 0.001, **more})
@@ -116,9 +138,15 @@ elif kind in ("tool", "tool_big"):
     reply = sys.stdin.readline()
     log(event="reply", reply=json.loads(reply) if reply.strip() else None)
     behavior = json.loads(reply)["response"]["response"]["behavior"] if reply.strip() else "none"
+    content, is_error = ("File created" if behavior == "allow" else "denied"), behavior != "allow"
+    mcp_config = base / "mcp.json"
+    if behavior == "allow" and tool_name.startswith("mcp__") and mcp_config.exists():
+        # Like the real CLI: call the tool on the MCP server named in the
+        # --mcp-config the app gave (saved next to the plan by the test).
+        content, is_error = call_mcp(json.loads(mcp_config.read_text()), tool_name, tool_input)
+        log(event="mcp_result", content=content, is_error=is_error)
     emit({"type": "user", "message": {"content": [
-        {"type": "tool_result", "tool_use_id": "tu1", "is_error": behavior != "allow",
-         "content": "File created" if behavior == "allow" else "denied"}]}})
+        {"type": "tool_result", "tool_use_id": "tu1", "is_error": is_error, "content": content}]}})
     finish("finished: " + behavior)
 
 elif kind == "hang":

@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
         ),
         # Runs once at startup, then periodically.
         asyncio.create_task(run_every(THREAD_SWEEP_INTERVAL_SECONDS, thread_runtime.sweep_stale)),
+        # Agent computers: finish interrupted removals, remove orphans once
+        # Docker answers, stop idle ones. Does nothing while Docker is down.
+        asyncio.create_task(run_every(BACKGROUND_INTERVAL_SECONDS, thread_runtime.computers.upkeep)),
     ]
     yield
     # Kill this process's provider processes and interrupt its own turns now,

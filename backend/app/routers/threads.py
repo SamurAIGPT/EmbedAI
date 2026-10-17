@@ -57,6 +57,21 @@ def get_runtime() -> ThreadRuntime:
     return default_runtime
 
 
+async def _with_computers(rt: ThreadRuntime, threads: list) -> list[ThreadResponse]:
+    """Threads as responses, each with the computer its agent has (if any)."""
+    from app.routers.computers import summary
+
+    computers = await rt.computers.for_agents(sorted({t.agent_id for t in threads if t.agent_id is not None}))
+    out = []
+    for thread in threads:
+        response = ThreadResponse.model_validate(thread)
+        computer = computers.get(thread.agent_id) if thread.agent_id is not None else None
+        if computer is not None:
+            response = response.model_copy(update={"computer": summary(rt.computers, computer)})
+        out.append(response)
+    return out
+
+
 def _error(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"error_code": code, "message": message})
 
@@ -75,7 +90,7 @@ async def _thread_or_404(rt: ThreadRuntime, thread_id: int) -> store.Thread:
 @router.post("", response_model=ThreadResponse, status_code=201)
 async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
     try:
-        return await rt.create_thread(
+        thread = await rt.create_thread(
             # Omitted means the agent's provider, or Claude without an agent.
             provider=payload.provider if "provider" in payload.model_fields_set else None,
             model=payload.model,
@@ -94,6 +109,7 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
         ) from None
     except (OSError, ValueError) as exc:
         raise _error(409, "workspace_unavailable", str(exc)) from None
+    return (await _with_computers(rt, [thread]))[0]
 
 
 @router.get("", response_model=list[ThreadResponse])
@@ -104,9 +120,10 @@ async def list_threads(
 ):
     """Newest activity first."""
     async with rt.session() as db:
-        return await store.list_threads(
+        threads = await store.list_threads(
             db, rt.owner_id, include_archived=include_archived, limit=limit
         )
+    return await _with_computers(rt, threads)
 
 
 @router.get("/{thread_id}", response_model=ThreadDetailResponse)
@@ -115,7 +132,7 @@ async def get_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
     async with rt.session() as db:
         turns = await store.list_turns(db, thread_id)
     running = next((turn.id for turn in turns if turn.status == "running"), None)
-    detail = ThreadResponse.model_validate(thread).model_dump()
+    detail = (await _with_computers(rt, [thread]))[0].model_dump()
     return ThreadDetailResponse(
         **detail,
         turns=[TurnResponse.model_validate(turn) for turn in turns],

@@ -30,6 +30,8 @@ from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
 from app.services.claude_adapter import ClaudeAdapter
+from app.computers import policy as computer_policy
+from app.computers import service as computer_service
 from app.services import approval_allowlist, approval_modes, decision_log, safety_floor
 from app.services.provider_adapter import (
     ALLOW,
@@ -117,6 +119,8 @@ class ActiveRun:
     # killed is then recorded as a stop, not as a failure.
     stop_requested: bool = False
     settings_snapshot: dict = field(default_factory=dict)
+    # The named agent the turn runs as, if any (its computer is attached at start).
+    agent_id: int | None = None
 
 
 class TurnRecorder:
@@ -233,6 +237,16 @@ class ThreadApprovalGate:
         self._by_request[request_id] = approval.id
         self._deadlines[approval.id] = asyncio.get_running_loop().time() + app_settings.get("LOCAL_APPROVAL_TIMEOUT_SECONDS", live=True)
         self._info[approval.id] = (tool, kind, summary)
+        auto = computer_policy.automatic(tool, run.ctx.approval_mode or approval_modes.DEFAULT_MODE)
+        if auto is not None:
+            status, source = auto
+            async with runtime.session() as db:
+                won = await store.decide_approval(db, approval.id, status, by={"by": source})
+            if won:
+                future.set_result(status)
+                self._log("auto_allowed" if status == "allowed" else "denied", approval.id, source=source)
+            runtime.hub.notify(run.thread_id)
+            return ApprovalHandle(approval_id=approval.id, request_id=request_id)
         rule = await self._saved_rule(tool, input)
         held = None
         if rule is not None:
@@ -338,6 +352,15 @@ class ThreadRuntime:
     _waiters: dict[str, asyncio.Future] = field(default_factory=dict)
     _status_cache: dict[str, tuple[float, ProviderStatus]] = field(default_factory=dict)
     _session_factory: object | None = None
+    # Agent computers (app/computers/service.py), sharing this runtime's
+    # database sessions and owner.
+    computers: computer_service.ComputerService | None = None
+
+    def __post_init__(self) -> None:
+        if self.computers is None:
+            self.computers = computer_service.ComputerService(
+                owner_id=self.owner_id, _session_factory=self.session
+            )
 
     def session(self):
         """A new database session. Looked up late so tests can substitute it."""
@@ -477,7 +500,13 @@ class ThreadRuntime:
             instructions=agent_memory.turn_instructions(agent) if agent is not None else None,
             approval_mode=agent.approval_mode if agent is not None else None,
         )
-        run = ActiveRun(thread_id=thread_id, turn_id=turn.id, owner_token=turn.owner_token, ctx=ctx)
+        run = ActiveRun(
+            thread_id=thread_id,
+            turn_id=turn.id,
+            owner_token=turn.owner_token,
+            ctx=ctx,
+            agent_id=agent.id if agent is not None else None,
+        )
         run.settings_snapshot = snapshot
         run.recorder = TurnRecorder(self, run)
         run.gate = ThreadApprovalGate(self, run)
@@ -518,10 +547,20 @@ class ThreadRuntime:
 
     async def _run(self, run: ActiveRun, adapter: ProviderAdapter) -> None:
         heartbeat = asyncio.create_task(self._heartbeat(run))
+        binding = None
         try:
             try:
+                # An agent with a computer runs its tools there or not at all:
+                # a computer that cannot be used fails the turn, never falls
+                # back to the host.
+                binding = await self.computers.attach_for_turn(
+                    run.agent_id, run.turn_id, str(run.ctx.workspace) if run.ctx.workspace else None
+                )
+                run.ctx.computer = binding
                 with app_settings.use(run.settings_snapshot):
                     outcome = await adapter.run_turn(run.ctx, run.recorder, run.gate)
+            except computer_service.ComputerUnavailable as exc:
+                outcome = TurnOutcome("failed", error=str(exc), error_code="computer_unavailable")
             except Exception:  # noqa: BLE001
                 logger.exception("provider run crashed", thread_id=run.thread_id)
                 outcome = TurnOutcome(
@@ -530,6 +569,7 @@ class ThreadRuntime:
         finally:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
+            await self.computers.release_turn(binding, run.turn_id)
         if run.stop_requested and outcome.status != "succeeded":
             # Killed on request. A turn that finished on its own just before the
             # stop arrived keeps its real result.
@@ -655,7 +695,7 @@ class ThreadRuntime:
 
     async def _remember(self, approval) -> None:
         command = approval.input.get("command") if isinstance(approval.input, dict) else None
-        if approval.tool != approval_allowlist.BASH_TOOL or not isinstance(command, str):
+        if approval.tool not in approval_allowlist.COMMAND_TOOLS or not isinstance(command, str):
             return
         try:
             async with self.session() as db:

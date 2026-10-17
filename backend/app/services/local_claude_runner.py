@@ -56,6 +56,11 @@ TOOLS_ARGS = [
     "--disable-slash-commands",
 ]
 
+# With a computer, the host's own tools are all off (`--tools ""`): the only
+# tools are the computer's, from one MCP server bound to the agent's machine,
+# and each call is asked about like any other.
+COMPUTER_SERVER = "computer"
+
 _NPM_SHIM_SUFFIXES ={".cmd", ".bat", ".ps1"}
 _NPM_REAL_BINARY = Path("node_modules") / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
 
@@ -436,6 +441,7 @@ def build_args(
     approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
+    computer=None,
 ) -> list[str]:
     # The prompt goes in on stdin, never on the command line. `resume` continues
     # the conversation that already holds `session_id`; otherwise the CLI is
@@ -454,13 +460,25 @@ def build_args(
         common += ["--model", model]
     if system_prompt:
         common += ["--append-system-prompt", system_prompt]
-    if not tools:
+    if not tools and computer is None:
         return [*common, "--output-format", "stream-json", *LOCKDOWN_ARGS]
     # Only the tools path has a permission mode to choose; chat-only runs stay
     # locked down. `None` keeps the CLI's `default` (ask about everything).
     tools_args = list(TOOLS_ARGS)
     tools_args[tools_args.index("--permission-mode") + 1] = cli_permission_mode(approval_mode)
+    if computer is not None:
+        tools_args[tools_args.index("--tools") + 1] = ""
+        tools_args += ["--mcp-config", computer_mcp_config(computer)]
     return [*common, "--output-format", "stream-json", *tools_args]
+
+
+def computer_mcp_config(launch) -> str:
+    """The `--mcp-config` value naming the computer's MCP server (and nothing
+    else: `--strict-mcp-config` keeps every other server out)."""
+    server = {"type": "stdio", "command": launch.command, "args": list(launch.args)}
+    if launch.env:
+        server["env"] = dict(launch.env)
+    return json.dumps({"mcpServers": {COMPUTER_SERVER: server}}, ensure_ascii=False)
 
 
 def user_message_line(prompt: str) -> str:
@@ -526,6 +544,7 @@ def _run_blocking(
     approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
+    computer=None,
 ) -> RunOutput:
     if workspace is not None:
         from app.services.workspaces import require_workspace
@@ -542,6 +561,9 @@ def _run_blocking(
         extra["model"] = model
     if system_prompt:
         extra["system_prompt"] = system_prompt
+    if computer is not None:
+        tools = True
+        extra["computer"] = computer  # unset: build_args behaves as before
     args = (
         build_args(executable, session_id, tools=True, **extra)
         if tools
@@ -571,13 +593,15 @@ async def run_prompt(
     approval_mode: str | None = None,
     model: str | None = None,
     system_prompt: str | None = None,
+    computer=None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
     through `control`. `tools=False` with a control gives a chat-only run the
     caller can still kill; `resume=True` continues the session `session_id`
     instead of creating it. `approval_mode` (see approval_modes.py) only
-    matters with tools on."""
+    matters with tools on. `computer` (an MCP launch) runs with tools on, but
+    with the computer's tools in place of the host's."""
     return await run_in_threadpool(
         _run_blocking,
         prompt,
@@ -590,4 +614,5 @@ async def run_prompt(
         approval_mode,
         model,
         system_prompt,
+        computer,
     )

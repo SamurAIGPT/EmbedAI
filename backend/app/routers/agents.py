@@ -39,6 +39,23 @@ def get_runtime() -> ThreadRuntime:
     return default_runtime
 
 
+async def _with_computers(rt: ThreadRuntime, agents: list) -> list[AgentResponse]:
+    """Agents as responses, each with its computer (if it has one)."""
+    from app.routers.computers import summary
+
+    computers = await rt.computers.for_agents([agent.id for agent in agents])
+    out = []
+    for agent in agents:
+        response = AgentResponse.model_validate(agent)
+        computer = computers.get(agent.id)
+        if computer is not None:
+            response = response.model_copy(
+                update={"computer_id": computer.id, "computer": summary(rt.computers, computer)}
+            )
+        out.append(response)
+    return out
+
+
 def _error(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"error_code": code, "message": message})
 
@@ -107,12 +124,13 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
 async def list_agents(include_archived: bool = False, rt: ThreadRuntime = Depends(get_runtime)):
     """Pinned first, then alphabetical by name."""
     async with rt.session() as db:
-        return await store.list_agents(db, rt.owner_id, include_archived=include_archived)
+        agents = await store.list_agents(db, rt.owner_id, include_archived=include_archived)
+    return await _with_computers(rt, agents)
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
-    return await _agent_or_404(rt, agent_id)
+    return (await _with_computers(rt, [await _agent_or_404(rt, agent_id)]))[0]
 
 
 @router.patch("/{agent_id}", response_model=AgentResponse)
@@ -145,9 +163,10 @@ async def update_agent(
         changes["workspace_path"] = _check_workspace(changes["workspace_path"])
     try:
         async with rt.session() as db:
-            return await store.update_agent(
+            agent = await store.update_agent(
                 db, agent_id, archived=payload.archived, **changes
             )
+        return (await _with_computers(rt, [agent]))[0]
     except store.AgentNotFound:
         raise HTTPException(status_code=404, detail="Agent not found") from None
     except store.AgentNameTaken:
@@ -180,6 +199,12 @@ async def delete_agent(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
         raise HTTPException(status_code=404, detail="Agent not found") from None
     # Its notes go with it; the folder stays, as its conversations may use it.
     agent_memory.remove_memory(agent_id)
+    # So does its computer (the machine; never the folder). If Docker is not
+    # answering, the removal finishes later.
+    try:
+        await rt.computers.mark_agent_deleted(agent_id)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # --- notes (MEMORY.md) ---------------------------------------------------------------

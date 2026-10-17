@@ -52,6 +52,12 @@ def _result_text(content) -> str:
 def summarize_tool(name: str, tool_input: dict) -> str:
     """One line saying what a tool call does, for the timeline. The approval
     card shows the full input; this is only a label."""
+    if name.startswith("mcp__computer__"):
+        # A computer tool: say where it runs, then what it does.
+        subject = tool_input.get("command") or tool_input.get("path") or "."
+        label = name[len("mcp__computer__"):]
+        text = subject if label == "exec" else f"{label} {subject}"
+        return "computer: " + _clip(text if isinstance(text, str) else label, SUMMARY_CHARS - 10)
     key = {
         "Bash": "command",
         "Read": "file_path",

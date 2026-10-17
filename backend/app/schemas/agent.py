@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.computer import ComputerSummary
+
 ApprovalMode = Literal["ask", "accept_edits", "plan"]
 
 # Standing instructions are capped in bytes, not characters, so the limit means
@@ -125,6 +127,10 @@ class AgentResponse(BaseModel):
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # The agent's own computer (docs/COMPUTERS.md), or null: its turns then
+    # run on this machine. Manage it under /agents/{id}/computer.
+    computer_id: int | None = None
+    computer: ComputerSummary | None = None
 
 
 class AgentMemoryResponse(BaseModel):

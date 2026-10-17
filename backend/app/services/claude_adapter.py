@@ -25,6 +25,8 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
+from app.computers import grants
+from app.computers.service import COMPUTER_TOOL_PREFIX
 from app.core import app_settings
 from app.core.logging import get_logger
 from app.services import local_claude_runner
@@ -65,7 +67,13 @@ _KINDS = {
     "Read": "file_read",
     "Glob": "file_read",
     "Grep": "file_read",
+    COMPUTER_TOOL_PREFIX + "exec": "command",
+    COMPUTER_TOOL_PREFIX + "write_file": "file_write",
+    COMPUTER_TOOL_PREFIX + "read_file": "file_read",
+    COMPUTER_TOOL_PREFIX + "list_files": "file_read",
 }
+
+DENY_NO_PERMIT = "The approval could not be handed to the computer, so this action was not allowed."
 
 _DENY_MESSAGES = {
     DENY: DENY_BY_USER,
@@ -105,6 +113,20 @@ class _Attempt:
         )
 
 
+def _issue_permit(ctx: TurnContext, handle: ApprovalHandle, tool_input: dict) -> bool:
+    """For an allowed computer call, the one-use permit the computer's MCP
+    server must find before it runs the call. Other calls need none."""
+    tool = getattr(handle, "tool", None) or ""
+    if ctx.computer is None or not tool.startswith(COMPUTER_TOOL_PREFIX):
+        return True
+    try:
+        grants.issue(ctx.computer.grants_dir, tool[len(COMPUTER_TOOL_PREFIX):], tool_input)
+        return True
+    except OSError:
+        logger.exception("could not write a computer permit", thread_id=ctx.thread_id)
+        return False
+
+
 class ClaudeAdapter:
     key = "claude"
 
@@ -127,7 +149,9 @@ class ClaudeAdapter:
             return TurnOutcome(
                 "failed", error="This thread has no Claude session id.", error_code="no_session"
             )
-        tools = app_settings.get("LOCAL_TOOLS_ENABLED")
+        # A computer is the agent's sandbox: its turns always have tools, and
+        # they are the computer's tools only.
+        tools = app_settings.get("LOCAL_TOOLS_ENABLED") or ctx.computer is not None
         attempt = await self._attempt(ctx, sink, gate, resume=ctx.resume, tools=tools)
         if attempt.already_in_use and not attempt.resume and not ctx.aborted:
             attempt = await self._attempt(ctx, sink, gate, resume=True, tools=tools)
@@ -151,6 +175,7 @@ class ClaudeAdapter:
         ctx.on_abort(control.kill)
         queue: asyncio.Queue = asyncio.Queue()
         answering: set[asyncio.Task] = set()
+        tools_by_request: dict[str, str] = {}
 
         def on_line(line: bytes) -> bool:
             # Runs on the runner's reader thread. Everything it learns goes onto
@@ -167,6 +192,7 @@ class ClaudeAdapter:
             return normalizer.over_limit
 
         async def answer(handle: ApprovalHandle, tool_input: dict) -> None:
+            handle.tool = tools_by_request.get(handle.request_id)
             control.pause_deadline()  # waiting for a person is not Claude running long
             try:
                 decision = await gate.decide(handle)
@@ -174,7 +200,9 @@ class ClaudeAdapter:
                 control.resume_deadline()
             if decision.kind == LOST:
                 return
-            if decision.kind == ALLOW:
+            if decision.kind == ALLOW and not _issue_permit(ctx, handle, tool_input):
+                payload = _deny_payload(handle.request_id, DENY_NO_PERMIT)
+            elif decision.kind == ALLOW:
                 payload = _allow_payload(handle.request_id, tool_input)
             else:
                 payload = _deny_payload(
@@ -231,6 +259,7 @@ class ClaudeAdapter:
                 # Too big to show a person in full: refused, never approved unseen.
                 control.send(json.dumps(_deny_payload(request_id, DENY_TOO_LARGE)))
                 return
+            tools_by_request[request_id] = tool
             # Recorded here, in stream order, so the approval appears after the
             # tool call that caused it; the wait happens in its own task.
             handle = await gate.open(
@@ -269,8 +298,12 @@ class ClaudeAdapter:
         extra = {}
         if ctx.model:
             extra["model"] = ctx.model
-        if ctx.instructions:
-            extra["system_prompt"] = ctx.instructions
+        notes = [ctx.instructions] if ctx.instructions else []
+        if ctx.computer is not None:
+            notes.append(ctx.computer.prompt_note())
+            extra["computer"] = ctx.computer.launch
+        if notes:
+            extra["system_prompt"] = "\n\n".join(notes)
         try:
             attempt.output = await local_claude_runner.run_prompt(
                 ctx.prompt,

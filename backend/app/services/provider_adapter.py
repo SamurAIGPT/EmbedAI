@@ -77,6 +77,9 @@ class TurnContext:
     # Extra instructions from the thread's named agent, for the provider's
     # system prompt (appended, never replacing it), or None. Read fresh each turn.
     instructions: str | None = None
+    # The agent's computer (app/computers/service.TurnComputer) when it has
+    # one: the turn's tools then run there, never on the host.
+    computer: object | None = None
     _abort_callbacks: list[Callable[[], None]] = field(default_factory=list)
     aborted: bool = False
 
@@ -117,6 +120,8 @@ class EventSink(Protocol):
 class ApprovalHandle:
     approval_id: str
     request_id: str
+    # The provider's tool name, filled in by an adapter that needs it.
+    tool: str | None = None
 
 
 class ApprovalGate(Protocol):

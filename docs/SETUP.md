@@ -26,6 +26,16 @@ Outside the desktop app every request needs a sign-in. Full design and tradeoffs
 
 Settings: `TRUSTED_HOSTS` (default `localhost,127.0.0.1,[::1]`; add your public host name when self-hosting), `LOOPBACK_TRUST` (`off` by default; `programs` lets scripts on this machine skip sign-in, `all` also local browsers, development only), `FRONTEND_ORIGINS` (also the origins allowed to send cookie requests). Self-hosting: put HTTPS in front, serve the web UI and the API from the same site, and see the checklist in [AUTH.md](AUTH.md#self-hosting-checklist).
 
+## Search, attachments, files and usage
+
+Nothing to set up; see [EVERYDAY.md](EVERYDAY.md). Attached files are kept in
+`~/.open-dots/attachments/<conversation id>/` (override with
+`ATTACHMENTS_DIR`; the desktop app uses its data folder), folders `0700` and
+files `0600`, and are deleted with their conversation. The Files and Usage
+panels need an admin session; a device paired with the `chat` scope can search
+and attach but cannot browse workspace files or see usage. No migration is
+needed.
+
 ## Database
 
 **PostgreSQL is the default** and is what the Docker setup above starts. Nothing changes for an existing installation.

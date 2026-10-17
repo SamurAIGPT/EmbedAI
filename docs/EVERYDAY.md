@@ -73,7 +73,8 @@ bytes. All chat scope.
 `GET /api/v1/threads/{id}/files?path=` lists a folder of the conversation's
 pinned workspace (for an agent's conversation, the agent's workspace).
 `GET .../files/content?path=` previews a text file (first 256 KB) or an image
-(up to 10 MB). `GET .../files/download?path=` downloads a file (up to 50 MB).
+(up to 10 MB), whose bytes come from `GET .../files/raw?path=`.
+`GET .../files/download?path=` downloads a file (up to 50 MB).
 Admin scope only: a paired chat-only device cannot browse files.
 
 Confinement, checked on every request:
@@ -106,7 +107,9 @@ The turn stores exactly what was reported. Nothing is estimated.
 
 - Each finished turn in the transcript shows its tokens and cost, or
   "usage not reported".
-- `GET /api/v1/usage?month=YYYY-MM` (admin): totals for the month, by
+- A finished turn's `turn.completed` / `turn.failed` event carries the
+  `usage` its engine reported (absent when it reported nothing).
+- `GET /api/v1/usage?month=YYYY-MM` (admin; months and days in UTC): totals for the month, by
   conversation, by engine and model, and by day. A total counts `turns`,
   `reported_turns` and `unreported_turns`; `cost_usd` is the sum of reported
   costs and is null when no turn in that group reported one.
@@ -124,6 +127,14 @@ with no results, an empty workspace, a month with no usage, and a turn that
 failed with its reason.
 
 ## Not in this version
+
+- Attached text files reach the engine only in the turn they were sent with;
+  an engine that rebuilds context from stored history (OpenAI-compatible)
+  sees the typed message, not the file, on later turns. Text inside attached
+  files is not searched.
+- SQLite's `lower()` folds ASCII only, so search is case-insensitive for
+  ASCII letters; other scripts match case-sensitively there (PostgreSQL folds
+  them).
 
 - Ranking by relevance, stemming, or an FTS index.
 - PDFs and office documents as attachments; images for Codex, ACP and

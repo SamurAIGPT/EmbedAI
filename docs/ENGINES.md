@@ -48,7 +48,7 @@ the engine default. Changing an agent's engine affects new conversations.
   | `tools` | can run tools (commands, file edits) in the workspace |
   | `approvals` | its tool calls go through the approval gate |
   | `mcp` | can mount an MCP server this app gives it |
-  | `images` | accepts images in a prompt (nothing sends images yet) |
+  | `images` | accepts images attached to a message ([EVERYDAY.md](EVERYDAY.md)); an image for any other engine is refused with `images_unsupported` |
   | `resume` | a conversation continues with the engine's earlier context |
   | `computers` | its turns can run their tools in an agent computer |
 
@@ -71,7 +71,7 @@ defaults (no capabilities, any model, a probe derived from `status()`).
 | tools | yes | yes | yes | no |
 | approvals | yes | yes | yes | no |
 | mcp | yes (the computer's server) | no | no | no |
-| images | no | no | no | no |
+| images | yes (stream-json content blocks) | no | no | no |
 | resume | `--resume` | `thread/resume` | `session/load`, or the transcript as text | stored history each turn |
 | computers | yes | no | no | no |
 
@@ -159,5 +159,5 @@ kept, 120,000 characters) with the agent's instructions as the system message.
   icons, installing or signing in to an engine from the app.
 - Quota- or limit-aware fallback to another engine.
 - Model prices, context windows and usage-limit meters.
-- Images, MCP servers or computers for engines other than Claude.
+- Images (attached text files work everywhere), MCP servers or computers for engines other than Claude.
 - A long-lived engine process across turns (each turn starts one).

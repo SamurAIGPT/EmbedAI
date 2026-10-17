@@ -58,6 +58,11 @@ class Agent(Base):
     memory_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=expression.true()
     )
+    # Off: no notes or earlier conversations are looked up and added to the
+    # person's message before a turn (docs/MEMORY.md). Needs memory_enabled.
+    recall_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=expression.true()
+    )
     # Pinned agents list first.
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()

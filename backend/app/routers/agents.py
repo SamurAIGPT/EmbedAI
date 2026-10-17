@@ -122,6 +122,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 approval_mode=payload.approval_mode,
                 pinned=payload.pinned,
                 memory_enabled=payload.memory_enabled,
+                recall_enabled=payload.recall_enabled,
             )
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "An agent with this name already exists.") from None
@@ -169,6 +170,7 @@ async def update_agent(
             "approval_mode",
             "pinned",
             "memory_enabled",
+            "recall_enabled",
         )
         if field in payload.model_fields_set
     }

@@ -50,6 +50,9 @@ class AgentCreateRequest(BaseModel):
     approval_mode: ApprovalMode = "ask"
     pinned: bool = False
     memory_enabled: bool = True
+    # Before each turn, add relevant notes and earlier conversations to the
+    # person's message (docs/MEMORY.md). Has no effect while memory is off.
+    recall_enabled: bool = True
     # Optional first contents of the agent's notes (MEMORY.md).
     starter_notes: str | None = Field(default=None, max_length=256 * 1024)
 
@@ -85,6 +88,7 @@ class AgentUpdateRequest(BaseModel):
     approval_mode: ApprovalMode | None = None
     pinned: bool | None = None
     memory_enabled: bool | None = None
+    recall_enabled: bool | None = None
     archived: bool | None = None
 
     @field_validator("name")
@@ -106,7 +110,7 @@ class AgentUpdateRequest(BaseModel):
     def _something_to_change(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for field in ("name", "instructions", "provider", "approval_mode", "pinned", "memory_enabled", "archived"):
+        for field in ("name", "instructions", "provider", "approval_mode", "pinned", "memory_enabled", "recall_enabled", "archived"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -128,6 +132,7 @@ class AgentResponse(BaseModel):
     approval_mode: ApprovalMode
     pinned: bool
     memory_enabled: bool
+    recall_enabled: bool = True
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

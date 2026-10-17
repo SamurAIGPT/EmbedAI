@@ -28,6 +28,7 @@ _EDITABLE = (
     "approval_mode",
     "pinned",
     "memory_enabled",
+    "recall_enabled",
 )
 
 
@@ -77,6 +78,7 @@ async def create_agent(
     approval_mode: str = "ask",
     pinned: bool = False,
     memory_enabled: bool = True,
+    recall_enabled: bool = True,
 ) -> Agent:
     """Raises ValueError (blank name, unknown approval mode) or AgentNameTaken."""
     name = name.strip()
@@ -97,6 +99,7 @@ async def create_agent(
         approval_mode=approval_mode,
         pinned=pinned,
         memory_enabled=memory_enabled,
+        recall_enabled=recall_enabled,
         created_at=now,
         updated_at=now,
     )
@@ -182,6 +185,7 @@ async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
         workspace_path=source.workspace_path,
         approval_mode=source.approval_mode,
         memory_enabled=source.memory_enabled,
+        recall_enabled=source.recall_enabled,
     )
 
 

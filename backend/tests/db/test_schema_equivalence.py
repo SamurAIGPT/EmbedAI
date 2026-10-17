@@ -129,4 +129,5 @@ def test_named_agent_columns_are_the_same_on_both_databases(schemas, tmp_path):
     assert postgres_view["agent"] == sqlite_view["agent"]
     assert comparable(from_models)["agent"] == postgres_view["agent"]
     assert column(sqlite_view, "agent", "memory_enabled") == ("memory_enabled", "boolean", False, "true")
+    assert column(sqlite_view, "agent", "recall_enabled") == ("recall_enabled", "boolean", False, "true")
     assert column(sqlite_view, "agent", "approval_mode") == ("approval_mode", "text", False, "'ask'")

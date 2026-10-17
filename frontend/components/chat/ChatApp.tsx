@@ -7,6 +7,8 @@ import { api, ApiError, isLaunchTokenMissing, type Agent, type LocalStatus, type
 import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
 import { AgentsPanel } from "./AgentsPanel";
+import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
+import type { Remembered } from "./items";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
 import { ThreadList } from "./ThreadList";
@@ -104,6 +106,10 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  // What "Always allow this command" did, by approval id, and rules undone here.
+  const [remembered, setRemembered] = useState<Record<string, Remembered>>({});
+  const [undoneRules, setUndoneRules] = useState<number[]>([]);
   // The agent a new chat will start with (null: a plain chat).
   const [newAgentId, setNewAgentId] = useState<number | null>(null);
 
@@ -252,12 +258,18 @@ export function ChatApp() {
       }),
   };
 
-  const answer = async (approvalId: string, decision: "allow" | "deny") => {
+  const answer = async (approvalId: string, decision: "allow" | "deny", remember = false) => {
     if (threadId === null) return;
     setAnswering(approvalId);
     setApprovalErrors((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== approvalId)));
     try {
-      await api.answerThreadApproval(threadId, approvalId, decision);
+      const result = await api.answerThreadApproval(threadId, approvalId, decision, remember);
+      if (remember && decision === "allow") {
+        setRemembered((prev) => ({
+          ...prev,
+          [approvalId]: { ruleId: result?.rule_id ?? null, error: result?.remember_error ?? null },
+        }));
+      }
     } catch (err) {
       // Not waiting any more (answered elsewhere, expired, the run ended): the
       // stream already says so, and the card updates by itself.
@@ -268,6 +280,20 @@ export function ChatApp() {
     } finally {
       setAnswering(null);
     }
+  };
+
+  // Take back an "always allow": the rule is removed and logged as undone.
+  const undoRule = async (ruleId: number) => {
+    try {
+      await api.deleteApprovalRule(ruleId, threadId);
+    } catch (err) {
+      // 404: already removed (from the rules list, say). Anything else is shown.
+      if (!(err instanceof ApiError && err.status === 404)) {
+        setManageError(err instanceof ApiError ? err.message : "Could not remove the rule.");
+        return;
+      }
+    }
+    setUndoneRules((prev) => [...prev, ruleId]);
   };
 
   const resetSession = async () => {
@@ -324,6 +350,22 @@ export function ChatApp() {
             </span>
           )
         ))}
+      {gate.phase === "ready" && gate.status.available && gate.status.tools_enabled && threadId !== null && (
+        <span
+          className="hidden rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 sm:inline dark:bg-zinc-900 dark:text-zinc-400"
+          title="How much Claude may do before it asks. Set by the conversation's agent; a plain chat asks first."
+        >
+          {approvalModeLabel(threadAgent?.approval_mode ?? "ask")}
+        </span>
+      )}
+      {gate.phase === "ready" && gate.status.available && (
+        <button
+          onClick={() => setApprovalsOpen(true)}
+          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Approvals
+        </button>
+      )}
       {agents !== null && (
         <button
           onClick={() => setAgentsOpen(true)}
@@ -398,6 +440,13 @@ export function ChatApp() {
   return (
     <div className="relative flex h-dvh flex-col">
       {header}
+      {approvalsOpen && (
+        <ApprovalsPanel
+          threadId={threadId}
+          workspace={thread?.workspace_path ?? null}
+          onClose={() => setApprovalsOpen(false)}
+        />
+      )}
       {agentsOpen && agents !== null && (
         <AgentsPanel
           agents={agents}
@@ -432,6 +481,9 @@ export function ChatApp() {
               answering={answering}
               approvalErrors={approvalErrors}
               onAnswer={answer}
+              remembered={remembered}
+              undoneRules={undoneRules}
+              onUndo={undoRule}
             />
           )}
 

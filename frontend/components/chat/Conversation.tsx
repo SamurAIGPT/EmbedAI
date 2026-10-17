@@ -7,6 +7,7 @@ import {
   AssistantMessage,
   SessionReset,
   ToolStep,
+  type Remembered,
   TurnEnd,
   UserMessage,
 } from "./items";
@@ -20,11 +21,18 @@ export function Conversation({
   answering,
   approvalErrors,
   onAnswer,
+  remembered = {},
+  undoneRules = [],
+  onUndo,
 }: {
   transcript: Transcript;
   answering: string | null;
   approvalErrors: Record<string, string>;
-  onAnswer: (approvalId: string, decision: "allow" | "deny") => void;
+  onAnswer: (approvalId: string, decision: "allow" | "deny", remember?: boolean) => void;
+  // "Always allow" outcomes by approval id, from answers given on this page.
+  remembered?: Record<string, Remembered>;
+  undoneRules?: number[];
+  onUndo?: (ruleId: number) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
@@ -67,7 +75,10 @@ export function Conversation({
                   item={item}
                   answering={answering === item.approvalId}
                   error={approvalErrors[item.approvalId] ?? null}
-                  onAnswer={(decision) => onAnswer(item.approvalId, decision)}
+                  onAnswer={(decision, remember) => onAnswer(item.approvalId, decision, remember)}
+                  remembered={remembered[item.approvalId]}
+                  undoneRules={undoneRules}
+                  onUndo={onUndo}
                 />
               );
             case "turn_end":

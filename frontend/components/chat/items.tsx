@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { canAlwaysAllow } from "@/lib/approvals";
 import type { TranscriptItem } from "@/lib/transcript";
 import { Markdown } from "./Markdown";
 
@@ -120,18 +121,34 @@ const APPROVAL_LABEL: Record<Item<"approval">["status"], string> = {
   cancelled: "Cancelled: the run ended before it was answered",
 };
 
+// What became of "Always allow this command" on this card: the saved rule
+// (null after Undo), or why it could not be saved.
+export type Remembered = { ruleId: number | null; error: string | null };
+
 export function ApprovalCard({
   item,
   answering,
   error,
   onAnswer,
+  remembered,
+  undoneRules = [],
+  onUndo,
 }: {
   item: Item<"approval">;
   answering: boolean;
   error: string | null;
-  onAnswer: (decision: "allow" | "deny") => void;
+  onAnswer: (decision: "allow" | "deny", remember?: boolean) => void;
+  remembered?: Remembered;
+  // Rules removed since the page opened: their cards stop offering Undo.
+  undoneRules?: number[];
+  // Stop always allowing: removes the saved rule; the next such command asks.
+  onUndo?: (ruleId: number) => void;
 }) {
   const pending = item.status === "pending";
+  const rememberable = canAlwaysAllow(item.tool, item.input);
+  const byRule = item.resolvedBy === "saved_rule";
+  const savedRuleId = remembered?.ruleId ?? (byRule ? item.ruleId : null);
+  const undone = savedRuleId != null && undoneRules.includes(savedRuleId);
   return (
     <div
       className={`space-y-2 rounded-md border p-3 text-sm ${
@@ -152,7 +169,9 @@ export function ApprovalCard({
           </>
         ) : (
           <>
-            <span className="font-mono">{item.tool}</span>: {APPROVAL_LABEL[item.status]}
+            <span className="font-mono">{item.tool}</span>:{" "}
+            {byRule && item.status === "allowed" ? "Allowed by a saved rule, without asking" : APPROVAL_LABEL[item.status]}
+            {!pending && item.summary && <span className="font-mono text-zinc-400"> · {item.summary}</span>}
           </>
         )}
       </p>
@@ -177,6 +196,16 @@ export function ApprovalCard({
           >
             Allow
           </button>
+          {rememberable && (
+            <button
+              onClick={() => onAnswer("allow", true)}
+              disabled={answering}
+              title="Allow it now, and run exactly this command in this folder without asking from now on"
+              className="cursor-pointer rounded-md border border-zinc-300 px-4 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              Always allow this command
+            </button>
+          )}
           <button
             onClick={() => onAnswer("deny")}
             disabled={answering}
@@ -185,6 +214,23 @@ export function ApprovalCard({
             Deny
           </button>
         </div>
+      )}
+      {!pending && remembered?.error && (
+        <p className="text-xs text-zinc-500">Allowed this once only: {remembered.error}.</p>
+      )}
+      {!pending && undone && (
+        <p className="text-xs text-zinc-500">No longer always allowed. Next time it asks again.</p>
+      )}
+      {!pending && savedRuleId != null && !undone && onUndo && (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+          {remembered?.ruleId != null ? "Always allowed in this folder from now on." : "A saved rule allows this command."}
+          <button
+            onClick={() => onUndo(savedRuleId)}
+            className="cursor-pointer underline hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            {remembered?.ruleId != null ? "Undo" : "Stop always allowing"}
+          </button>
+        </p>
       )}
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

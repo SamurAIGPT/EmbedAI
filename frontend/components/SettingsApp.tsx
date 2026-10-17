@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type ApplicationSetting, type DesktopSettings } from "@/lib/api";
+import { ApprovalsTabs } from "@/components/approvals/ApprovalsPanel";
 
 declare global {
   interface Window {
@@ -116,6 +117,7 @@ export function SettingsApp() {
         </section>
         <section className="space-y-4 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="font-semibold">Storage</h3><p className="text-xs text-zinc-500">Managed by the desktop app. These locations cannot be changed here.</p><dl className="space-y-3 text-sm">{Object.entries(data.storage).map(([name, value]) => <div key={name}><dt className="font-medium capitalize">{name.replaceAll("_", " ")}</dt><dd className="mt-1 break-all text-xs text-zinc-500">{value}</dd></div>)}</dl></section>
       </>}
+      <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800"><h3 className="mb-1 font-semibold">Approvals</h3><p className="mb-4 text-xs text-zinc-500">Commands you always allow, every decision about a tool call, and a read-only health scan of recent conversations.</p><ApprovalsTabs /></section>
     </main>
   </div>;
 }

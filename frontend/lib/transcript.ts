@@ -44,6 +44,10 @@ export type TranscriptItem =
       summary: string;
       input: Record<string, unknown>;
       status: ApprovalStatus;
+      // "saved_rule" when a saved "always allow" rule answered it, not a
+      // person; "" otherwise. `ruleId` is that rule.
+      resolvedBy: string;
+      ruleId: number | null;
     }
   | {
       kind: "turn_end";
@@ -221,6 +225,8 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
             summary: text(data.summary),
             input: record(data.input),
             status: "pending",
+            resolvedBy: "",
+            ruleId: null,
           },
         ],
       };
@@ -228,11 +234,13 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
     case "approval.resolved": {
       const approvalId = text(data.approval_id);
       const status = approvalStatus(data.status);
+      const resolvedBy = text(data.by);
+      const ruleId = typeof data.rule_id === "number" ? data.rule_id : null;
       return {
         ...base,
         items: state.items.map((i) =>
           i.kind === "approval" && i.approvalId === approvalId && i.status === "pending"
-            ? { ...i, status }
+            ? { ...i, status, resolvedBy, ruleId }
             : i
         ),
       };

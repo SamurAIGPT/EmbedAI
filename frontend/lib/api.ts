@@ -125,6 +125,116 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+// For a body that is not JSON (a CSV export). Errors are read like request()'s.
+async function requestText(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    let code: string | null = null;
+    try {
+      const body = await res.json();
+      detail = formatErrorDetail(body?.detail, detail);
+      if (typeof body?.detail?.error_code === "string") code = body.detail.error_code;
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(res.status, detail, code);
+  }
+  return res.text();
+}
+
+export type DecisionEvent =
+  | "shown"
+  | "allowed"
+  | "denied"
+  | "auto_allowed"
+  | "expired"
+  | "cancelled"
+  | "undone";
+
+export type DecisionFilter = {
+  limit?: number;
+  // The page cursor: `next_before` of the previous page.
+  before?: string | null;
+  event?: DecisionEvent | null;
+  thread_id?: number | null;
+};
+
+export function decisionQuery(filter: DecisionFilter): string {
+  const params = new URLSearchParams();
+  if (filter.limit != null) params.set("limit", String(filter.limit));
+  if (filter.before) params.set("before", filter.before);
+  if (filter.event) params.set("event", filter.event);
+  if (filter.thread_id != null) params.set("thread_id", String(filter.thread_id));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+// One line of the decision log. Never the call's full input: `summary` is one
+// line with secrets removed.
+export type DecisionEntry = {
+  id: string;
+  at: string;
+  event: DecisionEvent;
+  thread_id: number | null;
+  turn_id: number | null;
+  approval_id: string | null;
+  tool: string | null;
+  kind: string | null;
+  summary: string | null;
+  // user | saved_rule | timeout | provider
+  source: string | null;
+  rule: string | null;
+  remembered: boolean | null;
+  mode?: string | null;
+};
+
+export type DecisionsPage = { items: DecisionEntry[]; next_before: string | null };
+
+export type ApprovalRule = {
+  id: number;
+  match: "exact" | "prefix";
+  command: string;
+  // null: applies in every folder.
+  workspace: string | null;
+  created_at: string;
+};
+
+export type ApprovalRuleInput = {
+  match: "exact" | "prefix";
+  command: string;
+  workspace?: string | null;
+};
+
+export type ApprovalAnswer = {
+  status: string;
+  decision: "allow" | "deny";
+  rule_id?: number | null;
+  remember_error?: string | null;
+};
+
+export type SentinelIssue = {
+  sig: string;
+  kind: "tool_error" | "retry_loop" | "repeated_denial" | "turn_failure";
+  // Normalized: paths, numbers, ids and quoted text replaced. Never raw output.
+  title: string;
+  severity: "high" | "medium" | "low";
+  tool: string | null;
+  thread_id: number | null;
+  turn_id: number | null;
+  count: number;
+  first_at: string;
+  last_at: string;
+  evidence: { source: string; id: string | number };
+};
+
+export type SentinelReport = {
+  since: string;
+  scanned_events: number;
+  scanned_decisions: number;
+  issues: SentinelIssue[];
+};
+
 export type LinkCode = {
   code: string;
   expires_at: string;
@@ -305,6 +415,8 @@ export type Thread = {
   title: string | null;
   provider: string;
   model: string | null;
+  // The folder Claude works in; saved command rules can be tied to it.
+  workspace_path?: string | null;
   // new | active | broken | none. "broken": the Claude session cannot be found
   // and must be reset before the thread takes another message.
   session_state: string;
@@ -568,11 +680,48 @@ export const api = {
     request<Thread>(`/threads/${threadId}/session/reset`, { method: "POST" }),
 
   // 409 approval_not_waiting: already answered, expired, or its turn ended.
-  answerThreadApproval: (threadId: number, approvalId: string, decision: "allow" | "deny") =>
-    request<{ status: string; decision: string }>(
+  // `remember` with an allow also saves the exact shell command as an "always
+  // allow" rule for the conversation's folder; the answer says which rule, or
+  // why none was saved (it was then allowed this once only).
+  answerThreadApproval: (
+    threadId: number,
+    approvalId: string,
+    decision: "allow" | "deny",
+    remember = false
+  ) =>
+    request<ApprovalAnswer>(
       `/threads/${threadId}/approvals/${encodeURIComponent(approvalId)}`,
-      { method: "POST", body: JSON.stringify({ decision }) }
+      { method: "POST", body: JSON.stringify(remember ? { decision, remember } : { decision }) }
     ),
+
+  // --- Approval rules, the decision log and the health scan (local only) ---
+
+  // With `workspace`: the rules that apply in that folder (its own and the
+  // ones with no folder).
+  listApprovalRules: (workspace?: string | null) =>
+    request<ApprovalRule[]>(
+      `/approval-rules${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`
+    ),
+
+  // 422 with a reason: a credential, the safety floor, shell operators in a prefix...
+  addApprovalRule: (input: ApprovalRuleInput) =>
+    request<ApprovalRule>("/approval-rules", { method: "POST", body: JSON.stringify(input) }),
+
+  // Logged as `undone`; `threadId` says which conversation it was undone from.
+  deleteApprovalRule: (ruleId: number, threadId?: number | null) =>
+    request<void>(
+      `/approval-rules/${ruleId}${threadId != null ? `?thread_id=${threadId}` : ""}`,
+      { method: "DELETE" }
+    ),
+
+  listDecisions: (filter: DecisionFilter = {}) =>
+    request<DecisionsPage>(`/decisions${decisionQuery(filter)}`),
+
+  // The same filters as listDecisions, as CSV text (newest first).
+  exportDecisionsCsv: (filter: DecisionFilter = {}) =>
+    requestText(`/decisions/export.csv${decisionQuery({ ...filter, before: undefined, limit: undefined })}`),
+
+  scanHealth: (hours = 24) => request<SentinelReport>(`/sentinel/scan?hours=${hours}`),
 
   // Every stored event after `afterSeq` (null: from the start), then live. The
   // server replays in order, so a reconnect with the last seq seen misses nothing

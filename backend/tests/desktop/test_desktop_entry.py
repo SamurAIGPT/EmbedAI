@@ -413,3 +413,19 @@ def test_the_server_stops_promptly_even_while_a_worker_thread_is_still_busy():
     assert not serving.is_alive(), "the server did not stop while a worker thread was busy"
     assert time.monotonic() - stopped_at < 6
 
+
+
+def test_a_second_backend_on_the_same_data_folder_is_refused_while_the_first_serves(launches, tmp_path):
+    first = launch(launches, tmp_path).start()
+    port = first.ready()["port"]
+    second = launch(launches, tmp_path).start()
+    assert second.exit_code() == entry.EXIT_DATABASE
+    assert "already using the database" in second.log()
+    assert f"process {first.process.pid}" in second.log()
+    # The first one is untouched and still serves.
+    assert get(port, "/api/v1/providers").status_code == 200
+    assert first.stop() == 0
+    # Once the first has stopped, the folder can be opened again.
+    third = launch(launches, tmp_path).start()
+    third.ready()
+    assert third.stop() == 0

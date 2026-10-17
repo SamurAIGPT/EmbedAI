@@ -11,7 +11,8 @@
 
 Exit codes are part of the contract with the launcher, which turns them into
 messages: 2 handshake, 3 stored credentials the key cannot open, 4 database
-refused or update failed, 5 the page's files are missing.
+refused, update failed or already in use by another backend, 5 the page's
+files are missing.
 """
 
 import asyncio
@@ -134,6 +135,23 @@ def main(stdin=None, handshake_timeout: float = handshake.DEFAULT_TIMEOUT_SECOND
     launch_auth.install(message.token)
 
     # Only now: importing these builds the settings, which need the profile.
+    from app.core import data_lease
+    from app.desktop import database
+
+    # Before the database is judged or migrated: a second launch on the same
+    # data folder must not touch a file another backend is serving.
+    try:
+        lease = data_lease.acquire(desktop.database_file)
+    except data_lease.DataDirInUse as exc:
+        log(str(exc))
+        return EXIT_DATABASE
+    try:
+        return _prepared_and_served(desktop, message, lifeline, sock, port)
+    finally:
+        lease.release()
+
+
+def _prepared_and_served(desktop, message, lifeline, sock, port) -> int:
     from app.desktop import database
 
     try:

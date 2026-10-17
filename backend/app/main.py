@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.background import run_every
 from app.core.config import settings
-from app.core import app_settings
+from app.core import app_settings, data_lease
 from app.desktop import profile
 from app.core.logging import configure_logging, get_logger
 from app.auth.middleware import AuthMiddleware
@@ -30,6 +30,23 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # One backend per SQLite database: a second one refuses to start here,
+    # before it can run a routine or sweep the first one's turns.
+    try:
+        lease = data_lease.acquire_for_settings(settings)
+    except data_lease.DataDirInUse as exc:
+        logger.error(str(exc))
+        raise
+    try:
+        async with _serving(app):
+            yield
+    finally:
+        if lease is not None:
+            lease.release()
+
+
+@asynccontextmanager
+async def _serving(app: FastAPI):
     if profile.active():
         from app.db.session import AsyncSessionLocal
         try:

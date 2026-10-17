@@ -46,6 +46,11 @@ CHAT_ROUTES: tuple[tuple[frozenset[str], re.Pattern[str]], ...] = tuple(
         ({"GET"}, f"/threads/{_ID}/events/stream"),
         ({"GET"}, f"/threads/{_ID}/approvals"),
         ({"POST"}, f"/threads/{_ID}/approvals/[A-Za-z0-9_-]+"),
+        # Search and attachments are part of chatting. Workspace files
+        # (/threads/{id}/files...) and usage (/usage) stay admin-only.
+        ({"GET"}, "/search"),
+        ({"POST"}, f"/threads/{_ID}/attachments"),
+        ({"GET"}, f"/threads/{_ID}/attachments/[0-9a-f]{{32}}"),
         ({"GET"}, "/agents"),
         ({"GET"}, f"/agents/{_ID}"),
         ({"GET"}, "/engines"),

@@ -14,6 +14,10 @@ from app.routers.sentinel import router as sentinel_router
 from app.routers.computers import router as computers_router
 from app.routers.engines import router as engines_router
 from app.routers.routines import router as routines_router
+from app.routers.search import router as search_router
+from app.routers.attachments import router as attachments_router
+from app.routers.workspace_files import router as workspace_files_router
+from app.routers.usage import router as usage_router
 from app.auth.routes import router as auth_router
 from fastapi import APIRouter
 
@@ -43,3 +47,7 @@ router.include_router(sentinel_router)
 router.include_router(computers_router)
 router.include_router(engines_router)
 router.include_router(routines_router)
+router.include_router(search_router)
+router.include_router(attachments_router)
+router.include_router(workspace_files_router)
+router.include_router(usage_router)

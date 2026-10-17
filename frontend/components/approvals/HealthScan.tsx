@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { api, ApiError, type SentinelReport } from "@/lib/api";
 import { issueKindLabel } from "@/lib/approvals";
-import { BUTTON, FIELD } from "./styles";
+import { BUTTON, FIELD_BOX } from "./styles";
 
 const SEVERITY = {
   high: "text-red-700 dark:text-red-400",
@@ -39,7 +39,7 @@ export function HealthScan() {
           aria-label="How far back"
           value={hours}
           onChange={(e) => setHours(Number(e.target.value))}
-          className={`${FIELD} w-auto`}
+          className={`${FIELD_BOX} w-auto`}
         >
           <option value={1}>Last hour</option>
           <option value={24}>Last day</option>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type DecisionEntry, type DecisionEvent } from "@/lib/api";
 import { DECISION_EVENTS, csvFileName, decisionEventLabel, decisionText } from "@/lib/approvals";
-import { BUTTON, FIELD } from "./styles";
+import { BUTTON, FIELD_BOX } from "./styles";
 
 const PAGE = 50;
 
@@ -78,7 +78,7 @@ export function DecisionLog({ threadId = null }: { threadId?: number | null }) {
           aria-label="Event"
           value={event}
           onChange={(e) => setEvent(e.target.value as DecisionEvent | "")}
-          className={`${FIELD} w-auto`}
+          className={`${FIELD_BOX} w-auto`}
         >
           <option value="">Every event</option>
           {DECISION_EVENTS.map((e) => (
@@ -93,7 +93,7 @@ export function DecisionLog({ threadId = null }: { threadId?: number | null }) {
           placeholder="Conversation #"
           value={thread}
           onChange={(e) => setThread(e.target.value)}
-          className={`${FIELD} w-36`}
+          className={`${FIELD_BOX} w-36`}
         />
         <button className={BUTTON} onClick={() => setTick((n) => n + 1)} disabled={busy}>
           Refresh

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type ApprovalRule } from "@/lib/api";
 import { ruleMatchLabel, ruleScopeLabel } from "@/lib/approvals";
-import { BUTTON, FIELD, PRIMARY } from "./styles";
+import { BUTTON, FIELD, FIELD_BOX, PRIMARY } from "./styles";
 
 // The saved "always allow" rules for shell commands: list, add and remove.
 // With a `workspace`, it starts on the rules that apply in that folder.
@@ -113,7 +113,7 @@ export function ApprovalRules({
             aria-label="How the command must match"
             value={match}
             onChange={(e) => setMatch(e.target.value === "prefix" ? "prefix" : "exact")}
-            className={`${FIELD} w-36 shrink-0`}
+            className={`${FIELD_BOX} w-36 shrink-0`}
           >
             <option value="exact">Exactly</option>
             <option value="prefix">Starts with</option>

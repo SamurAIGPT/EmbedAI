@@ -117,3 +117,53 @@ def test_a_nested_shell_is_read_to_a_limit():
     for _ in range(5):
         deep = "sh -c " + __import__("shlex").quote(deep)
     assert not floor_reading(deep).clear
+
+
+@pytest.mark.parametrize(
+    "command,rule",
+    [
+        ("diskutil eraseDisk JHFS+ Empty /dev/disk2", "format-disk"),
+        ("diskutil apfs eraseVolume disk3s1 -name x", "format-disk"),
+        ("sudo diskutil zeroDisk disk4", "format-disk"),
+        ("diskutil reformat /Volumes/USB", "format-disk"),
+        ("dd if=img of=/dev/disk/by-id/usb-Kingston bs=4M", "overwrite-disk"),
+        ("cat img > /dev/md/raid0", "overwrite-disk"),
+        ("rm -rf /lib*", "delete-system-directory"),
+        ("rm -rf /libx32", "delete-system-directory"),
+        ("function f { f | f & }; f", "fork-bomb"),
+        ("function bomb() { bomb|bomb& }; bomb", "fork-bomb"),
+        ("eval 'rm -rf /'", "delete-root"),
+        ("eval rm -rf ~", "delete-home"),
+    ],
+)
+def test_more_never_list_commands_are_blocked(command, rule):
+    assert rule_of(command) == rule
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "diskutil list",
+        "diskutil info disk2",
+        "diskutil eraseVolume APFS x $DISK",
+        "dd if=/dev/zero of=/dev/mapper/loop0p1",
+        "function greet { echo hi; }; greet",
+        "eval 'git status'",
+    ],
+)
+def test_more_ordinary_commands_clear_the_floor(command):
+    reading = floor_reading(command)
+    # `$DISK` names an unknown device: not blocked, and still readable.
+    assert reading.verdict is None
+
+
+@pytest.mark.parametrize("command", ["$CMD --flag", "bash -c \"$CMD\"", "eval $CMD", "sudo \"$TOOL\" -rf /x"])
+def test_a_program_named_by_a_variable_is_not_clear(command):
+    reading = floor_reading(command)
+    assert not reading.readable and not reading.clear
+
+
+def test_no_preserve_root_without_recursion_is_read_not_raised():
+    # rm without -r cannot delete a directory, but the line must still be read.
+    assert floor_reading("rm --no-preserve-root /").verdict.rule == "delete-root"
+    assert floor_reading("rm --no-preserve-root ./x").verdict is None

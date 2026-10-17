@@ -14,9 +14,12 @@ shell) is "unreadable", never "clear", and is also held for a person.
 
     delete-root, delete-home, delete-system-directory   rm -r on / ~ /etc ...
     permission-change-root                              chmod/chown -R on those
-    format-disk, overwrite-disk                         mkfs, dd of=/dev/sda, > /dev/sda
+    format-disk, overwrite-disk                         mkfs, diskutil eraseDisk, dd of=/dev/sda, > /dev/sda
     force-push                                          git push --force / -f / +ref
-    fork-bomb                                           :(){ :|:& };:
+    fork-bomb                                           :(){ :|:& };:  and  function f { f|f& }; f
+
+A command whose program is itself a variable (`$CMD args`, `bash -c "$CMD"`)
+cannot be known, so it is unreadable too.
 """
 
 import posixpath
@@ -26,7 +29,7 @@ from dataclasses import dataclass
 
 SYSTEM_DIRECTORIES = frozenset(
     {
-        "/etc", "/usr", "/bin", "/sbin", "/var", "/boot", "/home", "/lib", "/lib32", "/lib64",
+        "/etc", "/usr", "/bin", "/sbin", "/var", "/boot", "/home", "/lib", "/lib32", "/lib64", "/libx32", "/lib*",
         "/opt", "/root", "/srv", "/dev", "/proc", "/sys", "/System", "/Library",
         "/Applications", "/Users", "/Volumes", "/private", "/private/etc", "/private/var",
     }
@@ -42,13 +45,19 @@ _VALUE_OPTIONS = frozenset({"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-n"
 _MAX_NESTING = 3
 
 _DISK_DEVICE = re.compile(
-    r"^/dev/(?:r?disk\d+(?:s\d+)*|sd[a-z]{1,3}\d*|hd[a-z]\d*|x?vd[a-z]{1,2}\d*|"
-    r"nvme\d+(?:n\d+)?(?:p\d+)?|mmcblk\d+(?:p\d+)?|md\d+(?:p\d+)?|dm-\d+|mapper/(?!loop)[^/]+)$"
+    r"^/dev/(?:r?disk\d+(?:s\d+)*|disk/.+|sd[a-z]{1,3}\d*|hd[a-z]\d*|x?vd[a-z]{1,2}\d*|"
+    r"nvme\d+(?:n\d+)?(?:p\d+)?|mmcblk\d+(?:p\d+)?|md\d+(?:p\d+)?|md/[^/]+|dm-\d+|mapper/(?!loop\d)[^/]+)$"
 )
 _SCRATCH_DEVICE = re.compile(r"^/dev/(?:mapper/)?(?:loop|ram|nbd|zram)\d")
-_FORK_BOMB = re.compile(
-    r"(?:^|[\s;&|(){}])([A-Za-z_:.][\w:.-]{0,63})\s*\(\s*\)\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;?\s*\1(?![\w:.-])"
+# A function that pipes itself into itself in the background, then calls
+# itself; written `f(){ ... }` or `function f { ... }`. The name is bounded.
+_BOMB_BODY = r"\s*\{\s*\1\s*\|\s*\1\s*&\s*\}\s*;?\s*\1(?![\w:.-])"
+_FORK_BOMBS = (
+    re.compile(r"(?:^|[\s;&|(){}])([A-Za-z_:.][\w:.-]{0,63})\s*\(\s*\)" + _BOMB_BODY),
+    re.compile(r"(?:^|[\s;&|(){}])function\s+([A-Za-z_:.][\w:.-]{0,63})\s*(?:\(\s*\))?" + _BOMB_BODY),
 )
+# diskutil verbs that erase a disk or volume.
+_DISKUTIL_ERASE = frozenset({"erasedisk", "erasevolume", "reformat", "zerodisk", "randomdisk", "secureerase"})
 # Substitution that hides what will run. Plain `$VAR` words are not read as
 # anything (a word holding one is unknown, so it matches no rule).
 _HIDDEN = re.compile(r"\$\(|`|<\(|>\(|\$'")
@@ -203,7 +212,9 @@ def _check_command(words: list[str], targets: list[str]) -> FloorVerdict | None:
                 rule = _dangerous_target(operand)
                 if rule:
                     return _verdict(rule)
-        if "--no-preserve-root" in args and any(_normal(o) == "/" for o in operands):
+        if "--no-preserve-root" in args and any(
+            o.startswith("/") and posixpath.normpath("/" + o.lstrip("/")) == "/" for o in operands
+        ):
             return _verdict("delete-root")
     elif name in ("chmod", "chown", "chgrp"):
         if flags & {"R", "--recursive"}:
@@ -215,6 +226,10 @@ def _check_command(words: list[str], targets: list[str]) -> FloorVerdict | None:
             (n := o.replace("//", "/")).startswith("/dev/") and len(n) > 5 and not _SCRATCH_DEVICE.match(n)
             for o in operands
         ):
+            return _verdict("format-disk")
+    elif name == "diskutil":
+        verbs = [o for o in operands if o.lower() != "apfs"]
+        if verbs and verbs[0].lower() in _DISKUTIL_ERASE and "$" not in args[-1]:
             return _verdict("format-disk")
     elif name in ("dd", "shred"):
         for arg in args:
@@ -245,7 +260,7 @@ def _check_command(words: list[str], targets: list[str]) -> FloorVerdict | None:
 def floor_reading(command: str, _depth: int = 0) -> FloorReading:
     """Read one shell command line. A block found before something unreadable
     stands; otherwise anything unreadable is not clear."""
-    if _FORK_BOMB.search(command):
+    if any(bomb.search(command) for bomb in _FORK_BOMBS):
         return FloorReading(True, _verdict("fork-bomb"))
     tokens = _tokens(command)
     if tokens is None:
@@ -260,8 +275,17 @@ def floor_reading(command: str, _depth: int = 0) -> FloorReading:
         if not inner:
             continue
         name, args = posixpath.basename(inner[0]), inner[1:]
-        if name == "eval":
-            readable = False
+        if "$" in inner[0]:
+            readable = False  # the program is a variable: what runs is unknown
+        elif name == "eval":
+            # Its words are a script. One holding a variable is unknown.
+            if not args or any("$" in a for a in args) or _depth >= _MAX_NESTING:
+                readable = False
+                continue
+            nested = floor_reading(" ".join(args), _depth + 1)
+            if nested.verdict:
+                return nested
+            readable = readable and nested.readable
         elif name in _SHELLS and "c" in _flags(args):
             script = next((a for a in args if not a.startswith("-")), None)
             if script is None or _depth >= _MAX_NESTING:

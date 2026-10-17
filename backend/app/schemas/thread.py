@@ -98,6 +98,8 @@ class ThreadDetailResponse(ThreadResponse):
 
 class TurnCreateRequest(BaseModel):
     prompt_text: str = Field(min_length=1, max_length=100_000)
+    # Ids from POST /threads/{id}/attachments (docs/EVERYDAY.md), at most 8.
+    attachment_ids: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("prompt_text")
     @classmethod

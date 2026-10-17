@@ -10,6 +10,7 @@ stdin/stdout, before each call it would prompt a person about. No run ever
 skips permissions or pre-approves anything.
 """
 
+import base64
 import json
 import os
 import shutil
@@ -487,10 +488,25 @@ def computer_mcp_config(launch) -> str:
     return json.dumps({"mcpServers": {COMPUTER_SERVER: server}}, ensure_ascii=False)
 
 
-def user_message_line(prompt: str) -> str:
-    """The prompt as the one stream-json message a tools run starts with."""
+def user_message_line(prompt: str, images: list[dict] | None = None) -> str:
+    """The prompt as the one stream-json message a run starts with. With
+    images, the content is a text block followed by one base64 image block per
+    image (the Messages API content-block shape the CLI accepts on stdin)."""
+    content: str | list[dict] = prompt
+    if images:
+        content = [{"type": "text", "text": prompt}] + [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image["mime"],
+                    "data": base64.b64encode(Path(image["path"]).read_bytes()).decode("ascii"),
+                },
+            }
+            for image in images
+        ]
     return json.dumps(
-        {"type": "user", "message": {"role": "user", "content": prompt}},
+        {"type": "user", "message": {"role": "user", "content": content}},
         ensure_ascii=False,
     )
 
@@ -551,6 +567,7 @@ def _run_blocking(
     model: str | None = None,
     system_prompt: str | None = None,
     computer=None,
+    images: list[dict] | None = None,
 ) -> RunOutput:
     if workspace is not None:
         from app.services.workspaces import require_workspace
@@ -575,9 +592,13 @@ def _run_blocking(
         if tools
         else build_args(executable, session_id, **extra)
     )
+    # Images need a stream-json message; a chat-only run otherwise reads plain
+    # text, so the input format is switched for that run only.
+    if images and not tools:
+        args = [*args, "--input-format", "stream-json"]
     return run_blocking(
         args,
-        stdin_text=user_message_line(prompt) if tools else prompt,
+        stdin_text=user_message_line(prompt, images) if tools or images else prompt,
         cwd=workspace_dir() if workspace is None else workspace,
         timeout_seconds=app_settings.get("LOCAL_TASK_TIMEOUT_SECONDS"),
         max_output_bytes=app_settings.get("LOCAL_MAX_OUTPUT_BYTES") * RAW_STREAM_SIZE_FACTOR,
@@ -600,6 +621,7 @@ async def run_prompt(
     model: str | None = None,
     system_prompt: str | None = None,
     computer=None,
+    images: list[dict] | None = None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
@@ -621,4 +643,5 @@ async def run_prompt(
         model,
         system_prompt,
         computer,
+        images,
     )

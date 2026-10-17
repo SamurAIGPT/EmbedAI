@@ -13,7 +13,7 @@ UPDATE; the caller learns whether it won from the return value.
 
 Event payloads, so adapters and readers agree:
 
-    turn.started        {"prompt_text"}
+    turn.started        {"prompt_text", "attachments"?: [{"id", "name", "mime", "bytes", "kind"}]}
     assistant.message   {"text", "incomplete"?}
     tool.started        {"call_id", "name", "input"}
     tool.completed      {"call_id", "ok", "output", "truncated"}
@@ -455,7 +455,12 @@ async def append_turn_event(
 
 
 async def start_turn(
-    db: AsyncSession, thread_id: int, prompt_text: str, *, owner_instance: str | None = None
+    db: AsyncSession,
+    thread_id: int,
+    prompt_text: str,
+    *,
+    owner_instance: str | None = None,
+    attachments: list[dict] | None = None,
 ) -> Turn:
     """Start the thread's next turn and store its `turn.started` event.
 
@@ -491,7 +496,10 @@ async def start_turn(
         raise ThreadBusy(thread_id) from exc
     if thread.title is None:
         thread.title = make_title(prompt_text) or None
-    await _add_event(db, thread_id, "turn.started", {"prompt_text": prompt_text}, turn.id)
+    started = {"prompt_text": prompt_text}
+    if attachments:
+        started["attachments"] = attachments
+    await _add_event(db, thread_id, "turn.started", started, turn.id)
     await db.commit()
     return turn
 

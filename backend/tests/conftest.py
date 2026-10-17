@@ -93,6 +93,14 @@ def decision_log_dir(monkeypatch, tmp_path):
     return folder
 
 
+@pytest.fixture(autouse=True)
+def attachments_dir(monkeypatch, tmp_path):
+    """Attachments are written under a data folder; never the real one."""
+    folder = tmp_path / "attachments"
+    monkeypatch.setattr(settings, "ATTACHMENTS_DIR", str(folder))
+    return folder
+
+
 @pytest.fixture
 def user_id() -> str:
     return "test-user-1"

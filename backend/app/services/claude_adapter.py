@@ -134,9 +134,9 @@ class ClaudeAdapter:
     label = "Claude"
     kind = "cli"
     # Tools with approvals (the CLI asks over stdio), the computer's MCP server,
-    # `--resume`, and agent computers. Images are never sent.
+    # `--resume`, agent computers, and images as stream-json content blocks.
     capabilities = Capabilities(
-        tools=True, approvals=True, mcp=True, images=False, resume=True, computers=True
+        tools=True, approvals=True, mcp=True, images=True, resume=True, computers=True
     )
     # The CLI's own aliases; any model id the CLI accepts also works.
     models = [
@@ -323,6 +323,8 @@ class ClaudeAdapter:
             extra["computer"] = ctx.computer.launch
         if notes:
             extra["system_prompt"] = "\n\n".join(notes)
+        if ctx.images:
+            extra["images"] = ctx.images
         try:
             attempt.output = await local_claude_runner.run_prompt(
                 ctx.prompt,

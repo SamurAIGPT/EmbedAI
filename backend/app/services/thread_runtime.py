@@ -26,7 +26,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_memory, agent_store
+from app.services import agent_memory, agent_store, attachments
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
@@ -109,6 +109,11 @@ class TurnNotHere(Exception):
 
 class ProviderUnavailable(Exception):
     pass
+
+
+class ImagesUnsupported(Exception):
+    """An image was attached for an engine whose capabilities say no images.
+    The message is the engine's label."""
 
 
 class SessionBroken(Exception):
@@ -525,10 +530,16 @@ class ThreadRuntime:
         *,
         approval_mode: str | None = None,
         approval_timeout: float | None = None,
+        attachment_ids: list[str] | None = None,
     ) -> store.Turn:
         """Start a turn and run it in the background. Raises ThreadNotFound,
-        UnknownProvider, SessionBroken, ProviderUnavailable, or ThreadBusy (a
-        turn is already running).
+        UnknownProvider, SessionBroken, ProviderUnavailable, ThreadBusy (a
+        turn is already running), AttachmentError (an id that is not this
+        thread's) or ImagesUnsupported.
+
+        `attachment_ids` name files uploaded to this thread: text files are
+        added to the prompt the engine gets, images go to an engine that reads
+        them, and the stored prompt stays what the person typed.
 
         `approval_mode` replaces the agent's mode for this turn (a routine
         passes the stricter of its own and the agent's); `approval_timeout`
@@ -544,6 +555,9 @@ class ThreadRuntime:
             raise UnknownProvider(thread.provider)
         if thread.session_state == "broken":
             raise SessionBroken(thread_id)
+        attached = attachments.resolve_for_turn(thread_id, attachment_ids or [])
+        if any(a.kind == "image" for a, _ in attached) and not capabilities_of(adapter).images:
+            raise ImagesUnsupported(getattr(adapter, "label", None) or thread.provider)
         if not thread.workspace_path:
             raise ProviderUnavailable("This conversation has no pinned workspace. Upgrade its database before continuing.")
         try:
@@ -566,7 +580,11 @@ class ThreadRuntime:
 
         async with self.session() as db:
             turn = await store.start_turn(
-                db, thread_id, prompt_text, owner_instance=self.instance_id
+                db,
+                thread_id,
+                prompt_text,
+                owner_instance=self.instance_id,
+                attachments=[a.public() for a, _ in attached] or None,
             )
 
         async def history() -> list[dict]:
@@ -576,7 +594,12 @@ class ThreadRuntime:
         ctx = TurnContext(
             thread_id=thread_id,
             turn_id=turn.id,
-            prompt=prompt_text,
+            prompt=attachments.prompt_with_text_files(prompt_text, attached),
+            images=[
+                {"path": str(path), "mime": a.mime, "name": a.name}
+                for a, path in attached
+                if a.kind == "image"
+            ],
             workspace=Path(thread.workspace_path) if thread.workspace_path else None,
             # A model chosen for this conversation wins over its agent's. An
             # agent's model is for the agent's engine: a conversation on another

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Folder for the decision log (what was asked, and how it was settled).
     # Empty means ~/.open-dots/decisions. The desktop app uses its data folder.
     DECISION_LOG_DIR: str = ""
+    # Folder for files attached to messages. Empty means ~/.open-dots/attachments.
+    # The desktop app uses its data folder.
+    ATTACHMENTS_DIR: str = ""
     # Decision log months older than this many days are deleted (1 to 3650).
     DECISION_LOG_RETENTION_DAYS: int = 180
 

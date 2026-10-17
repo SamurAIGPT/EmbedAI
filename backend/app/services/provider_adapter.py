@@ -42,7 +42,8 @@ class Capabilities:
     tools      the engine can run tools (commands, file edits) in the workspace
     approvals  its tool calls can be put to a person through the approval gate
     mcp        it can mount an MCP server this app gives it
-    images     it accepts images in a prompt (no engine is sent images today)
+    images     it accepts images attached to a message (TurnContext.images);
+               an image sent to any other engine is refused before the turn
     resume     a conversation continues with the engine's earlier context
     computers  its turns can run their tools in an agent computer
     """
@@ -152,6 +153,10 @@ class TurnContext:
     # engine that has one: an ACP command, an endpoint and its key. Never
     # logged, stored in events or returned by the API.
     engine_config: dict | None = None
+    # Images attached to this message, as {"path", "mime", "name"}. Only ever
+    # set for an engine whose capabilities include `images`; attached text
+    # files are already folded into `prompt`.
+    images: list[dict] = field(default_factory=list)
     _abort_callbacks: list[Callable[[], None]] = field(default_factory=list)
     aborted: bool = False
 

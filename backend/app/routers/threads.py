@@ -28,7 +28,8 @@ from app.schemas.thread import (
     TurnCreateRequest,
     TurnResponse,
 )
-from app.services import approval_allowlist
+from app.services import approval_allowlist, attachments
+from app.services.attachments import AttachmentError
 from app.services import thread_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import (
@@ -42,6 +43,7 @@ from app.services.thread_runtime import (
     AgentArchived,
     AgentProviderMismatch,
     EngineModelInvalid,
+    ImagesUnsupported,
     UnknownAgent,
 )
 from app.services.thread_runtime import runtime as default_runtime
@@ -183,8 +185,9 @@ async def update_thread(
 async def delete_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)):
     """Delete this app's records of a conversation: its turns, events and
     approvals in the database. Refused while a turn is running. Not a secure
-    erase, and it never touches files: the Claude CLI's own copy of the session
-    under `~/.claude` stays, as do files Claude wrote in its workspace."""
+    erase. Files attached to its messages are removed; nothing else is touched:
+    the Claude CLI's own copy of the session under `~/.claude` stays, as do
+    files Claude wrote in its workspace."""
     await _thread_or_404(rt, thread_id)
     try:
         async with rt.session() as db:
@@ -194,6 +197,7 @@ async def delete_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)
     except store.ThreadBusy:
         raise _error(409, "turn_running", "Stop the running answer before deleting this conversation.")
     rt.hub.close(thread_id)
+    attachments.remove_thread(thread_id)
 
 
 # --- turns --------------------------------------------------------------------------------
@@ -207,7 +211,17 @@ async def send_turn(
     as soon as the turn has started."""
     await _thread_or_404(rt, thread_id)
     try:
-        return await rt.send_turn(thread_id, payload.prompt_text)
+        return await rt.send_turn(
+            thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids
+        )
+    except AttachmentError as error:
+        raise _error(error.status, error.code, error.message)
+    except ImagesUnsupported as exc:
+        raise _error(
+            422,
+            "images_unsupported",
+            f"{exc} can't read images. Remove the image, or start a conversation on an engine that can.",
+        )
     except store.ThreadNotFound:
         raise HTTPException(status_code=404, detail="Thread not found")
     except store.ThreadBusy:

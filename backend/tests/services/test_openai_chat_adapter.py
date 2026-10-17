@@ -11,6 +11,7 @@ from sqlalchemy import delete, select, text
 
 from app.core.config import settings
 from app.db.models import Agent, Event, Thread, Turn
+from app.db.models.approval import Approval
 from app.db.models.user_credential import UserCredential
 from app.services import agent_store, engine_config, local_claude_runner
 from app.services.openai_chat_adapter import (
@@ -90,12 +91,9 @@ async def everything_stored(sessions, owner) -> str:
     """Every stored thing a key could leak into, as one string."""
     async with sessions() as db:
         parts = []
-        for model in (Event, Turn, Thread):
+        for model in (Event, Turn, Thread, Approval):
             for row in (await db.execute(select(model))).scalars():
                 parts.append(json.dumps({c.name: getattr(row, c.name) for c in model.__table__.columns}, default=str))
-        tables = [t for t in ("approval", "decision", "decision_log", "approval_decision") if (await db.execute(text("select name from sqlite_master where name=:n"), {"n": t})).first()]
-        for table in tables:
-            parts += [json.dumps(list(r), default=str) for r in (await db.execute(text(f"select * from {table}"))).all()]
     return "\n".join(parts)
 
 

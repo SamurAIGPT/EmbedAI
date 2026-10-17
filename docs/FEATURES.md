@@ -4,7 +4,7 @@ Shipped capabilities. Planned work is in [ROADMAP.md](ROADMAP.md).
 
 - Run Claude Code tasks in disposable Boat sandboxes from Telegram or the web UI.
 - Connect Claude through its OAuth login flow; optionally connect GitHub.
-- Approval prompts for risky actions (file writes, shell commands, Git pushes) with remembered permission rules and a Git command classifier.
+- Approval prompts for risky actions (file writes, shell commands, Git pushes) with remembered permission rules and a Git command classifier that distinguishes branch/remote listings from mutations.
 - Continue completed tasks in the same Claude conversation from the web UI.
 - Schedule recurring prompts with failure tracking; results reported to Telegram-linked users (Boat sandboxes).
 - **Routines (no Boat needed):** run a prompt on a local named agent on a cron, weekday, interval or one-off schedule in any timezone, by webhook (`POST /hooks/{id}` with a bearer secret shown once), or by hand. Missed and skipped occurrences are recorded, unattended approvals park the run and time out to a denial, runs cut off by a restart are marked interrupted and never re-run, every run links to its conversation, and an in-app notification feed (optionally copied to one Telegram chat) reports outcomes. See [ROUTINES.md](ROUTINES.md).

@@ -269,6 +269,12 @@ def _child_env() -> dict[str, str]:
     return env
 
 
+def child_env() -> dict[str, str]:
+    """The environment for any engine process this app starts: this
+    process's, without the app's own secrets."""
+    return _child_env()
+
+
 def _kill_tree(proc: subprocess.Popen) -> None:
     try:
         if sys.platform == "win32":

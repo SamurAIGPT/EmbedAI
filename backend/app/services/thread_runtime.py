@@ -17,6 +17,7 @@ database, so after a restart everything that was stored is still there.
 """
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import timedelta
 from uuid import uuid4
@@ -29,7 +30,8 @@ from app.services import agent_memory, agent_store
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
-from app.services.claude_adapter import ClaudeAdapter
+from app.services import engine_config
+from app.services.engine_registry import EngineRegistry, InvalidModel, UnknownEngine, capabilities_of, default_adapters
 from app.computers import policy as computer_policy
 from app.computers import service as computer_service
 from app.services import approval_allowlist, approval_modes, decision_log, safety_floor
@@ -72,6 +74,10 @@ class UnknownProvider(Exception):
     pass
 
 
+class EngineModelInvalid(Exception):
+    """The model is not one the engine accepts (message says why)."""
+
+
 class UnknownAgent(Exception):
     """No such agent for this owner."""
 
@@ -104,6 +110,10 @@ class ProviderUnavailable(Exception):
 
 class SessionBroken(Exception):
     """The thread's provider session cannot be continued; reset it first."""
+
+
+class _EngineWithoutComputers(Exception):
+    pass
 
 
 @dataclass(eq=False)
@@ -344,7 +354,7 @@ class ThreadApprovalGate:
 @dataclass
 class ThreadRuntime:
     hub: ThreadHub = default_hub
-    adapters: dict[str, ProviderAdapter] = field(default_factory=lambda: {"claude": ClaudeAdapter()})
+    adapters: dict[str, ProviderAdapter] = field(default_factory=default_adapters)
     status_ttl: float = STATUS_CACHE_SECONDS
     instance_id: str = field(default_factory=lambda: uuid4().hex)
     owner_id: str = LOCAL_OWNER_ID
@@ -355,12 +365,45 @@ class ThreadRuntime:
     # Agent computers (app/computers/service.py), sharing this runtime's
     # database sessions and owner.
     computers: computer_service.ComputerService | None = None
+    # The engine registry over `adapters` (app/services/engine_registry.py).
+    engines: EngineRegistry | None = None
 
     def __post_init__(self) -> None:
         if self.computers is None:
             self.computers = computer_service.ComputerService(
                 owner_id=self.owner_id, _session_factory=self.session
             )
+        if self.engines is None:
+            self.engines = EngineRegistry(self)
+
+    # -- engines ------------------------------------------------------------------------
+
+    async def engine_config(self, engine_id: str) -> dict | None:
+        """The engine's saved configuration for this owner, or None."""
+        async with self.session() as db:
+            return await engine_config.load(db, self.owner_id, engine_id)
+
+    async def prepare_adapter(self, engine_id: str, adapter) -> dict | None:
+        """Give an engine that needs a saved configuration its current one
+        (read fresh, so a change applies to the next turn and probe)."""
+        if not getattr(adapter, "needs_config", False):
+            return None
+        try:
+            config = await self.engine_config(engine_id)
+        except Exception:  # noqa: BLE001  (an unreadable configuration is none)
+            logger.exception("could not read an engine configuration", engine=engine_id)
+            config = None
+        adapter.config = config
+        return config
+
+    def check_engine_model(self, provider: str, model: str | None) -> None:
+        """Raise UnknownProvider or EngineModelInvalid."""
+        try:
+            self.engines.check_model(provider, model)
+        except UnknownEngine:
+            raise UnknownProvider(provider) from None
+        except InvalidModel as exc:
+            raise EngineModelInvalid(str(exc)) from None
 
     def session(self):
         """A new database session. Looked up late so tests can substitute it."""
@@ -400,6 +443,7 @@ class ThreadRuntime:
         adapter = self.adapters.get(provider)
         if adapter is None:
             raise UnknownProvider(provider)
+        self.check_engine_model(provider, model)
         session_id = adapter.new_session_id()
         if agent is not None and agent.workspace_path:
             workspace = require_workspace(Path(agent.workspace_path))
@@ -464,8 +508,9 @@ class ThreadRuntime:
         except OSError as exc:
             raise ProviderUnavailable(str(exc)) from None
         snapshot = app_settings.capture()
+        config = await self.prepare_adapter(thread.provider, adapter)
         with app_settings.use(snapshot):
-            status = await self._provider_status(adapter)
+            status = await self._provider_status(adapter, config)
         if not status.ready:
             raise ProviderUnavailable(status.error or f"{thread.provider} is not ready")
 
@@ -490,8 +535,11 @@ class ThreadRuntime:
             turn_id=turn.id,
             prompt=prompt_text,
             workspace=Path(thread.workspace_path) if thread.workspace_path else None,
-            # A model chosen for this conversation wins over its agent's.
-            model=thread.model or (agent.model if agent is not None else None),
+            # A model chosen for this conversation wins over its agent's. An
+            # agent's model is for the agent's engine: a conversation on another
+            # engine (the agent changed engine since) uses that engine's default.
+            model=thread.model
+            or (agent.model if agent is not None and agent.provider == thread.provider else None),
             provider_session_id=thread.provider_session_id,
             provider_state=thread.provider_state,
             resume=thread.session_state == "active",
@@ -499,6 +547,7 @@ class ThreadRuntime:
             # The agent's instructions, then its notes (MEMORY.md) when on.
             instructions=agent_memory.turn_instructions(agent) if agent is not None else None,
             approval_mode=agent.approval_mode if agent is not None else None,
+            engine_config=config,
         )
         run = ActiveRun(
             thread_id=thread_id,
@@ -511,7 +560,7 @@ class ThreadRuntime:
         run.recorder = TurnRecorder(self, run)
         run.gate = ThreadApprovalGate(self, run)
         self._runs[turn.id] = run
-        run.task = asyncio.create_task(self._run(run, adapter))
+        run.task = asyncio.create_task(self._run(run, adapter, capabilities_of(adapter).computers))
         self.hub.notify(thread_id)
         return turn
 
@@ -531,10 +580,13 @@ class ThreadRuntime:
         run.ctx.abort()
         return run.turn_id
 
-    async def _provider_status(self, adapter: ProviderAdapter) -> ProviderStatus:
+    async def _provider_status(self, adapter: ProviderAdapter, config: dict | None = None) -> ProviderStatus:
         loop = asyncio.get_running_loop()
         cli = app_settings.resolve("LOCAL_CLAUDE_CLI_PATH")
-        cache_key = (adapter.key, cli.effective_value, cli.error)
+        # A changed engine configuration is a new status (only a fingerprint of
+        # it is kept in memory, never the values).
+        fingerprint = hash(json.dumps(config, sort_keys=True, default=str)) if config else None
+        cache_key = (adapter.key, cli.effective_value, cli.error, fingerprint)
         cached = self._status_cache.get(cache_key)
         if cached is not None and loop.time() - cached[0] < self.status_ttl:
             return cached[1]
@@ -545,20 +597,30 @@ class ThreadRuntime:
 
     # -- one turn ------------------------------------------------------------------
 
-    async def _run(self, run: ActiveRun, adapter: ProviderAdapter) -> None:
+    async def _run(self, run: ActiveRun, adapter: ProviderAdapter, computers: bool = True) -> None:
         heartbeat = asyncio.create_task(self._heartbeat(run))
         binding = None
         try:
             try:
                 # An agent with a computer runs its tools there or not at all:
                 # a computer that cannot be used fails the turn, never falls
-                # back to the host.
+                # back to the host. An engine that cannot use a computer never
+                # runs for an agent that has one.
+                if not computers and run.agent_id is not None and await self.computers.for_agent(run.agent_id):
+                    raise _EngineWithoutComputers()
                 binding = await self.computers.attach_for_turn(
                     run.agent_id, run.turn_id, str(run.ctx.workspace) if run.ctx.workspace else None
                 )
                 run.ctx.computer = binding
                 with app_settings.use(run.settings_snapshot):
                     outcome = await adapter.run_turn(run.ctx, run.recorder, run.gate)
+            except _EngineWithoutComputers:
+                outcome = TurnOutcome(
+                    "failed",
+                    error="This agent has a computer, and this engine cannot run its tools in one. "
+                    "Switch the agent to Claude, or remove its computer.",
+                    error_code="engine_without_computers",
+                )
             except computer_service.ComputerUnavailable as exc:
                 outcome = TurnOutcome("failed", error=str(exc), error_code="computer_unavailable")
             except Exception:  # noqa: BLE001
@@ -580,6 +642,7 @@ class ThreadRuntime:
                 usage=outcome.usage,
                 partial_text=outcome.partial_text,
                 session_state=outcome.session_state,
+                provider_state=outcome.provider_state,
             )
         try:
             await self._finish(run, outcome)
@@ -641,6 +704,7 @@ class ThreadRuntime:
                 event_data=event_data,
                 extra_events=extra_events,
                 session_state=outcome.session_state,
+                provider_state=getattr(outcome, "provider_state", None),
             )
         if not recorded:
             run.recorder.lose()

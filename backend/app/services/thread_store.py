@@ -145,6 +145,13 @@ async def rename_thread(db: AsyncSession, thread_id: int, title: str) -> Thread:
     return await _change_quietly(db, thread_id, title=title)
 
 
+async def set_model(db: AsyncSession, thread_id: int, model: str | None) -> Thread:
+    """Change the model the next turns ask for (None: the engine's default).
+    Not activity: the list order does not change. Raises ThreadNotFound."""
+    await _locked_thread(db, thread_id)
+    return await _change_quietly(db, thread_id, model=model)
+
+
 async def set_archived(db: AsyncSession, thread_id: int, archived: bool) -> Thread:
     """Hide a thread from the default list (or bring it back). Nothing is
     deleted. Raises ThreadNotFound, or ThreadBusy when archiving a thread whose
@@ -388,6 +395,8 @@ async def reset_session(
     previous = thread.session_state
     thread.provider_session_id = new_session_id
     thread.session_state = "new" if new_session_id is not None else "none"
+    # The engine's own conversation id belongs to the old session.
+    thread.provider_state = None
     # Set here, in Python: left to the database's onupdate it would be expired
     # after the commit and unreadable once the session is closed.
     thread.updated_at = utcnow()
@@ -516,13 +525,14 @@ async def finish_turn(
     event_data: dict | None = None,
     extra_events: list[tuple[str, dict]] | None = None,
     session_state: str | None = None,
+    provider_state: dict | None = None,
 ) -> bool:
     """Finish a turn the caller owns, store its terminal event and cancel any
     approval still open, all in one transaction. `extra_events` are stored
     before the terminal event (for example the partial answer of a failed
-    turn), and `session_state`, if given, is set on the thread in the same
-    transaction. False (and nothing written) if the caller no longer owns the
-    turn."""
+    turn), and `session_state` and `provider_state`, if given, are set on the
+    thread in the same transaction. False (and nothing written) if the caller
+    no longer owns the turn."""
     _check(status, FINISH_STATUSES, "status")
     if session_state is not None:
         _check(session_state, SESSION_STATES, "session_state")
@@ -546,11 +556,16 @@ async def finish_turn(
     if thread_id is None:
         await db.rollback()
         return False
+    thread_values: dict = {}
     if session_state is not None:
+        thread_values["session_state"] = session_state
+    if provider_state is not None:
+        thread_values["provider_state"] = provider_state
+    if thread_values:
         await db.execute(
             update(Thread)
             .where(Thread.id == thread_id)
-            .values(session_state=session_state)
+            .values(**thread_values)
             .execution_options(synchronize_session=False)
         )
     await _cancel_open_approvals(db, thread_id, turn_id)

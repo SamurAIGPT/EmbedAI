@@ -48,7 +48,9 @@ from app.services.provider_adapter import (
     LOST,
     ApprovalGate,
     ApprovalHandle,
+    Capabilities,
     EventSink,
+    ModelOption,
     ProviderStatus,
     TurnContext,
     TurnOutcome,
@@ -129,6 +131,21 @@ def _issue_permit(ctx: TurnContext, handle: ApprovalHandle, tool_input: dict) ->
 
 class ClaudeAdapter:
     key = "claude"
+    label = "Claude"
+    kind = "cli"
+    # Tools with approvals (the CLI asks over stdio), the computer's MCP server,
+    # `--resume`, and agent computers. Images are never sent.
+    capabilities = Capabilities(
+        tools=True, approvals=True, mcp=True, images=False, resume=True, computers=True
+    )
+    # The CLI's own aliases; any model id the CLI accepts also works.
+    models = [
+        ModelOption("sonnet", "Sonnet"),
+        ModelOption("opus", "Opus"),
+        ModelOption("haiku", "Haiku"),
+    ]
+    custom_models = True
+    needs_config = False
 
     def new_session_id(self) -> str:
         return str(uuid4())
@@ -140,6 +157,8 @@ class ClaudeAdapter:
             ready=ready,
             version=cli.version,
             error=None if ready else (cli.error or "Claude CLI is not ready for local use."),
+            installed=cli.installed,
+            signed_in=cli.signed_in,
         )
 
     async def run_turn(

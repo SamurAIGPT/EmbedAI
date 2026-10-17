@@ -1,14 +1,18 @@
-"""The seam between the thread runtime and a provider (Claude today; Codex or a
-local model later).
+"""The seam between the thread runtime and an engine (the `claude` CLI, the
+`codex` app-server, any ACP agent, an OpenAI-compatible endpoint).
 
-An adapter turns one provider's protocol into the app's normalized events and
+An adapter turns one engine's protocol into the app's normalized events and
 asks a person through the approval gate. It never touches the database: the
-runtime and the recorder own storage, ordering and ownership. Everything a
-provider-specific adapter needs is on `TurnContext`; everything it reports goes
-through `EventSink` and `TurnOutcome`.
+runtime and the recorder own storage, ordering and ownership. Everything an
+adapter needs is on `TurnContext`; everything it reports goes through
+`EventSink` and `TurnOutcome`.
 
-Deliberately small. How Codex or an app-driven local model maps onto this has
-not been verified and is not guessed at here.
+An adapter also describes itself for the engine registry
+(app/services/engine_registry.py): a label, capability flags, a model list and
+a probe. All of these are optional for an adapter written against the older,
+smaller contract (tests have such doubles): the registry fills in safe
+defaults (no capabilities, any model) and derives the probe from `status()`.
+See docs/ENGINES.md.
 """
 
 from collections.abc import Awaitable, Callable
@@ -30,11 +34,71 @@ class Decision:
     message: str | None = None
 
 
+@dataclass(frozen=True)
+class Capabilities:
+    """What an engine can do through this app. The runtime and the API read
+    these flags, never engine names.
+
+    tools      the engine can run tools (commands, file edits) in the workspace
+    approvals  its tool calls can be put to a person through the approval gate
+    mcp        it can mount an MCP server this app gives it
+    images     it accepts images in a prompt (no engine is sent images today)
+    resume     a conversation continues with the engine's earlier context
+    computers  its turns can run their tools in an agent computer
+    """
+
+    tools: bool = False
+    approvals: bool = False
+    mcp: bool = False
+    images: bool = False
+    resume: bool = False
+    computers: bool = False
+
+    def as_dict(self) -> dict:
+        return {
+            "tools": self.tools,
+            "approvals": self.approvals,
+            "mcp": self.mcp,
+            "images": self.images,
+            "resume": self.resume,
+            "computers": self.computers,
+        }
+
+
+NO_CAPABILITIES = Capabilities()
+
+
+@dataclass(frozen=True)
+class ModelOption:
+    id: str
+    label: str
+    default: bool = False
+
+
+@dataclass
+class EngineProbe:
+    """What a probe found. `ready` means a turn can start now; `reason` says
+    why not, in words a person can act on. Never credentials or account
+    details."""
+
+    installed: bool
+    ready: bool
+    version: str | None = None
+    signed_in: bool | None = None
+    reason: str | None = None
+    # A live model catalog, when the engine reports one.
+    models: list[ModelOption] | None = None
+
+
 @dataclass
 class ProviderStatus:
     ready: bool
     version: str | None = None
     error: str | None = None
+    # For the engine registry, when the adapter knows: is the CLI there, and
+    # is it signed in. None means "not reported".
+    installed: bool | None = None
+    signed_in: bool | None = None
 
 
 @dataclass
@@ -55,6 +119,10 @@ class TurnOutcome:
     # The thread's session state after this turn (`active`, `broken`), or None to
     # leave it as it is.
     session_state: str | None = None
+    # The thread's adapter-private state after this turn (for example the
+    # engine's own conversation id), or None to leave it as it is. Never
+    # secrets, endpoints or keys.
+    provider_state: dict | None = None
 
 
 @dataclass
@@ -80,6 +148,10 @@ class TurnContext:
     # The agent's computer (app/computers/service.TurnComputer) when it has
     # one: the turn's tools then run there, never on the host.
     computer: object | None = None
+    # The engine's saved configuration (app/services/engine_config.py), for an
+    # engine that has one: an ACP command, an endpoint and its key. Never
+    # logged, stored in events or returned by the API.
+    engine_config: dict | None = None
     _abort_callbacks: list[Callable[[], None]] = field(default_factory=list)
     aborted: bool = False
 
@@ -140,6 +212,27 @@ class ApprovalGate(Protocol):
 
 
 class ProviderAdapter(Protocol):
+    """The contract every engine implements. Beyond `key`, `new_session_id`,
+    `status` and `run_turn`, an engine adapter declares:
+
+        label: str                  shown in pickers
+        kind: str                   "cli", "acp" or "api"
+        capabilities: Capabilities
+        models: list[ModelOption]   the static catalog; [] means "the engine's
+                                    own default" only
+        custom_models: bool         any model id is accepted, not just `models`
+        needs_config: bool          a saved configuration is required
+        async probe() -> EngineProbe
+                                    a safe check with short timeouts; it may
+                                    raise or hang, and the registry turns that
+                                    into "unavailable"
+        validate_config(payload, current) -> dict
+        public_config(config) -> dict
+                                    for engines with a saved configuration;
+                                    public_config never includes a secret
+
+    The registry reads each of these with a default when it is missing."""
+
     key: str
 
     def new_session_id(self) -> str | None:

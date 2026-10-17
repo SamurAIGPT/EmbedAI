@@ -276,6 +276,17 @@ def history_items(events: list[Event]) -> list[dict]:
             item["output"] = data.get("output")
             item["ok"] = data.get("ok")
             item["truncated"] = bool(data.get("truncated"))
+        elif event.type == "context.compacted":
+            # Earlier messages folded into a summary (context_compaction.py).
+            # Adapters ignore this role; the replay planner applies it.
+            items.append(
+                {
+                    "role": "compaction",
+                    "summary": data.get("summary"),
+                    "folded_through_turn_id": data.get("folded_through_turn_id"),
+                    "turn_id": event.turn_id,
+                }
+            )
     return items
 
 

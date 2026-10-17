@@ -46,6 +46,9 @@ class AgentCreateRequest(BaseModel):
     workspace_path: str | None = Field(default=None, max_length=1000)
     approval_mode: ApprovalMode = "ask"
     pinned: bool = False
+    memory_enabled: bool = True
+    # Optional first contents of the agent's notes (MEMORY.md).
+    starter_notes: str | None = Field(default=None, max_length=256 * 1024)
 
     @field_validator("name")
     @classmethod
@@ -75,6 +78,7 @@ class AgentUpdateRequest(BaseModel):
     workspace_path: str | None = Field(default=None, max_length=1000)
     approval_mode: ApprovalMode | None = None
     pinned: bool | None = None
+    memory_enabled: bool | None = None
     archived: bool | None = None
 
     @field_validator("name")
@@ -96,7 +100,7 @@ class AgentUpdateRequest(BaseModel):
     def _something_to_change(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for field in ("name", "instructions", "approval_mode", "pinned", "archived"):
+        for field in ("name", "instructions", "approval_mode", "pinned", "memory_enabled", "archived"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -117,6 +121,48 @@ class AgentResponse(BaseModel):
     workspace_path: str | None
     approval_mode: ApprovalMode
     pinned: bool
+    memory_enabled: bool
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class AgentMemoryResponse(BaseModel):
+    """The agent's notes and how much of them loads into a turn."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    path: str
+    text: str
+    # Send back as `expected_hash` so a save never overwrites a change the
+    # agent made in the meantime.
+    hash: str
+    lines: int
+    bytes: int
+    loaded_lines: int
+    loaded_bytes: int
+    truncated: bool
+    max_lines: int
+    max_bytes: int
+    enabled: bool
+    # Set on a save: how many things that looked like secrets were replaced.
+    redacted: int = 0
+
+
+class AgentMemoryWriteRequest(BaseModel):
+    text: str
+    expected_hash: str | None = Field(default=None, max_length=64)
+
+
+class AgentExportResponse(BaseModel):
+    file_name: str
+    # The portable file itself, to be saved as JSON.
+    document: dict
+    # Parts in which something that looked like a secret was replaced.
+    redacted: list[str]
+
+
+class AgentImportRequest(BaseModel):
+    document: dict
+    # False leaves the file's notes out even when it carries some.
+    include_notes: bool = True

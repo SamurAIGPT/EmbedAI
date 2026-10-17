@@ -83,6 +83,10 @@ ROUTES = [
     ("PATCH", "/api/v1/agents/1", {"name": "y"}),
     ("POST", "/api/v1/agents/1/duplicate", None),
     ("DELETE", "/api/v1/agents/1", None),
+    ("GET", "/api/v1/agents/1/memory", None),
+    ("PUT", "/api/v1/agents/1/memory", {"text": "x"}),
+    ("GET", "/api/v1/agents/1/export", None),
+    ("POST", "/api/v1/agents/import", {"document": {}}),
 ]
 
 
@@ -298,12 +302,12 @@ async def test_each_turn_uses_the_agents_current_settings(api, rt, sessions, lau
     agent = await make(api, instructions="Answer in French.", model="sonnet", approval_mode="plan")
     thread = (await thread_from(api, agent)).json()
     await send(api, rt, sessions, thread["id"], 1)
-    assert launches[-1]["system_prompt"] == "Answer in French."
+    assert launches[-1]["system_prompt"].startswith("Answer in French.\n\n")
     assert launches[-1]["model"] == "sonnet"
 
     await api.patch(f"/api/v1/agents/{agent['id']}", json={"instructions": "Answer in German.", "model": "opus"})
     await send(api, rt, sessions, thread["id"], 2)
-    assert launches[-1]["system_prompt"] == "Answer in German."
+    assert launches[-1]["system_prompt"].startswith("Answer in German.\n\n")
     assert launches[-1]["model"] == "opus"
 
 
@@ -316,7 +320,7 @@ async def test_the_agents_approval_mode_is_on_every_turns_context(api, rt, sessi
         return await original(ctx, sink, gate)
 
     monkeypatch.setattr(rt.adapters["claude"], "run_turn", spy)
-    agent = await make(api, approval_mode="accept_edits", instructions="Hi.")
+    agent = await make(api, approval_mode="accept_edits", instructions="Hi.", memory_enabled=False)
     thread = (await thread_from(api, agent)).json()
     await send(api, rt, sessions, thread["id"], 1)
     assert seen == [("accept_edits", "Hi.")]
@@ -354,7 +358,7 @@ async def test_an_archived_agent_still_serves_its_existing_threads(api, rt, sess
     thread = (await thread_from(api, agent)).json()
     await api.patch(f"/api/v1/agents/{agent['id']}", json={"archived": True})
     await send(api, rt, sessions, thread["id"], 1)
-    assert launches[-1]["system_prompt"] == "Still here."
+    assert launches[-1]["system_prompt"].startswith("Still here.")
 
 
 async def test_the_runner_adds_the_model_and_instructions_to_the_cli_arguments():

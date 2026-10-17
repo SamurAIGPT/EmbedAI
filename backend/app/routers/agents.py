@@ -12,7 +12,16 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.schemas.agent import AgentCreateRequest, AgentResponse, AgentUpdateRequest
+from app.schemas.agent import (
+    AgentCreateRequest,
+    AgentExportResponse,
+    AgentImportRequest,
+    AgentMemoryResponse,
+    AgentMemoryWriteRequest,
+    AgentResponse,
+    AgentUpdateRequest,
+)
+from app.services import agent_memory, agent_package
 from app.services import agent_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import ThreadRuntime
@@ -50,6 +59,15 @@ def _check_workspace(path: str | None) -> str | None:
         ) from None
 
 
+def _start_notes(agent_id: int, notes: str | None) -> None:
+    """A new agent starts with exactly the notes it was given. A file left at
+    its id by an agent deleted earlier is never inherited."""
+    if notes and notes.strip():
+        agent_memory.write_memory(agent_id, notes)
+    else:
+        agent_memory.remove_memory(agent_id)
+
+
 async def _agent_or_404(rt: ThreadRuntime, agent_id: int) -> store.Agent:
     async with rt.session() as db:
         agent = await store.get_agent(db, agent_id)
@@ -65,7 +83,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
     workspace = _check_workspace(payload.workspace_path)
     try:
         async with rt.session() as db:
-            return await store.create_agent(
+            agent = await store.create_agent(
                 db,
                 owner_id=rt.owner_id,
                 name=payload.name,
@@ -77,9 +95,12 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 workspace_path=workspace,
                 approval_mode=payload.approval_mode,
                 pinned=payload.pinned,
+                memory_enabled=payload.memory_enabled,
             )
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "An agent with this name already exists.") from None
+    _start_notes(agent.id, payload.starter_notes)
+    return agent
 
 
 @router.get("", response_model=list[AgentResponse])
@@ -113,6 +134,7 @@ async def update_agent(
             "workspace_path",
             "approval_mode",
             "pinned",
+            "memory_enabled",
         )
         if field in payload.model_fields_set
     }
@@ -153,4 +175,106 @@ async def delete_agent(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
             await store.delete_agent(db, agent_id)
     except store.AgentNotFound:
         raise HTTPException(status_code=404, detail="Agent not found") from None
+    # Its notes go with it; the folder stays, as its conversations may use it.
+    agent_memory.remove_memory(agent_id)
+
+
+# --- notes (MEMORY.md) ---------------------------------------------------------------
+
+
+def _memory_response(agent, doc: agent_memory.MemoryDoc, redacted: int = 0) -> AgentMemoryResponse:
+    return AgentMemoryResponse(
+        path=doc.path,
+        text=doc.text,
+        hash=doc.hash,
+        lines=doc.lines,
+        bytes=doc.bytes,
+        loaded_lines=doc.loaded_lines,
+        loaded_bytes=doc.loaded_bytes,
+        truncated=doc.truncated,
+        max_lines=agent_memory.MAX_LINES,
+        max_bytes=agent_memory.MAX_BYTES,
+        enabled=agent.memory_enabled,
+        redacted=redacted,
+    )
+
+
+@router.get("/{agent_id}/memory", response_model=AgentMemoryResponse)
+async def read_memory(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """The agent's notes, with how much of them loads into each turn."""
+    agent = await _agent_or_404(rt, agent_id)
+    return _memory_response(agent, agent_memory.read_memory(agent.id))
+
+
+@router.put("/{agent_id}/memory", response_model=AgentMemoryResponse)
+async def write_memory(
+    agent_id: int, payload: AgentMemoryWriteRequest, rt: ThreadRuntime = Depends(get_runtime)
+):
+    """Replace the notes. With `expected_hash` (the `hash` you read), a file
+    the agent changed meanwhile is not overwritten: 409 `memory_changed`, with
+    what is there now. Secrets are redacted before anything is written."""
+    agent = await _agent_or_404(rt, agent_id)
+    try:
+        doc, redacted = agent_memory.write_memory(
+            agent.id, payload.text, expected_hash=payload.expected_hash
+        )
+    except agent_memory.MemoryConflict as conflict:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "memory_changed",
+                "message": "The notes changed since you opened them.",
+                "current": conflict.current.text,
+                "current_hash": conflict.current.hash,
+            },
+        ) from None
+    except agent_memory.MemoryTooLarge as exc:
+        raise _error(413, "memory_too_large", str(exc)) from None
+    return _memory_response(agent, doc, redacted)
+
+
+# --- one agent as a portable file ------------------------------------------------------
+
+
+@router.get("/{agent_id}/export", response_model=AgentExportResponse)
+async def export_agent(
+    agent_id: int, include_notes: bool = False, rt: ThreadRuntime = Depends(get_runtime)
+):
+    """The agent as one file: name, title, description, instructions and, with
+    `include_notes`, its notes. Never its model, folder, approval mode or
+    conversations. Anything that looks like a secret is replaced, and
+    `redacted` names the parts where that happened."""
+    agent = await _agent_or_404(rt, agent_id)
+    notes = agent_memory.read_memory(agent.id).text if include_notes else None
+    document, redacted = agent_package.export_package(agent, notes)
+    return AgentExportResponse(
+        file_name=agent_package.file_name(agent.name), document=document, redacted=redacted
+    )
+
+
+@router.post("/import", response_model=AgentResponse, status_code=201)
+async def import_agent(payload: AgentImportRequest, rt: ThreadRuntime = Depends(get_runtime)):
+    """A new agent from an agent file. It always starts asking first, on the
+    default model, in its own new folder, whatever the file says; a name in
+    use gets a number. 422 `invalid_agent_file` when the file is not one."""
+    try:
+        parsed = agent_package.parse_package(payload.document)
+    except agent_package.PackageError as exc:
+        raise _error(422, "invalid_agent_file", str(exc)) from None
+    try:
+        async with rt.session() as db:
+            name = await store.free_name(db, rt.owner_id, parsed["name"])
+            agent = await store.create_agent(
+                db,
+                owner_id=rt.owner_id,
+                name=name,
+                title=parsed["title"],
+                description=parsed["description"],
+                instructions=parsed["instructions"],
+                approval_mode="ask",
+            )
+    except store.AgentNameTaken:
+        raise _error(409, "agent_name_taken", "Try again: that name was just taken.") from None
+    _start_notes(agent.id, parsed["notes"] if payload.include_notes else None)
+    return agent
 

@@ -105,3 +105,28 @@ def test_sqlite_baseline_matches_postgres_alembic_head(schemas, tmp_path):
     assert set(postgres_view) == set(sqlite_view)
     for table in sorted(postgres_view):
         assert sqlite_view[table] == postgres_view[table], f"table {table} differs between the databases"
+
+
+def test_named_agent_columns_are_the_same_on_both_databases(schemas, tmp_path):
+    """Spelled out so a later change to the comparison cannot hide them: the
+    agent table and `thread.agent_id` exist, with the same type, nullability
+    and default, on PostgreSQL and on SQLite."""
+    from_alembic, from_models = schemas
+    database = tmp_path / "agents.db"
+    assert run_alembic(database, "upgrade", "head").returncode == 0
+    engine = create_app_sync_engine(f"sqlite:///{database.as_posix()}")
+    try:
+        sqlite_view = comparable(describe(engine))
+    finally:
+        engine.dispose()
+    postgres_view = comparable(from_alembic)
+
+    def column(view, table, name):
+        return next(c for c in view[table]["columns"] if c[0] == name)
+
+    assert column(postgres_view, "thread", "agent_id") == column(sqlite_view, "thread", "agent_id")
+    assert column(sqlite_view, "thread", "agent_id") == ("agent_id", "integer", True, None)
+    assert postgres_view["agent"] == sqlite_view["agent"]
+    assert comparable(from_models)["agent"] == postgres_view["agent"]
+    assert column(sqlite_view, "agent", "memory_enabled") == ("memory_enabled", "boolean", False, "true")
+    assert column(sqlite_view, "agent", "approval_mode") == ("approval_mode", "text", False, "'ask'")

@@ -9,6 +9,7 @@ CREATE TABLE agent (
 	model VARCHAR, 
 	workspace_path VARCHAR, 
 	approval_mode VARCHAR DEFAULT 'ask' NOT NULL, 
+	memory_enabled BOOLEAN DEFAULT true NOT NULL, 
 	pinned BOOLEAN DEFAULT false NOT NULL, 
 	archived_at TIMESTAMP WITH TIME ZONE, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 

@@ -25,7 +25,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_store
+from app.services import agent_memory, agent_store
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
@@ -470,7 +470,8 @@ class ThreadRuntime:
             provider_state=thread.provider_state,
             resume=thread.session_state == "active",
             history=history,
-            instructions=(agent.instructions or None) if agent is not None else None,
+            # The agent's instructions, then its notes (MEMORY.md) when on.
+            instructions=agent_memory.turn_instructions(agent) if agent is not None else None,
             approval_mode=agent.approval_mode if agent is not None else None,
         )
         run = ActiveRun(thread_id=thread_id, turn_id=turn.id, owner_token=turn.owner_token, ctx=ctx)

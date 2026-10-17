@@ -26,6 +26,7 @@ _EDITABLE = (
     "workspace_path",
     "approval_mode",
     "pinned",
+    "memory_enabled",
 )
 
 
@@ -74,6 +75,7 @@ async def create_agent(
     workspace_path: str | None = None,
     approval_mode: str = "ask",
     pinned: bool = False,
+    memory_enabled: bool = True,
 ) -> Agent:
     """Raises ValueError (blank name, unknown approval mode) or AgentNameTaken."""
     name = name.strip()
@@ -93,6 +95,7 @@ async def create_agent(
         workspace_path=workspace_path,
         approval_mode=approval_mode,
         pinned=pinned,
+        memory_enabled=memory_enabled,
         created_at=now,
         updated_at=now,
     )
@@ -141,29 +144,31 @@ async def update_agent(
     return agent
 
 
-async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
-    """A copy with the same settings, named "<name> copy" (then "copy 2", ...).
-    The copy is live and unpinned. Raises AgentNotFound."""
-    source = await db.get(Agent, agent_id)
-    if source is None:
-        raise AgentNotFound(agent_id)
-    live = {
-        row
-        for row in (
+async def free_name(db: AsyncSession, owner_id: str, base: str) -> str:
+    """`base` when no live agent of the owner has it, else "<base> 2", "<base> 3"...
+    A concurrent writer can still take it; that surfaces as AgentNameTaken."""
+    live = set(
+        (
             await db.execute(
-                select(Agent.name).where(
-                    Agent.owner_id == source.owner_id, Agent.archived_at.is_(None)
-                )
+                select(Agent.name).where(Agent.owner_id == owner_id, Agent.archived_at.is_(None))
             )
         ).scalars()
-    }
-    base = f"{source.name} copy"
+    )
     name, number = base, 1
     while name in live:
         number += 1
         name = f"{base} {number}"
-    # The name could still be taken by a concurrent writer; that surfaces as
-    # AgentNameTaken and the caller may try again.
+    return name
+
+
+async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
+    """A copy with the same settings, named "<name> copy" (then "copy 2", ...).
+    The copy is live and unpinned, and starts with no notes of its own.
+    Raises AgentNotFound."""
+    source = await db.get(Agent, agent_id)
+    if source is None:
+        raise AgentNotFound(agent_id)
+    name = await free_name(db, source.owner_id, f"{source.name} copy")
     return await create_agent(
         db,
         owner_id=source.owner_id,
@@ -175,6 +180,7 @@ async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
         model=source.model,
         workspace_path=source.workspace_path,
         approval_mode=source.approval_mode,
+        memory_enabled=source.memory_enabled,
     )
 
 

@@ -1,5 +1,7 @@
 """Describe a database schema as plain data, so two schemas can be compared."""
 
+import re
+
 from sqlalchemy import inspect
 
 IGNORED_TABLES = {"alembic_version"}
@@ -47,22 +49,43 @@ def _normal_default(default):
     if default is None:
         return None
     text = str(default).strip().lower()
+    # PostgreSQL reports a string default with its cast ('ask'::character
+    # varying, ''::text); SQLite reports the bare literal.
+    text = re.sub(r"^('(?:[^']|'')*')::[a-z ]+$", r"\1", text)
     if text in ("now()", "current_timestamp"):
         return "now"
+    return text
+
+
+# A boolean default is true/false on PostgreSQL and 1/0 on SQLite.
+_BOOLEAN_DEFAULT = {"1": "true", "0": "false", "true": "true", "false": "false"}
+
+
+def _column_default(name, family, default):
+    if name == "id":
+        return None
+    text = _normal_default(default)
+    if family == "boolean" and text is not None:
+        return _BOOLEAN_DEFAULT.get(text, text)
     return text
 
 
 def comparable(description: dict) -> dict:
     """The parts of a schema that must be the same on PostgreSQL and SQLite,
     with the known dialect differences smoothed out: integer and datetime
-    type names, now() versus CURRENT_TIMESTAMP, identity columns (PostgreSQL)
+    type names, now() versus CURRENT_TIMESTAMP, casts on string defaults, true/false versus 1/0 boolean defaults, identity columns (PostgreSQL)
     versus integer primary keys (SQLite), and constraint names the database
     generated itself."""
     result = {}
     for table, info in description.items():
         result[table] = {
             "columns": sorted(
-                (name, _TYPE_FAMILY.get(kind, kind), nullable, _normal_default(default) if name != "id" else None)
+                (
+                    name,
+                    _TYPE_FAMILY.get(kind, kind),
+                    nullable,
+                    _column_default(name, _TYPE_FAMILY.get(kind, kind), default),
+                )
                 for name, kind, nullable, default in info["columns"]
             ),
             "primary_key": info["primary_key"],

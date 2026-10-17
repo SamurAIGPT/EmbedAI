@@ -53,6 +53,11 @@ class Agent(Base):
     approval_mode: Mapped[str] = mapped_column(
         String, nullable=False, default="ask", server_default="ask"
     )
+    # Off: the agent's notes (MEMORY.md in its own folder) are neither loaded
+    # into its conversations nor mentioned to it. The file itself stays.
+    memory_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=expression.true()
+    )
     # Pinned agents list first.
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()

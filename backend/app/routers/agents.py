@@ -120,8 +120,11 @@ async def update_agent(
     agent_id: int, payload: AgentUpdateRequest, rt: ThreadRuntime = Depends(get_runtime)
 ):
     """Edit an agent. Conversations already started from it use the new
-    instructions, model and approval mode from their next message; a
-    conversation's own workspace stays as it was when it began."""
+    model and approval mode from their next message. New instructions and
+    notes are sent with every turn, but the Claude CLI keeps the system prompt
+    a session started with when it resumes it, so in practice they reach
+    conversations started after the change. A conversation's own workspace
+    stays as it was when it began."""
     await _agent_or_404(rt, agent_id)
     changes = {
         field: getattr(payload, field)

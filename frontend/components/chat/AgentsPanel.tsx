@@ -105,7 +105,8 @@ function saveFile(fileName: string, text: string) {
 }
 
 // List, create, edit, duplicate, pin, archive, export and import named agents,
-// and edit each agent's notes. Changing an agent applies to its next message.
+// and edit each agent's notes. A new model or approval mode applies to an agent's
+// next message; new instructions and notes reach conversations started after them.
 export function AgentsPanel({
   agents,
   onClose,

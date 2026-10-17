@@ -7,6 +7,13 @@ BASELINE_REVISION; every later migration then runs on top of it like on
 PostgreSQL. Keep the migrations after that revision SQLite-safe (additive, or
 `op.batch_alter_table`).
 
+The thread tables are not in the baseline: they come from later migrations.
+`thread`, `turn` and `event` are AUTOINCREMENT on SQLite (8d5f3a2b6c74), so ids
+are never reused. A batch rebuild of one of them must pass
+`table_kwargs={"sqlite_autoincrement": True}` to keep that, and cannot drop
+`thread` or `turn` while other tables hold foreign keys to them (foreign keys
+are on); 8d5f3a2b6c74 shows a rebuild that works.
+
 This is deliberately a literal snapshot, not generated from the models: the
 models change over time and the baseline must not. tests/db/test_sqlite_schema.py
 checks that a database upgraded to the latest revision still matches the models.

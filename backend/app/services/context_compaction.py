@@ -46,6 +46,8 @@ MIN_BUDGET_TOKENS = 512
 CHARS_PER_TOKEN = {"openai_compat": 4.0, "acp": 3.5}
 DEFAULT_CHARS_PER_TOKEN = 4.0
 WINDOW_SHARE = 0.8
+# A fold aims to leave the replay under this share of the budget.
+TARGET_SHARE = 0.7
 
 SUMMARY_HEADER = (
     "[Summary of earlier messages in this conversation, made of excerpts, oldest first. "
@@ -198,18 +200,31 @@ def plan(
     before = estimate_tokens(with_summary(rest, summary), engine, extra_chars)
     if before < budget_tokens:
         return Plan(items=with_summary(rest, summary))
-    cut = fold_point(rest, current_turn_id, keep)
-    if cut is None:
+    room = int(budget_tokens * chars_per_token(engine) * SUMMARY_SHARE)
+    room = max(SUMMARY_MIN_CHARS, min(SUMMARY_MAX_CHARS, room))
+    # Keep `keep` exchanges, or fewer when that many would not leave the
+    # replay under TARGET_SHARE of the budget: a fold that does not leave
+    # headroom would fold again on every turn and the replay would never be
+    # stable. Deterministic: the same conversation always folds the same way.
+    chosen = None
+    for kept_count in range(keep, 0, -1):
+        cut = fold_point(rest, current_turn_id, kept_count)
+        if cut is None:
+            continue
+        folded, kept = rest[:cut], rest[cut:]
+        folded_through = next((i.get("turn_id") for i in reversed(folded) if i.get("turn_id") is not None), None)
+        if folded_through is None:
+            continue
+        new_summary = excerpt_summary(folded, summary, room)
+        replay = with_summary(kept, new_summary)
+        chosen = (kept_count, folded, folded_through, new_summary, replay)
+        if estimate_tokens(replay, engine, extra_chars) <= budget_tokens * TARGET_SHARE:
+            break
+    if chosen is None:
         # Only the kept exchanges are left and they are too large by
         # themselves: the adapter's own size limit applies.
         return Plan(items=with_summary(rest, summary))
-    folded, kept = rest[:cut], rest[cut:]
-    room = int(budget_tokens * chars_per_token(engine) * SUMMARY_SHARE)
-    new_summary = excerpt_summary(folded, summary, max(SUMMARY_MIN_CHARS, min(SUMMARY_MAX_CHARS, room)))
-    replay = with_summary(kept, new_summary)
-    folded_through = next((i.get("turn_id") for i in reversed(folded) if i.get("turn_id") is not None), None)
-    if folded_through is None:
-        return Plan(items=with_summary(rest, summary))
+    keep, folded, folded_through, new_summary, replay = chosen
     record = {
         "folded_through_turn_id": folded_through,
         "summary": new_summary,

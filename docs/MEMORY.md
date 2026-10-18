@@ -129,7 +129,9 @@ budget, the earlier part is folded:
   in Settings yet).
 - **Fold point.** Deterministic: the last **4 exchanges** (your message and
   everything after it) stay verbatim, and so does the current message;
-  everything before is folded.
+  everything before is folded. When 4 exchanges would not leave the replay
+  under 70% of the budget, fewer are kept (down to 1), so a fold leaves
+  headroom and the conversation is not folded again on the very next turn.
 - **Summary.** Made without a model call: the newest excerpts of what was said
   (up to 240 characters each), oldest first, after any earlier summary, within
   a quarter of the budget and at most 6,000 characters, with a count of

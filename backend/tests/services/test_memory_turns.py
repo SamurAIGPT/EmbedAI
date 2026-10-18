@@ -63,7 +63,9 @@ async def test_a_long_conversation_is_folded_with_a_visible_marker(ort, sessions
     compactions = data_of(events, "context.compacted")
     assert compactions, "the conversation outgrew 80% of 1024 tokens and must have been folded"
     first = compactions[0]
-    assert first["method"] == "excerpts" and first["kept_exchanges"] == context_compaction.KEEP_EXCHANGES
+    assert first["method"] == "excerpts" and 1 <= first["kept_exchanges"] <= context_compaction.KEEP_EXCHANGES
+    # A fold leaves headroom, so the conversation is not folded again on every turn.
+    assert len(compactions) < 8 - 2
     assert first["budget_tokens"] == int(1024 * 0.8)
     messages = endpoint.body()["messages"]
     assert messages[0]["role"] == "user" and messages[0]["content"].startswith(context_compaction.SUMMARY_HEADER)

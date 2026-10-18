@@ -103,3 +103,14 @@ def test_the_summary_is_bounded_and_redacted():
 def test_only_the_kept_exchanges_left_is_no_fold():
     items = [{"role": "user", "text": "x" * 10_000, "turn_id": 1}, {"role": "user", "text": "y", "turn_id": 2}]
     assert cc.plan(items, current_turn_id=2, budget_tokens=10, engine="openai_compat", keep=1).record is None
+
+
+def test_fewer_exchanges_are_kept_when_four_would_leave_no_headroom():
+    items = conversation(10, size=400, current=11)
+    plan = cc.plan(items, current_turn_id=11, budget_tokens=900, engine="openai_compat")
+    assert plan.record["kept_exchanges"] < cc.KEEP_EXCHANGES
+    assert plan.record["tokens_after"] <= 900 * cc.TARGET_SHARE
+    # The next turn, a little longer, replays the stored summary without folding again.
+    stored = items + [{"role": "compaction", "turn_id": 11, **plan.record}, {"role": "assistant", "text": "ok", "turn_id": 11}]
+    stored.append({"role": "user", "text": "short", "turn_id": 12})
+    assert cc.plan(stored, current_turn_id=12, budget_tokens=900, engine="openai_compat").record is None

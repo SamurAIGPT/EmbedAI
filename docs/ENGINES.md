@@ -153,11 +153,61 @@ only, and is never returned, logged or stored in events or the decision log;
 endpoint errors have it removed. Each turn sends the stored history (newest
 kept, 120,000 characters) with the agent's instructions as the system message.
 
+## Limits and the fallback engine
+
+When an engine refuses a turn for a usage limit, a rate limit or a lack of
+credits, the runtime recognises it for every engine
+(`backend/app/services/engine_errors.py`): Claude's usage-limit words and its
+refusing `rate_limit_event` (with the reset time it reports), Codex's rate and
+usage limits, and an OpenAI-compatible endpoint's 429 or
+`insufficient_quota`. Only failures the engine itself reported are read, never
+a timeout or a crash. The turn fails with `error_code` `engine_limited` and a
+plain message that says when the limit resets when the engine said so.
+Claude's API-error frames are no longer stored as if they were the answer.
+
+The engine is then marked limited in this backend's memory: `GET
+/api/v1/engines` returns `limit` (`kind` usage_limit, rate_limit or credits,
+`resets_at`, `since`, `message`) until the reset time, a minute for a rate
+limit that named none, or until a turn on that engine succeeds. The engine
+picker shows a chip ("Usage limit · resets in 2h 5m") and the message.
+
+An agent may name a **fallback engine** and model (`fallback_provider`,
+`fallback_model` on `POST/PATCH /api/v1/agents`, or **Fallback engine when
+limited** in the Agents panel; it must be another engine than the agent's own,
+422 `invalid_fallback` otherwise). A turn moves to it only when all of these
+hold:
+
+- the engine refused the turn **before accepting it**: no output, no tool
+  call, no approval question and no typing had come from it. A limit hit after
+  the engine started is never moved (it may have run tools); the message says
+  so;
+- the fallback covers what the turn needs: tools and approvals when the turn
+  has tools (an engine with tools but no approval gate would run them
+  unasked), images when the message has any, an agent computer when the agent
+  has one, and, for a conversation that already has messages, the earlier
+  messages: only an engine that replays the stored transcript (OpenAI-compatible)
+  can take a continuing conversation, since no engine can resume another
+  engine's session;
+- the fallback is ready, accepts the model, and is not limited itself.
+
+Then the transcript gets an `engine.switched` event (from, to, model, reason,
+reset time, and the message "Switched this turn to X because Y refused it
+before starting: ...") shown as its own notice, and the same turn runs on the
+fallback. The conversation stays on its own engine: the fallback's session and
+state are not kept, so the next message tries the conversation's engine again.
+Otherwise the turn fails with `engine_limited`, the reason the fallback could
+not take it, and the next step. There is never a silent switch, and a limit is
+never retried on the same engine.
+
+Limits are per backend process (a restart forgets them until the next refusal).
+
 ## Not built yet
 
 - Several instances of one engine (two ACP agents, two endpoints), per-engine
   icons, installing or signing in to an engine from the app.
-- Quota- or limit-aware fallback to another engine.
+- Moving a continuing conversation to a session engine (Claude, Codex) when its
+  own engine is limited; a fallback chain of more than one engine; usage-limit
+  meters read ahead of a refusal.
 - Model prices, context windows and usage-limit meters.
 - Images (attached text files work everywhere), MCP servers or computers for engines other than Claude.
 - A long-lived engine process across turns (each turn starts one).

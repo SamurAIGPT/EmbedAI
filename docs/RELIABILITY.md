@@ -33,7 +33,21 @@ holds it:
   database on purpose and take no lease.
 - PostgreSQL takes no file lease: several backends on one server are allowed,
   and turn ownership is enforced in the database (owner tokens and leases).
-  See the gaps below for routines.
+
+### One routine scheduler per database
+
+On PostgreSQL only the backend that holds a session-level advisory lock runs
+the routine scheduler (`app/core/scheduler_lock.py`). The lock is taken on a
+connection kept open for the life of the process, so PostgreSQL drops it when
+that session ends: a clean stop unlocks it, a crash or `kill -9` closes the
+connection. Any other backend logs "another backend on this database runs the
+routine scheduler; this one stands by", serves the API and runs turns, queues
+a Run now or webhook run for the holder, and tries again on every scheduler
+pass, so it takes over within one pass after the holder stops. A holder whose
+lock connection breaks stops scheduling until it gets the lock back. The
+startup recovery that marks runs `interrupted` runs only when the lock is
+taken, and on PostgreSQL it leaves a run whose turn is still heartbeating
+alone (following settles it). SQLite keeps its file lease.
 
 ### A stop interrupts, never strands
 
@@ -56,10 +70,59 @@ desktop app was not affected (it sets a five-second graceful timeout).
 
 A hard kill (`kill -9`, power loss) cannot clean up. The next start marks the
 turn `interrupted` once its lease runs out (`THREAD_LEASE_SECONDS`, 60) and
-marks routine runs left running or waiting `interrupted`. Engine processes run
-in their own session, so after a hard kill of the backend they keep running
-until they end by themselves; a service manager that kills the whole control
-group (systemd's default) ends them too.
+marks routine runs left running or waiting `interrupted`.
+
+### Engines a hard kill left running are ended at the next start
+
+Engine processes run in sessions of their own. The backend records each
+engine process group it starts (Claude, `codex app-server`, ACP agents, the
+status probes) in `ENGINE_PROCESS_DIR` (default `engine-processes` next to the
+SQLite file): pid, start time, program and the backend's own pid and start
+time; the record is removed when the process ends. Each engine also carries an
+environment marker naming its backend, which its children inherit, including
+a computer's `docker exec` calls, which run in sessions of their own
+(`app/core/engine_processes.py`). At startup the sweep:
+
+- leaves records of a backend that is still running alone (another backend on
+  the same machine);
+- kills a recorded group only if the process at that pid has the recorded
+  start time and runs the recorded program (or carries the marker), so a pid
+  the system has since given to another program is never signalled;
+- when the group's leader is gone, kills only remaining members that carry
+  the dead backend's marker;
+- kills other processes carrying the marker of a backend that left records
+  behind (crashed). A backend that stopped cleanly removed its records, so what
+  its engines deliberately left running in the background is not touched.
+
+**Lifeline.** No extra lifeline pipe was added. Each engine's stdin and stdout
+are pipes to the backend; the real Claude CLI 2.1.302 in stream-json mode was
+seen to exit within ten seconds of a `kill -9` of the backend (its stdin
+closed), so for Claude the pipe already is the lifeline. An engine that
+ignores a closed stdin, its MCP servers and `docker exec` calls are what the
+startup sweep is for.
+
+### A cut turn says whether the engine had the message
+
+A turn records `engine_phase` (`preparing`, then `sent` just before the
+prompt is handed to the engine). When a crash, a stop or an expired lease
+interrupts it, `turn.interrupted` carries `replay`:
+
+- `before_accept`: the engine never received the message; nothing ran;
+- `unknown`: the engine had it but had reported nothing yet;
+- `after_accept`: the engine had produced output, a tool call or a question;
+  it may have changed things.
+
+The failed-turn message says which ("The app stopped before the engine
+received this message, so nothing ran..."). No interrupted turn is ever
+re-run automatically, whichever class it is.
+
+### A limited engine is never retried silently
+
+See [ENGINES.md](ENGINES.md#limits-and-the-fallback-engine): a usage or rate
+limit is classified for every engine, marked on the engine until its reset,
+and moved to the agent's fallback engine only before the engine accepted the
+turn and only to an engine that can do what the turn needs, with a visible
+`engine.switched` event.
 
 ### A silent engine is stopped
 
@@ -94,6 +157,10 @@ processes they started.
 | Watchdog: quiet engine, typing then silence, an adapter that ignores Stop, approvals pause it, `0` disables it, a dying engine | `backend/tests/services/test_turn_watchdog.py` |
 | Engines: hanging and raising status, one engine never blocks another; real hanging and crashing programs on the real backend | `backend/tests/services/test_engine_resilience.py`, `backend/tests/e2e/test_engine_resilience.py` |
 | Features together on the real backend with the real auth middleware: a routine on an agent with a computer waiting for an approval; the webhook ingress against the main app's auth; a chat-scope device; approvals and the decision log on Claude, Codex and ACP | `backend/tests/e2e/test_cross_feature.py` |
+| Scheduler lock: one holder, release, a killed session, an unreachable database | `backend/tests/core/test_scheduler_lock.py` (PostgreSQL) |
+| Two real backend processes on one PostgreSQL database: one scheduler, Run now on the standby runs once on the holder, takeover after `kill -9` and after SIGTERM | `backend/tests/e2e/test_scheduler_lock.py` (PostgreSQL) |
+| Orphan sweep with real processes: a crashed backend's engine group and stray `docker exec` stand-in ended; a recycled pid, a live backend's engines, a bystander with the same program name and a clean backend's background process left alone | `backend/tests/core/test_engine_processes.py`, `backend/tests/e2e/test_shutdown.py` (`kill -9` of the real backend, restart) |
+| Limits and fallback: classification, reset times, Claude limit frames, the switch before acceptance, no switch after, missing capability, continuing conversation, not ready, limited too, expiry; replay classes | `backend/tests/services/test_engine_fallback.py` |
 | First day end to end: passphrase, sign out and in, agent turn, approval, routine, second backend refused, SIGTERM, restart | `scripts/smoke-backend.py` (CI job "Backend smoke (real process)", about 10 seconds) |
 
 The `tests/e2e` tests start the real backend with uvicorn in its own process
@@ -128,7 +195,35 @@ On macOS with a scratch SQLite database, the CI throwaway encryption key,
   tests and a real computer turn were not run; computers were verified with
   the fake docker executable only.
 
+Second pass (October 18, 2026), same setup:
+
+- two real backends on a scratch PostgreSQL 14: one ran the scheduler, the
+  other stood by and took over after `kill -9` (tests above);
+- an agent on an OpenAI-compatible endpoint that always answers 429, with
+  Claude haiku as its fallback: the first message switched to Claude (the
+  notice in the transcript, a real haiku answer), the second message in the
+  same conversation was refused ("it lacks this conversation's earlier
+  messages"), and `GET /engines` and the picker showed "Rate limited · resets
+  in 43m";
+- `kill -9` of the backend while a real Claude turn waited on a Write
+  approval: Claude exited by itself within ten seconds; the restart removed its
+  record, left an unrelated process with `claude` in its arguments alone, and
+  the turn was interrupted with `replay` `after_accept`.
+
 ## Findings that are not bugs in this app
+
+### Recovery verification (October 18, 2026)
+
+After resuming the interrupted implementation, the complete SQLite suite passed
+(1,791 tests, 22 skipped), as did all ten real-process backend smoke checks,
+137 frontend helper tests, 70 desktop tests, frontend lint (one existing
+SubmitTask effect-cleanup warning), the production web build and the desktop
+static export. The static export required a fresh Next build cache after a
+local worker-port permission error.
+
+These checks use scripted engines. They do not repeat the earlier real-engine,
+browser or Electron verification, establish live third-party compatibility,
+or verify signed installers, updates, Windows, Linux or real Docker.
 
 - The Claude CLI runs commands it considers read only (`ls -la`) without
   asking, even in `ask` mode, so they produce no approval card and no
@@ -141,19 +236,19 @@ On macOS with a scratch SQLite database, the CI throwaway encryption key,
 
 Compared with what a larger agent host does for the same problems, still open:
 
-- **PostgreSQL schedulers.** Two backends on one PostgreSQL database both run
-  the routine scheduler. Starting a run is claimed atomically, so a run is not
-  started twice, but due occurrences and notifications have not been tested
-  under two schedulers. A database advisory lock held by the scheduler would
-  close this.
-- **Orphans after a hard kill.** Engine processes outlive a `kill -9` of the
-  backend (see above), and a `docker exec` started by a computer's MCP server
-  can outlive its parent until the in-container time limit ends it. A lifeline
-  pipe to each engine, or a process-group sweep at startup, would end them.
-- **Replay classification.** An interrupted turn is never resumed; there is no
-  distinction between a cut before the engine accepted the prompt (safe to
-  send again) and after (not safe), and no automatic retry or fallback to
-  another engine.
+- **Other background jobs on PostgreSQL.** Only the routine scheduler is
+  single-instance; the older Boat schedule poller and task sync still run in
+  every backend.
+- **Orphans between starts.** The sweep runs at startup only: an orphan lives
+  until the next start, and a backend that is never restarted leaves it. No
+  explicit lifeline pipe (see above); the Windows sweep does nothing.
+- **Fallback limits.** A continuing conversation can only move to an engine
+  that replays the transcript; limits live in one process's memory; one
+  fallback, no chain; no automatic retry of an interrupted turn, even
+  `before_accept`.
+- **Routine header mode.** A routine's conversation header shows the agent's
+  approval mode, not the stricter one the run used (the decision log records
+  the mode each approval ran under).
 - **Hand-off notes.** A turn that ends at a time or step limit leaves no
   summary of the work done for the next turn to continue from.
 - **Watchdog scope.** The watchdog watches events, not the process: an engine

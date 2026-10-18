@@ -42,6 +42,6 @@ Out of scope until explicitly approved: multi-tenant paid hosting, hosting third
 
 ## Known limitations today
 
-Reliability gaps (PostgreSQL schedulers, engine processes after a hard kill, replay classification, scripted scenario tiers, Windows coverage of the real-process tests) are listed in [RELIABILITY.md](RELIABILITY.md#gaps).
+Reliability gaps (other background jobs on PostgreSQL, orphans until the next start, fallback limits, scripted scenario tiers, Windows coverage of the real-process tests) are listed in [RELIABILITY.md](RELIABILITY.md#gaps). Done: one routine scheduler per PostgreSQL database, a startup sweep of engine processes a hard kill left running, replay classification of interrupted turns, and quota-aware fallback to an agent's second engine.
 
 See the README's "Known limitations". Owner authentication and paired devices exist ([AUTH.md](AUTH.md)); still planned there: separate user accounts, passkeys or a second factor, and lockout counters shared across processes.

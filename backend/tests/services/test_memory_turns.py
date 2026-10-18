@@ -91,3 +91,26 @@ async def test_a_stored_summary_is_replayed_as_is_on_the_next_turn(ort, sessions
     thread, events = await run(ort, sessions, "short follow-up", count=count + 1, thread=thread)
     if len(data_of(events, "context.compacted")) == 1:
         assert endpoint.body()["messages"][0]["content"].startswith(summary)
+
+
+async def test_the_context_window_is_saved_through_the_engines_api(ort, sessions, owner, monkeypatch):
+    import httpx
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LOCAL_EXECUTION_ENABLED", True)
+    from fastapi import FastAPI
+
+    from app.routers.engines import get_runtime, router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_runtime] = lambda: ort
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app, client=("127.0.0.1", 50000)), base_url="http://localhost") as client:
+        saved = await client.put(
+            "/api/v1/engines/openai_compat/config", json={"base_url": BASE, "model": "m", "context_tokens": 8192}
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["config"]["context_tokens"] == 8192
+        bad = await client.put("/api/v1/engines/openai_compat/config", json={"base_url": BASE, "context_tokens": 10})
+        assert bad.status_code == 422

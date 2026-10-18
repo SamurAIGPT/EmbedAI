@@ -55,3 +55,6 @@ class EngineConfigRequest(BaseModel):
     model: str | None = Field(default=None, max_length=200)
     api_key: str | None = Field(default=None, max_length=4096)
     clear_api_key: bool = False
+    # OpenAI-compatible: the model's context window in tokens; long
+    # conversations are folded at 80% of it (docs/MEMORY.md).
+    context_tokens: int | None = None

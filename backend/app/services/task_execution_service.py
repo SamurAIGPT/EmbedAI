@@ -639,12 +639,14 @@ async def sync_task_status(db: AsyncSession, task: Tasks) -> Tasks:
         return await _reload(db, task.id)
 
     if task.status == "waiting_approval":
-        # Blocked inside a permission hook call, answered by a different
-        # request (web or Telegram) — nothing to ask the sandbox here, just
-        # re-read in case it was just answered.
-        return await _reload(db, task.id)
+        # Re-read a decision made by a different request before polling.
+        # A command may have exited while its ask remained pending.
+        task = await _reload(db, task.id)
 
-    if task.status not in LAUNCHED_STATUSES or not task.prompt_id:
+    if (
+        task.status not in LAUNCHED_STATUSES
+        and task.status != "waiting_approval"
+    ) or not task.prompt_id:
         return task
 
     try:
@@ -665,9 +667,16 @@ async def sync_task_status(db: AsyncSession, task: Tasks) -> Tasks:
         values = {"status": "failed", "error": f"{exc.status} {exc.reason}"}
     else:
         if run_status.running:
-            if task.status == "running":
+            if task.status in {"running", "waiting_approval"}:
                 return task
             values = {"status": "running"}
+        elif run_status.exit_code not in (None, 0) or run_status.signal:
+            termination = (
+                f"Process terminated by {run_status.signal}"
+                if run_status.signal
+                else f"Process exited with code {run_status.exit_code}"
+            )
+            values = {"status": "failed", "error": run_status.stderr or termination}
         else:
             values = _finished_values(stdout, run_status.stderr)
 

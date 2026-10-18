@@ -8,6 +8,7 @@ Errors a client acts on carry a machine-readable code:
 `{"detail": {"error_code": "...", "message": "..."}}`.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,8 +21,15 @@ from app.schemas.agent import (
     AgentMemoryWriteRequest,
     AgentResponse,
     AgentUpdateRequest,
+    MemoryJournalRow,
+    MemoryProposalAcceptRequest,
+    MemoryProposalResponse,
+    TopicDocResponse,
+    TopicInfoResponse,
+    TopicListResponse,
+    TopicWriteRequest,
 )
-from app.services import agent_memory, agent_package
+from app.services import agent_memory, agent_package, memory_journal, memory_proposals, memory_topics
 from app.services import agent_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import EngineModelInvalid, ThreadRuntime, UnknownProvider
@@ -274,6 +282,8 @@ async def write_memory(
     the agent changed meanwhile is not overwritten: 409 `memory_changed`, with
     what is there now. Secrets are redacted before anything is written."""
     agent = await _agent_or_404(rt, agent_id)
+    path = agent_memory.memory_path(agent.id)
+    before = agent_memory.read_memory(agent.id).text if path.is_file() and not path.is_symlink() else None
     try:
         doc, redacted = agent_memory.write_memory(
             agent.id, payload.text, expected_hash=payload.expected_hash
@@ -290,7 +300,209 @@ async def write_memory(
         ) from None
     except agent_memory.MemoryTooLarge as exc:
         raise _error(413, "memory_too_large", str(exc)) from None
+    memory_journal.record(agent.id, agent_memory.MEMORY_FILE, actor="person", before=before, after=doc.text)
     return _memory_response(agent, doc, redacted)
+
+
+# --- topic notes (memory/<topic>.md) ----------------------------------------------------
+
+
+def _conflict(conflict: agent_memory.MemoryConflict, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error_code": "memory_changed",
+            "message": message,
+            "current": conflict.current.text,
+            "current_hash": conflict.current.hash,
+        },
+    )
+
+
+def _topic_name(name: str) -> str:
+    try:
+        return memory_topics.check_name(name)
+    except memory_topics.InvalidTopicName as exc:
+        raise _error(422, "invalid_topic_name", str(exc)) from None
+
+
+def _topic_response(doc: memory_topics.TopicDoc, redacted: int = 0) -> TopicDocResponse:
+    return TopicDocResponse(
+        name=doc.name, path=doc.path, text=doc.text, hash=doc.hash, bytes=doc.bytes, exists=doc.exists, redacted=redacted
+    )
+
+
+@router.get("/{agent_id}/memory/topics", response_model=TopicListResponse)
+async def list_topics(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """The agent's topic notes, newest change first."""
+    agent = await _agent_or_404(rt, agent_id)
+    return TopicListResponse(
+        topics=[
+            TopicInfoResponse(
+                name=t.name,
+                title=t.title,
+                aliases=list(t.aliases),
+                bytes=t.bytes,
+                modified_at=datetime.fromtimestamp(t.modified_at, UTC),
+            )
+            for t in memory_topics.list_topics(agent.id)
+        ],
+        max_topics=memory_topics.MAX_TOPICS,
+        max_bytes=memory_topics.TOPIC_MAX_BYTES,
+        folder=str(memory_topics.topics_dir(agent.id)),
+    )
+
+
+@router.get("/{agent_id}/memory/topics/{name}", response_model=TopicDocResponse)
+async def read_topic(agent_id: int, name: str, rt: ThreadRuntime = Depends(get_runtime)):
+    """One topic note; a name with no note yet reads as empty (`exists` false)."""
+    agent = await _agent_or_404(rt, agent_id)
+    return _topic_response(memory_topics.read_topic(agent.id, _topic_name(name)))
+
+
+@router.put("/{agent_id}/memory/topics/{name}", response_model=TopicDocResponse)
+async def write_topic(
+    agent_id: int, name: str, payload: TopicWriteRequest, rt: ThreadRuntime = Depends(get_runtime)
+):
+    """Create or replace a topic note. With `expected_hash` a note changed
+    meanwhile is not overwritten (409 `memory_changed`). Secrets are redacted
+    before anything is written; the change is journaled."""
+    agent = await _agent_or_404(rt, agent_id)
+    name = _topic_name(name)
+    try:
+        doc, redacted, before = memory_topics.write_topic(
+            agent.id, name, payload.text, expected_hash=payload.expected_hash
+        )
+    except agent_memory.MemoryConflict as conflict:
+        raise _conflict(conflict, "The note changed since you opened it.") from None
+    except agent_memory.MemoryTooLarge as exc:
+        raise _error(413, "memory_too_large", str(exc)) from None
+    except memory_topics.TooManyTopics as exc:
+        raise _error(409, "too_many_topics", str(exc)) from None
+    except memory_topics.InvalidTopicName as exc:
+        raise _error(422, "invalid_topic_name", str(exc)) from None
+    memory_journal.record(agent.id, memory_journal.note_path(name), actor="person", before=before, after=doc.text)
+    return _topic_response(doc, redacted)
+
+
+@router.delete("/{agent_id}/memory/topics/{name}", status_code=204)
+async def delete_topic(
+    agent_id: int, name: str, expected_hash: str | None = None, rt: ThreadRuntime = Depends(get_runtime)
+):
+    """Delete a topic note (the journal can bring it back)."""
+    agent = await _agent_or_404(rt, agent_id)
+    name = _topic_name(name)
+    try:
+        before = memory_topics.delete_topic(agent.id, name, expected_hash=expected_hash)
+    except agent_memory.MemoryConflict as conflict:
+        raise _conflict(conflict, "The note changed since you opened it.") from None
+    if before is None:
+        raise HTTPException(status_code=404, detail="Topic note not found")
+    memory_journal.record(agent.id, memory_journal.note_path(name), actor="person", before=before, after=None)
+
+
+# --- the journal ---------------------------------------------------------------------
+
+
+def _journal_row(row: dict) -> MemoryJournalRow:
+    return MemoryJournalRow(
+        id=row["id"],
+        at=datetime.fromtimestamp(float(row.get("at") or 0), UTC),
+        path=row["path"],
+        actor=str(row.get("actor") or ""),
+        kind=str(row.get("kind") or ""),
+        before_hash=row.get("before_hash"),
+        after_hash=row.get("after_hash"),
+        diff=str(row.get("diff") or ""),
+        added=int(row.get("added") or 0),
+        removed=int(row.get("removed") or 0),
+        can_undo=bool(row.get("can_undo")),
+        reason=row.get("reason"),
+    )
+
+
+@router.get("/{agent_id}/memory/journal", response_model=list[MemoryJournalRow])
+async def read_journal(agent_id: int, limit: int = 50, rt: ThreadRuntime = Depends(get_runtime)):
+    """Changes made to the agent's notes through this app, newest first."""
+    agent = await _agent_or_404(rt, agent_id)
+    return [_journal_row(row) for row in memory_journal.read(agent.id, limit)]
+
+
+@router.post("/{agent_id}/memory/journal/{entry_id}/undo", response_model=MemoryJournalRow | None)
+async def undo_journal(agent_id: int, entry_id: str, rt: ThreadRuntime = Depends(get_runtime)):
+    """Put the file back the way it was before that change. The undo is
+    itself journaled (and can be undone)."""
+    agent = await _agent_or_404(rt, agent_id)
+    try:
+        row = memory_journal.undo(agent.id, entry_id)
+    except memory_journal.JournalEntryNotFound:
+        raise HTTPException(status_code=404, detail="No such change") from None
+    except memory_journal.CannotUndo as exc:
+        raise _error(409, "cannot_undo", str(exc)) from None
+    except memory_topics.TooManyTopics as exc:
+        raise _error(409, "too_many_topics", str(exc)) from None
+    return _journal_row(row) if row is not None else None
+
+
+# --- proposed notes ------------------------------------------------------------------
+
+
+def _proposal(p: dict) -> MemoryProposalResponse:
+    return MemoryProposalResponse(
+        id=p["id"],
+        at=datetime.fromtimestamp(float(p.get("at") or 0), UTC),
+        text=p.get("text") or "",
+        line=p.get("line") or "",
+        target=p.get("target") or agent_memory.MEMORY_FILE,
+        thread_id=p.get("thread_id"),
+        thread_title=p.get("thread_title"),
+        turn_id=p.get("turn_id"),
+    )
+
+
+@router.get("/{agent_id}/memory/proposals", response_model=list[MemoryProposalResponse])
+async def list_proposals(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """Notes proposed from conversations that have gone quiet, waiting for
+    the person. Looking also reads any conversation that went quiet since the
+    last look. Nothing is saved until a proposal is accepted."""
+    agent = await _agent_or_404(rt, agent_id)
+    if agent.memory_enabled:
+        async with rt.session() as db:
+            await memory_proposals.sweep(db, rt.owner_id, agent.id)
+    return [_proposal(p) for p in memory_proposals.pending(agent.id)]
+
+
+@router.post("/{agent_id}/memory/proposals/{proposal_id}/accept")
+async def accept_proposal(
+    agent_id: int,
+    proposal_id: str,
+    payload: MemoryProposalAcceptRequest | None = None,
+    rt: ThreadRuntime = Depends(get_runtime),
+):
+    """Save the proposal (or the person's edited line) into MEMORY.md or a
+    topic note. Journaled; the journal can undo it."""
+    agent = await _agent_or_404(rt, agent_id)
+    payload = payload or MemoryProposalAcceptRequest()
+    if payload.target is not None and payload.target != agent_memory.MEMORY_FILE:
+        _topic_name(payload.target)
+    try:
+        return memory_proposals.accept(agent.id, proposal_id, line=payload.line, target=payload.target)
+    except memory_proposals.ProposalNotFound:
+        raise HTTPException(status_code=404, detail="No such proposal") from None
+    except agent_memory.MemoryTooLarge as exc:
+        raise _error(413, "memory_too_large", str(exc)) from None
+    except memory_topics.TooManyTopics as exc:
+        raise _error(409, "too_many_topics", str(exc)) from None
+
+
+@router.post("/{agent_id}/memory/proposals/{proposal_id}/reject", status_code=204)
+async def reject_proposal(agent_id: int, proposal_id: str, rt: ThreadRuntime = Depends(get_runtime)):
+    """Drop the proposal; the same line is not proposed again."""
+    agent = await _agent_or_404(rt, agent_id)
+    try:
+        memory_proposals.reject(agent.id, proposal_id)
+    except memory_proposals.ProposalNotFound:
+        raise HTTPException(status_code=404, detail="No such proposal") from None
 
 
 # --- one agent as a portable file ------------------------------------------------------

@@ -181,3 +181,74 @@ class AgentImportRequest(BaseModel):
     document: dict
     # False leaves the file's notes out even when it carries some.
     include_notes: bool = True
+
+
+# --- topic notes, the journal and proposed notes (docs/MEMORY.md) ------------------------
+
+
+class TopicInfoResponse(BaseModel):
+    name: str
+    title: str | None
+    aliases: list[str]
+    bytes: int
+    modified_at: datetime
+
+
+class TopicListResponse(BaseModel):
+    topics: list[TopicInfoResponse]
+    max_topics: int
+    max_bytes: int
+    folder: str
+
+
+class TopicDocResponse(BaseModel):
+    name: str
+    path: str
+    text: str
+    # Send back as `expected_hash`; a note not created yet has the hash of "".
+    hash: str
+    bytes: int
+    exists: bool
+    redacted: int = 0
+
+
+class TopicWriteRequest(BaseModel):
+    text: str
+    expected_hash: str | None = Field(default=None, max_length=64)
+
+
+class MemoryJournalRow(BaseModel):
+    id: str
+    at: datetime
+    path: str
+    # person | proposal | undo
+    actor: str
+    # created | edited | deleted
+    kind: str
+    before_hash: str | None
+    after_hash: str | None
+    diff: str
+    added: int
+    removed: int
+    can_undo: bool
+    reason: str | None = None
+
+
+class MemoryProposalResponse(BaseModel):
+    id: str
+    at: datetime
+    # The person's own words the proposal quotes.
+    text: str
+    # The line Accept appends.
+    line: str
+    target: str
+    thread_id: int | None
+    thread_title: str | None
+    turn_id: int | None
+
+
+class MemoryProposalAcceptRequest(BaseModel):
+    # The line to save instead of the proposed one (edited by the person).
+    line: str | None = Field(default=None, max_length=2000)
+    # A topic file name (travel.md) instead of MEMORY.md.
+    target: str | None = Field(default=None, max_length=80)

@@ -174,6 +174,19 @@ export function formatWhen(iso: string | null | undefined, timezone?: string): s
   }
 }
 
+export function formatSchedulePreviewWhen(iso: string | null | undefined, timezone: string): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "shortOffset",
+    }).format(date);
+  } catch {
+    return formatWhen(iso, timezone);
+  }
+}
+
 export function nextRunText(routine: Pick<Routine, "paused" | "next_run_at" | "schedule_kind" | "timezone">): string {
   if (routine.paused) return "Paused";
   if (routine.schedule_kind === "manual") return "Runs only by hand or webhook";

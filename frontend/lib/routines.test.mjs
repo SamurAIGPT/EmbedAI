@@ -6,6 +6,7 @@ import {
   curlExample,
   canSaveSchedulePreview,
   emptySchedule,
+  formatSchedulePreviewWhen,
   isActiveRun,
   localInputValue,
   nextRunText,
@@ -65,6 +66,15 @@ test('a saved routine opens as the same draft', () => {
   const once = scheduleDraftOf({ schedule_kind: 'once', schedule_spec: { at: '2026-10-18T03:30:00+00:00' }, timezone: 'Asia/Kolkata' });
   assert.equal(once.at, '2026-10-18T09:00');
   assert.equal(localInputValue('not a date', 'UTC'), '');
+});
+
+test('schedule preview shows the selected offset for a repeated local time', () => {
+  const first = formatSchedulePreviewWhen('2026-10-25T00:30:00Z', 'Europe/Berlin');
+  const second = formatSchedulePreviewWhen('2026-10-25T01:30:00Z', 'Europe/Berlin');
+  assert.match(first, /02:30/);
+  assert.match(second, /02:30/);
+  assert.match(first, /GMT\+2/);
+  assert.match(second, /GMT\+1/);
 });
 
 test('an unchanged one-time minute preserves its original seconds and milliseconds', () => {

@@ -17,6 +17,7 @@ import {
   curlExample,
   DAY_LABELS,
   emptySchedule,
+  formatSchedulePreviewWhen,
   formatWhen,
   isActiveRun,
   nextRunText,
@@ -176,7 +177,7 @@ function ScheduleFields({ value, onChange, onPreviewResult }: {
           <p className="font-medium">{currentPreview.preview.summary}</p>
           {currentPreview.preview.next_dates.length > 0 && (
             <ul className="mt-1 list-inside list-disc">
-              {currentPreview.preview.next_dates.map((date) => <li key={date}>{formatWhen(date, value.timezone.trim() || "UTC")}</li>)}
+              {currentPreview.preview.next_dates.map((date) => <li key={date}>{formatSchedulePreviewWhen(date, value.timezone.trim() || "UTC")}</li>)}
             </ul>
           )}
         </div>

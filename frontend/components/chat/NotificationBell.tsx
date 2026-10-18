@@ -9,7 +9,13 @@ const POLL_MS = 15_000;
 
 // The header's bell: the unread count, and the feed when opened. A click on an
 // entry marks it read and opens its conversation when it has one.
-export function NotificationBell() {
+export function NotificationBell({
+  elevated = false,
+  onOpen,
+}: {
+  elevated?: boolean;
+  onOpen?: () => void;
+}) {
   const router = useRouter();
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -48,9 +54,12 @@ export function NotificationBell() {
   const badge = badgeText(unread);
 
   return (
-    <div className="relative">
+    <div className={`relative ${elevated ? "z-50" : ""}`}>
       <button
-        onClick={() => setOpen((on) => !on)}
+        onClick={() => {
+          if (!open) onOpen?.();
+          setOpen(!open);
+        }}
         aria-label={badge ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
         className="relative cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"

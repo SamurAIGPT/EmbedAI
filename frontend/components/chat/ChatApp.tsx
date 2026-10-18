@@ -514,7 +514,15 @@ export function ChatApp() {
           Usage
         </button>
       )}
-      {ready && <NotificationBell />}
+      {ready && (
+        <NotificationBell
+          elevated={routinesOpen || usageOpen}
+          onOpen={() => {
+            setRoutinesOpen(false);
+            setUsageOpen(false);
+          }}
+        />
+      )}
       {stream.connection === "reconnecting" && (
         <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
       )}

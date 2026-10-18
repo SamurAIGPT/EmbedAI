@@ -15,6 +15,7 @@ import {
 import { computerStateLabel } from "@/lib/computers";
 import { ComputerView } from "./ComputerPanel";
 import { EngineModelFields } from "./EngineModelFields";
+import { MemoryPanel } from "./MemoryPanel";
 
 type Draft = {
   id: number | null;
@@ -208,6 +209,12 @@ export function AgentsPanel({
       setError(errorText(err));
     }
   };
+
+  const toggleRecallOn = (agent: Agent, on: boolean) =>
+    run(
+      () => api.updateAgent(agent.id, { recall_enabled: on }),
+      () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, recall_enabled: on } } : open))
+    );
 
   const toggleNotesOn = (agent: Agent, on: boolean) =>
     run(
@@ -425,6 +432,8 @@ export function AgentsPanel({
               onOverwrite={() => saveNotes(true)}
               onLoadTheirs={loadTheirs}
               onToggle={(on) => toggleNotesOn(notes.agent, on)}
+              onToggleRecall={(on) => toggleRecallOn(notes.agent, on)}
+              onReload={loadTheirs}
               onBack={back}
             />
           ) : exporting ? (
@@ -502,6 +511,7 @@ export function AgentsPanel({
                         <p className="text-xs text-zinc-500">
                           {engines.find((engine) => engine.id === agent.provider)?.label ?? agent.provider} · {modelLabel(agent.model)} · {approvalModeLabel(agent.approval_mode)}
                           {agent.memory_enabled === false && " · notes off"}
+                          {agent.memory_enabled !== false && agent.recall_enabled === false && " · recall off"}
                           {agent.computer && ` · computer: ${computerStateLabel(agent.computer.state).toLowerCase()}`}
                         </p>
                         {agent.instructions && (
@@ -589,6 +599,8 @@ function NotesEditor({
   onOverwrite,
   onLoadTheirs,
   onToggle,
+  onToggleRecall,
+  onReload,
   onBack,
 }: {
   notes: NotesState;
@@ -598,6 +610,8 @@ function NotesEditor({
   onOverwrite: () => void;
   onLoadTheirs: () => void;
   onToggle: (on: boolean) => void;
+  onToggleRecall: (on: boolean) => void;
+  onReload: () => void;
   onBack: () => void;
 }) {
   const { memory } = notes;
@@ -605,6 +619,7 @@ function NotesEditor({
   const gauge = memoryGauge(memory);
   const dirty = notes.text !== memory.text;
   const enabled = notes.agent.memory_enabled ?? true;
+  const recall = notes.agent.recall_enabled ?? true;
   return (
     <div className="space-y-3">
       <p className="text-xs text-zinc-500">
@@ -644,6 +659,11 @@ function NotesEditor({
         <input type="checkbox" checked={enabled} disabled={busy} onChange={() => onToggle(!enabled)} />
         Use notes in this agent&apos;s conversations
       </label>
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+        <input type="checkbox" checked={recall} disabled={busy || !enabled} onChange={() => onToggleRecall(!recall)} />
+        Recall before each message: add matching topic notes and passages from earlier conversations to the message
+        (shown as a &ldquo;Recalled&rdquo; chip)
+      </label>
       <div className="flex gap-2">
         <button onClick={onSave} disabled={busy || !dirty} className={PRIMARY}>
           {busy ? "Saving…" : "Save notes"}
@@ -652,6 +672,7 @@ function NotesEditor({
           {dirty ? "Discard" : "Done"}
         </button>
       </div>
+      <MemoryPanel agentId={notes.agent.id} onNotesChanged={() => !dirty && onReload()} />
     </div>
   );
 }

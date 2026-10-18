@@ -4,6 +4,7 @@ import { useState } from "react";
 import { canAlwaysAllow } from "@/lib/approvals";
 import { isComputerTool, toolLabel } from "@/lib/computers";
 import { failureNextStep, turnUsageText } from "@/lib/everyday";
+import { compactedLabel, recalledLabel } from "@/lib/memory";
 import type { TranscriptItem } from "@/lib/transcript";
 import { Markdown } from "./Markdown";
 import { MessageAttachments } from "./Attachments";
@@ -315,5 +316,54 @@ function ComputerBadge() {
     >
       computer
     </span>
+  );
+}
+
+// What recall put in front of the person's message. Always shown, so nothing
+// the engine was given is hidden (docs/MEMORY.md).
+export function RecalledChip({ item }: { item: Item<"recalled"> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="self-end text-xs text-zinc-500">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="rounded-full border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+      >
+        🧠 {recalledLabel(item.notes.length, item.conversations.length)}
+      </button>
+      {open && (
+        <ul className="mt-1 max-w-xl space-y-1 rounded-md border border-zinc-200 p-2 text-left dark:border-zinc-800">
+          <li className="text-zinc-500">Background for the agent, not instructions. It grants no permission.</li>
+          {item.notes.map((n, i) => (
+            <li key={`n${i}`}>
+              <span className="font-mono">memory/{n.name}</span>: {n.snippet}
+            </li>
+          ))}
+          {item.conversations.map((c, i) => (
+            <li key={`c${i}`}>
+              <span className="font-medium">“{c.title || "untitled"}”</span>
+              {c.at ? ` (${c.at.slice(0, 10)})` : ""}, {c.role === "user" ? "you said" : "the agent said"}: {c.snippet}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Earlier messages were folded into a summary for the engine.
+export function CompactedMarker({ item }: { item: Item<"compacted"> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-y border-dashed border-zinc-300 py-2 text-center text-xs text-zinc-500 dark:border-zinc-700">
+      <p>{compactedLabel(item.folded)}</p>
+      {item.summary && (
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 underline">
+          {open ? "Hide the summary" : "Show the summary"}
+        </button>
+      )}
+      {open && <pre className="mt-2 whitespace-pre-wrap break-words text-left font-mono">{item.summary}</pre>}
+    </div>
   );
 }

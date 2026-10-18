@@ -6,6 +6,8 @@ import {
   ApprovalCard,
   AssistantMessage,
   SessionReset,
+  RecalledChip,
+  CompactedMarker,
   ToolStep,
   type Remembered,
   TurnEnd,
@@ -94,6 +96,10 @@ export function Conversation({
               return <TurnEnd key={item.key} item={item} />;
             case "session_reset":
               return <SessionReset key={item.key} item={item} />;
+            case "recalled":
+              return <RecalledChip key={item.key} item={item} />;
+            case "compacted":
+              return <CompactedMarker key={item.key} item={item} />;
           }
         })}
 

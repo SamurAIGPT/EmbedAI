@@ -28,6 +28,8 @@ type Draft = {
   workspace_path: string;
   approval_mode: ApprovalMode;
   memory_enabled: boolean;
+  fallback_provider: string | null;
+  fallback_model: string | null;
   // Create only: the first contents of the agent's notes.
   starter_notes: string;
 };
@@ -43,6 +45,8 @@ const EMPTY: Draft = {
   workspace_path: "",
   approval_mode: "ask",
   memory_enabled: true,
+  fallback_provider: null,
+  fallback_model: null,
   starter_notes: "",
 };
 
@@ -58,6 +62,8 @@ function toDraft(agent: Agent): Draft {
     workspace_path: agent.workspace_path ?? "",
     approval_mode: agent.approval_mode,
     memory_enabled: agent.memory_enabled ?? true,
+    fallback_provider: agent.fallback_provider ?? null,
+    fallback_model: agent.fallback_model ?? null,
     starter_notes: "",
   };
 }
@@ -73,6 +79,9 @@ function toInput(draft: Draft): AgentInput {
     workspace_path: draft.workspace_path.trim() || null,
     approval_mode: draft.approval_mode,
     memory_enabled: draft.memory_enabled,
+    // The agent's own engine cannot be its fallback.
+    fallback_provider: draft.fallback_provider && draft.fallback_provider !== draft.provider ? draft.fallback_provider : null,
+    fallback_model: draft.fallback_provider && draft.fallback_provider !== draft.provider ? draft.fallback_model?.trim() || null : null,
   };
   if (draft.id === null && draft.starter_notes.trim()) input.starter_notes = draft.starter_notes;
   return input;
@@ -365,6 +374,35 @@ export function AgentsPanel({
               )}
               <EngineModelFields engines={engines} provider={draft.provider} model={draft.model} disabled={busy} hasComputer={agents.some((agent) => agent.id === draft.id && agent.computer != null)} onChange={(provider, model) => setDraft({ ...draft, provider, model })} />
               <p className="text-xs text-zinc-500">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
+              <label className="block text-xs text-zinc-500">
+                Fallback engine when limited
+                <select
+                  aria-label="Fallback engine"
+                  value={draft.fallback_provider && draft.fallback_provider !== draft.provider ? draft.fallback_provider : ""}
+                  disabled={busy}
+                  onChange={(e) => setDraft({ ...draft, fallback_provider: e.target.value || null, fallback_model: null })}
+                  className={`${FIELD} mt-1`}
+                >
+                  <option value="">None</option>
+                  {engines.filter((engine) => engine.id !== draft.provider).map((engine) => (
+                    <option key={engine.id} value={engine.id}>{engine.label}</option>
+                  ))}
+                </select>
+              </label>
+              {draft.fallback_provider && draft.fallback_provider !== draft.provider && (
+                <label className="block text-xs text-zinc-500">
+                  Fallback model
+                  <input
+                    aria-label="Fallback model"
+                    value={draft.fallback_model ?? ""}
+                    onChange={(e) => setDraft({ ...draft, fallback_model: e.target.value || null })}
+                    placeholder="Engine default"
+                    maxLength={200}
+                    className={`${FIELD} mt-1`}
+                  />
+                </label>
+              )}
+              <p className="text-xs text-zinc-500">When the engine refuses a message for a usage or rate limit before starting on it, the message goes to the fallback, if it can do everything the turn needs. The conversation shows the switch.</p>
               <label className="block text-xs text-zinc-500">
                 Workspace folder
                 <input

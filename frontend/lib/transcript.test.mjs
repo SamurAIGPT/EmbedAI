@@ -217,6 +217,22 @@ test('an interrupted turn says why and is not a failure', () => {
   const end = t.items.at(-1);
   assert.equal(end.status, 'interrupted');
   assert.equal(end.reason, 'lease_expired');
+  assert.equal(end.replay, '');
+});
+
+test('an interrupted turn keeps how far it had got, and a switch of engine is shown', () => {
+  reset();
+  const t = run([
+    ev('turn.started', { prompt_text: 'x' }),
+    ev('engine.switched', { from: 'claude', from_label: 'Claude', to: 'codex', to_label: 'Codex', model: 'gpt-5', message: 'Switched this turn to Codex because Claude refused it before starting: limited.' }),
+    ev('turn.interrupted', { reason: 'shutdown', replay: 'before_accept' }),
+  ]);
+  const switched = t.items.find((i) => i.kind === 'engine_switched');
+  assert.equal(switched.from, 'Claude');
+  assert.equal(switched.to, 'Codex');
+  assert.equal(switched.model, 'gpt-5');
+  assert.match(switched.message, /^Switched this turn to Codex/);
+  assert.equal(t.items.at(-1).replay, 'before_accept');
 });
 
 test('a session reset is a notice in the transcript, and earlier items stay', () => {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { canAlwaysAllow } from "@/lib/approvals";
 import { isComputerTool, toolLabel } from "@/lib/computers";
-import { failureNextStep, turnUsageText } from "@/lib/everyday";
+import { failureNextStep, interruptedText, turnUsageText } from "@/lib/everyday";
 import { compactedLabel, recalledLabel } from "@/lib/memory";
 import type { TranscriptItem } from "@/lib/transcript";
 import { Markdown } from "./Markdown";
@@ -263,10 +263,7 @@ const END_TEXT: Record<Item<"turn_end">["status"], (item: Item<"turn_end">) => s
   completed: () => null,
   failed: (i) => i.error || "The run failed.",
   cancelled: () => "You stopped this answer.",
-  interrupted: (i) =>
-    i.reason === "shutdown"
-      ? "The app was closed while the agent was working. This message was not resumed or sent again."
-      : "The app stopped while the agent was working. This message was not resumed or sent again.",
+  interrupted: (i) => interruptedText(i.reason, i.replay),
 };
 
 export function TurnEnd({ item }: { item: Item<"turn_end"> }) {
@@ -348,6 +345,19 @@ export function RecalledChip({ item }: { item: Item<"recalled"> }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// The turn moved to the agent's fallback engine: always shown, never silent.
+export function EngineSwitched({ item }: { item: Item<"engine_switched"> }) {
+  return (
+    <div role="status" className="rounded-md border border-amber-300 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:text-amber-300">
+      <p className="font-medium">
+        Switched engine: {item.from} → {item.to}
+        {item.model ? ` (${item.model})` : ""}
+      </p>
+      {item.message && <p className="mt-1 whitespace-pre-wrap break-words">{item.message}</p>}
     </div>
   );
 }

@@ -454,6 +454,10 @@ export type Agent = {
   memory_enabled?: boolean;
   // Off: no notes or earlier conversations are recalled before a turn.
   recall_enabled?: boolean;
+  // Another engine (and model) a turn moves to when this agent's engine
+  // refuses it for a limit before starting on it (docs/ENGINES.md).
+  fallback_provider?: string | null;
+  fallback_model?: string | null;
   archived_at: string | null;
   created_at?: string;
   updated_at?: string;
@@ -474,6 +478,8 @@ export type AgentInput = {
   pinned?: boolean;
   memory_enabled?: boolean;
   recall_enabled?: boolean;
+  fallback_provider?: string | null;
+  fallback_model?: string | null;
   // Create only: the first contents of the agent's notes.
   starter_notes?: string | null;
 };
@@ -494,6 +500,14 @@ export type Engine = {
   capabilities: { tools: boolean; approvals: boolean; mcp: boolean; images: boolean; resume: boolean; computers: boolean };
   configurable: boolean;
   config: Record<string, unknown> | null;
+  // Set while the engine refuses turns for a usage or rate limit or no credits.
+  limit?: EngineLimit | null;
+};
+export type EngineLimit = {
+  kind: "usage_limit" | "rate_limit" | "credits";
+  resets_at: string | null;
+  since: string;
+  message: string;
 };
 export type EngineConfigInput = {
   command?: string;

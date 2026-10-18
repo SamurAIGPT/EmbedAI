@@ -8,6 +8,7 @@ import {
   SessionReset,
   RecalledChip,
   CompactedMarker,
+  EngineSwitched,
   ToolStep,
   type Remembered,
   TurnEnd,
@@ -100,6 +101,8 @@ export function Conversation({
               return <RecalledChip key={item.key} item={item} />;
             case "compacted":
               return <CompactedMarker key={item.key} item={item} />;
+            case "engine_switched":
+              return <EngineSwitched key={item.key} item={item} />;
           }
         })}
 

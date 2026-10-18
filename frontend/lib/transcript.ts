@@ -62,12 +62,16 @@ export type TranscriptItem =
       errorCode: string;
       // Why a turn was interrupted ("shutdown", "lease_expired", ...).
       reason: string;
+      // How far an interrupted turn had got: before_accept, unknown, after_accept ("" if not said).
+      replay: string;
       // What the engine reported it used, or null when it reported nothing.
       usage: Record<string, unknown> | null;
     }
   | { kind: "session_reset"; key: string; message: string }
   // What was recalled and put in front of the person's message (docs/MEMORY.md).
   | { kind: "recalled"; key: string; turnId: number | null; notes: RecalledNote[]; conversations: RecalledPassage[] }
+  // The turn moved to the agent's fallback engine because its own was limited.
+  | { kind: "engine_switched"; key: string; turnId: number | null; from: string; to: string; model: string; message: string }
   // Earlier messages were folded into a summary for an engine that replays the transcript.
   | { kind: "compacted"; key: string; turnId: number | null; folded: number; summary: string };
 
@@ -292,6 +296,7 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
             error: text(data.error),
             errorCode: text(data.error_code),
             reason: text(data.reason),
+            replay: text(data.replay),
             usage: Object.keys(record(data.usage)).length ? record(data.usage) : null,
           },
         ],
@@ -316,6 +321,23 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
       }));
       return { ...base, items: [...state.items, { kind: "recalled", key, turnId: id, notes, conversations }] };
     }
+
+    case "engine.switched":
+      return {
+        ...base,
+        items: [
+          ...state.items,
+          {
+            kind: "engine_switched",
+            key,
+            turnId: id,
+            from: text(data.from_label) || text(data.from),
+            to: text(data.to_label) || text(data.to),
+            model: text(data.model),
+            message: text(data.message),
+          },
+        ],
+      };
 
     case "context.compacted":
       return {

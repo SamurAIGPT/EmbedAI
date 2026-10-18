@@ -134,8 +134,42 @@ const NEXT_STEP: Record<string, string> = {
   engine_without_computers: "This engine can't use the agent's computer. Pick an engine that can, or remove the computer.",
   length: "The answer hit the engine's length limit. Ask for a shorter answer or continue in a new message.",
   runner_error: "Something went wrong starting the engine. Send again; the backend log has details.",
+  engine_limited: "Wait for the limit to reset, switch this conversation's agent to another engine, or give the agent a fallback engine in the Agents panel.",
 };
 
 export function failureNextStep(errorCode: string): string | null {
   return NEXT_STEP[errorCode] ?? null;
+}
+
+// A short chip for an engine that is limited right now: "Usage limit · resets in 2h 5m".
+export function engineLimitText(
+  limit: { kind: string; resets_at: string | null } | null | undefined,
+  now: number = Date.now(),
+): string | null {
+  if (!limit) return null;
+  const what = limit.kind === "credits" ? "Out of credits" : limit.kind === "rate_limit" ? "Rate limited" : "Usage limit";
+  const at = limit.resets_at ? Date.parse(limit.resets_at) : NaN;
+  if (!Number.isFinite(at) || at <= now) return what;
+  const minutes = Math.max(1, Math.round((at - now) / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  const span = days ? `${days}d${hours ? ` ${hours}h` : ""}` : hours ? `${hours}h${mins ? ` ${mins}m` : ""}` : `${mins}m`;
+  return `${what} · resets in ${span}`;
+}
+
+// What an interrupted turn says, from why it stopped and how far it had got
+// (`replay` on turn.interrupted: before_accept, unknown, after_accept).
+export function interruptedText(reason: string, replay: string): string {
+  const when = reason === "shutdown" ? "The app was closed" : "The app stopped";
+  if (replay === "before_accept") {
+    return `${when} before the engine received this message, so nothing ran. It was not sent again: send it again when you are ready.`;
+  }
+  if (replay === "after_accept") {
+    return `${when} while the agent was working. It may already have run tools or changed files, so this message was not resumed or sent again. Check what it did before sending it again.`;
+  }
+  if (replay === "unknown") {
+    return `${when} just after the engine received this message. It may have started working, so this message was not resumed or sent again. Check before sending it again.`;
+  }
+  return `${when} while the agent was working. This message was not resumed or sent again.`;
 }

@@ -3,6 +3,8 @@ import { afterEach, test } from 'node:test';
 import { api, searchQuery } from './api.ts';
 import {
   attachmentProblem,
+  engineLimitText,
+  interruptedText,
   conversationUsage,
   failureNextStep,
   formatBytes,
@@ -129,4 +131,22 @@ test('sendTurn sends attachment ids only when there are some', async () => {
   await api.sendTurn(1, 'hi');
   await api.sendTurn(1, 'hi', ['a'.repeat(32)]);
   assert.deepEqual(bodies, [{ prompt_text: 'hi' }, { prompt_text: 'hi', attachment_ids: ['a'.repeat(32)] }]);
+});
+
+test('an engine limit reads as a short chip with the time to its reset', () => {
+  const now = Date.parse('2026-10-18T12:00:00Z');
+  assert.equal(engineLimitText(null, now), null);
+  assert.equal(engineLimitText({ kind: 'usage_limit', resets_at: '2026-10-18T14:05:00Z' }, now), 'Usage limit · resets in 2h 5m');
+  assert.equal(engineLimitText({ kind: 'rate_limit', resets_at: '2026-10-18T12:00:20Z' }, now), 'Rate limited · resets in 1m');
+  assert.equal(engineLimitText({ kind: 'credits', resets_at: null }, now), 'Out of credits');
+  assert.equal(engineLimitText({ kind: 'usage_limit', resets_at: '2026-10-20T13:00:00Z' }, now), 'Usage limit · resets in 2d 1h');
+  assert.equal(engineLimitText({ kind: 'usage_limit', resets_at: '2026-10-18T11:00:00Z' }, now), 'Usage limit');
+});
+
+test('an interrupted turn says whether the engine had the message', () => {
+  assert.match(interruptedText('shutdown', 'before_accept'), /^The app was closed before the engine received this message, so nothing ran/);
+  assert.match(interruptedText('lease_expired', 'after_accept'), /may already have run tools/);
+  assert.match(interruptedText('lease_expired', 'unknown'), /just after the engine received this message/);
+  assert.match(interruptedText('shutdown', ''), /^The app was closed while the agent was working/);
+  assert.ok(failureNextStep('engine_limited'));
 });

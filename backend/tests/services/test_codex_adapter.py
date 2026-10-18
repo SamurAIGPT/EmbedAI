@@ -300,7 +300,9 @@ async def test_a_failed_turn_reports_codex_error(crt, sessions, owner, codex):
     await crt.send_turn(thread.id, "hi")
     await finished(sessions, thread.id)
     failed = data_of(await events_of(sessions, thread.id), "turn.failed")[0]
-    assert (failed["error_code"], failed["error"]) == ("codex_error", "usage limit reached")
+    # A limit the engine reports is classified for every engine (engine_errors.py).
+    assert failed["error_code"] == "engine_limited"
+    assert failed["error"].startswith("Codex has reached its usage limit (Codex says: \"usage limit reached\")")
 
 
 async def test_a_crash_mid_turn_fails_with_the_cli_error(crt, sessions, owner, codex):

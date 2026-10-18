@@ -130,7 +130,7 @@ async def test_history_is_sent_with_the_agents_instructions(ort, sessions, owner
 
 @pytest.mark.parametrize(
     "status, code",
-    [(401, "endpoint_refused"), (403, "endpoint_refused"), (404, "endpoint_error"), (429, "endpoint_error"), (500, "endpoint_error")],
+    [(401, "endpoint_refused"), (403, "endpoint_refused"), (404, "endpoint_error"), (429, "engine_limited"), (500, "endpoint_error")],
 )
 async def test_http_errors_map_to_codes_and_the_key_is_removed(ort, sessions, owner, endpoint, status, code, caplog):
     endpoint.handler = lambda r: httpx.Response(status, json={"error": {"message": f"bad key {KEY} for you"}})

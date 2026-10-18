@@ -28,9 +28,18 @@ def historical_fixture(database):
     return ciphertext
 
 
+# Columns later migrations add (empty for these old rows) are left out, so the
+# comparison is about the history that existed before the upgrade.
+ADDED_LATER = {"turn": {"engine_phase"}}
+
+
 def history(database):
     with sqlite3.connect(database) as db:
-        return {name: db.execute(f'SELECT * FROM "{name}" ORDER BY id').fetchall() for name in ("turn", "event", "approval", "user_credential")}
+        out = {}
+        for name in ("turn", "event", "approval", "user_credential"):
+            columns = [row[1] for row in db.execute(f'PRAGMA table_info("{name}")') if row[1] not in ADDED_LATER.get(name, ())]
+            out[name] = db.execute(f'SELECT {", ".join(columns)} FROM "{name}" ORDER BY id').fetchall()
+        return out
 
 
 def test_existing_desktop_history_is_backed_up_upgraded_and_survives_restart(launches, tmp_path):

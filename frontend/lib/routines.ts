@@ -17,6 +17,8 @@ export type ScheduleDraft = {
   days: number[];
   time: string;
   everyMinutes: string;
+  intervalAnchor: string | null;
+  intervalOriginalMinutes: string | null;
   expression: string;
   at: string;
   timezone: string;
@@ -31,7 +33,7 @@ export function browserTimezone(): string {
 }
 
 export function emptySchedule(timezone = browserTimezone()): ScheduleDraft {
-  return { kind: "weekdays", days: [1, 2, 3, 4, 5], time: "09:00", everyMinutes: "60", expression: "0 9 * * 1-5", at: "", timezone };
+  return { kind: "weekdays", days: [1, 2, 3, 4, 5], time: "09:00", everyMinutes: "60", intervalAnchor: null, intervalOriginalMinutes: null, expression: "0 9 * * 1-5", at: "", timezone };
 }
 
 // The editor's draft for a saved routine.
@@ -43,6 +45,10 @@ export function scheduleDraftOf(routine: Pick<Routine, "schedule_kind" | "schedu
     if (typeof spec.time === "string") draft.time = spec.time;
   } else if (routine.schedule_kind === "interval" && typeof spec.every_minutes === "number") {
     draft.everyMinutes = String(spec.every_minutes);
+    if (typeof spec.anchor === "string") {
+      draft.intervalAnchor = spec.anchor;
+      draft.intervalOriginalMinutes = draft.everyMinutes;
+    }
   } else if (routine.schedule_kind === "cron" && typeof spec.expression === "string") {
     draft.expression = spec.expression;
   } else if (routine.schedule_kind === "once" && typeof spec.at === "string") {
@@ -72,8 +78,15 @@ export function scheduleSpec(draft: ScheduleDraft): Record<string, unknown> {
   switch (draft.kind) {
     case "weekdays":
       return { days: [...draft.days].sort((a, b) => a - b), time: draft.time };
-    case "interval":
-      return { every_minutes: Number(draft.everyMinutes) };
+    case "interval": {
+      const spec: Record<string, unknown> = { every_minutes: Number(draft.everyMinutes) };
+      // Keep a saved routine on its original cadence when an unrelated field is edited.
+      // Changing the interval intentionally omits the anchor so the backend starts a new one.
+      if (draft.intervalAnchor && draft.intervalOriginalMinutes === draft.everyMinutes) {
+        spec.anchor = draft.intervalAnchor;
+      }
+      return spec;
+    }
     case "cron":
       return { expression: draft.expression.trim() };
     case "once":

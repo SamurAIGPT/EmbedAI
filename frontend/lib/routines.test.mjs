@@ -40,6 +40,11 @@ test('a draft becomes the spec of its kind only', () => {
 test('a saved routine opens as the same draft', () => {
   const draft = scheduleDraftOf({ schedule_kind: 'weekdays', schedule_spec: { days: [0, 6], time: '18:00' }, timezone: 'UTC' });
   assert.deepEqual([draft.kind, draft.days, draft.time, draft.timezone], ['weekdays', [0, 6], '18:00', 'UTC']);
+  const anchor = '2026-10-18T09:45:00+00:00';
+  const interval = scheduleDraftOf({ schedule_kind: 'interval', schedule_spec: { every_minutes: 60, anchor }, timezone: 'UTC' });
+  assert.equal(interval.intervalAnchor, anchor);
+  assert.deepEqual(scheduleSpec(interval), { every_minutes: 60, anchor });
+  assert.deepEqual(scheduleSpec({ ...interval, everyMinutes: '120' }), { every_minutes: 120 });
   const once = scheduleDraftOf({ schedule_kind: 'once', schedule_spec: { at: '2026-10-18T03:30:00+00:00' }, timezone: 'Asia/Kolkata' });
   assert.equal(once.at, '2026-10-18T09:00');
   assert.equal(localInputValue('not a date', 'UTC'), '');

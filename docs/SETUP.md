@@ -178,6 +178,8 @@ After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` and the desk
 
 After updating, run `uv run alembic upgrade head` (`scripts/dev.sh` does). It adds the `agent.memory_enabled` column (on for existing agents) and changes nothing else.
 
+**Topic notes, recall and compaction.** Under an agent's notes, **Topic notes** edits `memory/<topic>.md` files (longer notes about one subject; only their names load into every conversation), **Proposed** lists lines picked from your quiet conversations for you to accept or reject, and **History** lists changes with **Undo**. **Recall before each message** (on by default) adds matching topic-note and earlier-conversation passages in front of your message and shows a **Recalled** chip in the transcript. On an OpenAI-compatible endpoint, give its model's context window with `context_tokens` (`PUT /api/v1/engines/openai_compat/config`) so long conversations are folded before they overflow; the transcript then shows **Earlier messages summarized**. Run `uv run alembic upgrade head` for the `agent.recall_enabled` column. Details in [MEMORY.md](MEMORY.md).
+
 ## Routines
 
 A routine runs a prompt as a new conversation of one of your named agents on a schedule, by webhook, or when you press **Run now** (Chat page → **Routines**). It needs the same setup as the [Chat page](#the-chat-page) (`LOCAL_EXECUTION_ENABLED=true` and a ready engine) and no Boat key. The backend must be running: the scheduler is a background loop in it, so a stopped backend or a sleeping computer runs nothing, and occurrences it misses follow the catch-up rule. Full behaviour, states and API: [ROUTINES.md](ROUTINES.md).

@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # Boat bills sandbox creation to the caller's personal account unless a
     # team/org is explicitly attached to the request.
     BOAT_ORG_ID : str = ""
+    # Optional trusted PEM CA bundle, also supported through backend/.env.
+    SSL_CERT_FILE: str = ""
 
     # Opt-in web search and page fetching for Claude tasks, via HTTP MCP.
     PARALLEL_SEARCH_ENABLED: bool = False

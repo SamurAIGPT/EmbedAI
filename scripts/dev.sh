@@ -9,6 +9,12 @@
 #   ./scripts/dev.sh --no-bot        # skip the Telegram bot
 #   ./scripts/dev.sh --no-frontend   # skip the web UI
 
+# An explicit `sh dev.sh` ignores the shebang. Re-enter Bash before using
+# Bash-specific syntax on systems where /bin/sh is dash.
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,10 +24,16 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 
 RUN_BOT=1
 RUN_FRONTEND=1
+BOT_SKIP_REASON="--no-bot"
 for arg in "$@"; do
   case "$arg" in
     --no-bot) RUN_BOT=0 ;;
     --no-frontend) RUN_FRONTEND=0 ;;
+    --help|-h)
+      echo "Usage: $0 [--no-bot] [--no-frontend]"
+      echo "Prepares local configuration and starts the API, optional bot, and web UI."
+      exit 0
+      ;;
     *)
       echo "Unknown option: $arg" >&2
       exit 1
@@ -33,28 +45,56 @@ if [ "$RUN_FRONTEND" -eq 1 ] && [ ! -d "$FRONTEND_DIR" ]; then
   RUN_FRONTEND=0
 fi
 
-cd "$BACKEND_DIR"
-
-if [ ! -f .env ]; then
-  echo "Missing backend/.env. Copy backend/.env.example to backend/.env and fill in the values first." >&2
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Missing required tool: uv. Install it before starting development." >&2
+  exit 1
+fi
+if [ "$RUN_FRONTEND" -eq 1 ] && ! command -v npm >/dev/null 2>&1; then
+  echo "Missing required tool: npm. Install Node.js or rerun with --no-frontend." >&2
   exit 1
 fi
 
-# Load .env into this shell so we can sanity-check required vars up front.
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
+cd "$BACKEND_DIR"
+
+if [ ! -f .env ]; then
+  echo "==> Creating backend/.env from .env.example"
+  (umask 077; cp .env.example .env)
+fi
+
+echo "==> Installing backend dependencies (uv sync)"
+uv sync
+
+echo "==> Preparing local development configuration"
+# The helper prints only shell-quoted export statements; dotenv values remain data.
+env_exports="$(uv run --no-sync python "$SCRIPT_DIR/dev-env.py" "$BACKEND_DIR/.env")"
+eval "$env_exports"
+unset env_exports
+echo "==> Using CA certificates from $SSL_CERT_FILE"
+
+if [ -n "${BOAT_API_KEY:-}" ]; then
+  echo "==> Checking Boat HTTPS certificates"
+  uv run --no-sync python "$SCRIPT_DIR/dev-env.py" --check-tls
+else
+  echo "==> BOAT_API_KEY is not set. Sandbox tasks require a Boat API key in backend/.env."
+fi
 
 missing=()
 [ -z "${TOKEN_ENCRYPTION_KEYS:-}" ] && missing+=("TOKEN_ENCRYPTION_KEYS")
 # Boat is optional. If a Boat key is set, its permission hook needs both of these.
 if [ -n "${BOAT_API_KEY:-}" ]; then
-  [ -z "${HOOK_TOKEN:-}" ] && missing+=("HOOK_TOKEN (required with BOAT_API_KEY)")
-  [ -z "${PERMISSION_HOOK_BASE_URL:-}" ] && missing+=("PERMISSION_HOOK_BASE_URL (required with BOAT_API_KEY)")
+  if [ -z "${HOOK_TOKEN:-}" ] || [ "$HOOK_TOKEN" = "your-secret-token-here" ]; then
+    missing+=("HOOK_TOKEN (required with BOAT_API_KEY)")
+  fi
+  if [ -z "${PERMISSION_HOOK_BASE_URL:-}" ] || [ "$PERMISSION_HOOK_BASE_URL" = "your-public-url-here" ]; then
+    missing+=("PERMISSION_HOOK_BASE_URL (required with BOAT_API_KEY)")
+  fi
 fi
 if [ "$RUN_BOT" -eq 1 ] && [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
-  missing+=("TELEGRAM_BOT_TOKEN (or rerun with --no-bot)")
+  RUN_BOT=0
+  BOT_SKIP_REASON="TELEGRAM_BOT_TOKEN is not set"
+elif [ "$RUN_BOT" -eq 1 ] && [ -z "${BOAT_API_KEY:-}" ]; then
+  RUN_BOT=0
+  BOT_SKIP_REASON="BOAT_API_KEY is not set"
 fi
 
 if [ "${#missing[@]}" -gt 0 ]; then
@@ -63,7 +103,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
-# Which database to use. This mirrors Settings.DATABASE_KIND in
+# Which database to use. This mirrors Settings.DATABASE_BACKEND in
 # backend/app/core/config.py: SQLite only when DATABASE_BACKEND=sqlite is set;
 # otherwise PostgreSQL, as before, so an existing setup never changes database.
 db_backend="$(printf '%s' "${DATABASE_BACKEND:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
@@ -77,11 +117,29 @@ case "$db_backend" in
 esac
 
 if [ "$USE_POSTGRES" -eq 1 ]; then
+  for tool in docker; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "Missing required tool: $tool. Install it or select DATABASE_BACKEND=sqlite." >&2
+      exit 1
+    fi
+  done
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose is unavailable. Install the Docker Compose plugin." >&2
+    exit 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is unavailable. Start Docker and check that your user can access it." >&2
+    exit 1
+  fi
   echo "==> Starting Postgres (docker compose)"
   docker compose up -d
 
   echo "==> Waiting for Postgres to be healthy"
   POSTGRES_CONTAINER="$(docker compose ps -q postgres)"
+  if [ -z "$POSTGRES_CONTAINER" ]; then
+    echo "Postgres container was not created by Docker Compose." >&2
+    exit 1
+  fi
   for _ in $(seq 1 30); do
     status="$(docker inspect --format='{{.State.Health.Status}}' "$POSTGRES_CONTAINER" 2>/dev/null || echo "starting")"
     [ "$status" = "healthy" ] && break
@@ -94,9 +152,6 @@ if [ "$USE_POSTGRES" -eq 1 ]; then
 else
   echo "==> Using SQLite (no Docker needed)"
 fi
-
-echo "==> Installing backend dependencies (uv sync)"
-uv sync
 
 echo "==> Running migrations (alembic upgrade head)"
 uv run alembic upgrade head
@@ -124,7 +179,7 @@ if [ "$RUN_BOT" -eq 1 ]; then
   uv run python -m app.telegram_bot &
   pids+=("$!")
 else
-  echo "==> Skipping Telegram bot (--no-bot)"
+  echo "==> Skipping Telegram bot ($BOT_SKIP_REASON)"
 fi
 
 if [ "$RUN_FRONTEND" -eq 1 ]; then

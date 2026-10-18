@@ -1,0 +1,44 @@
+name: Development startup
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/dev-start.yml
+      - scripts/**
+      - backend/.env.example
+      - backend/app/core/config.py
+      - backend/app/main.py
+      - backend/app/services/box_operations.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/dev-start.yml
+      - scripts/**
+      - backend/.env.example
+      - backend/app/core/config.py
+      - backend/app/main.py
+      - backend/app/services/box_operations.py
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@v10
+      - name: Install locked backend dependencies
+        run: uv sync --project backend --locked
+      - name: Check shell syntax
+        run: |
+          bash -n scripts/dev.sh
+          sh -n scripts/dev.sh
+      - name: Test development startup
+        run: uv run --project backend --no-sync python -m unittest discover -s scripts -p 'test_*.py' -v

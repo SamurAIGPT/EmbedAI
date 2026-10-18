@@ -316,8 +316,16 @@ async def test_an_expiring_ask_never_overwrites_an_answer(sessions, owner):
     assert (stored.status, decision) in {("answered", "allow"), ("expired", "deny")}
 
 
-async def test_sync_reads_current_data_even_on_a_long_lived_session(sessions, owner):
+async def test_sync_reads_current_data_even_on_a_long_lived_session(
+    sessions, owner, monkeypatch
+):
     from app.services import task_execution_service
+
+    monkeypatch.setattr(
+        task_execution_service.ascii_box_service,
+        "command_status",
+        lambda *_args: SimpleNamespace(running=True, stdout=""),
+    )
 
     async with sessions() as seed:
         task = new_task(owner, status="waiting_approval", prompt_id="1")

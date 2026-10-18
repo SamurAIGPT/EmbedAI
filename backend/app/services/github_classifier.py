@@ -29,8 +29,8 @@ _BUCKET_RANK = {"read": 0, "create": 1, "publish": 2}
 _GLOBAL_FLAGS_WITH_SEPARATE_VALUE = {"-C", "-c", "--namespace"}
 
 
-def _git_verb(tokens: list[str]) -> str | None:
-    """The subcommand in a single `git ...` invocation's tokens, skipping
+def _git_invocation(tokens: list[str]) -> list[str] | None:
+    """The subcommand and its arguments in one invocation, skipping
     any leading global flags (and their values) before it."""
     if not tokens or tokens[0] != "git":
         return None
@@ -44,11 +44,11 @@ def _git_verb(tokens: list[str]) -> str | None:
             else:
                 i += 1
             continue
-        return token
+        return tokens[i:]
     return None
 
 
-def _git_verbs(segment: str, depth: int = 0):
+def _git_invocations(segment: str, depth: int = 0):
     """Every git subcommand invoked in one command segment: `git x`, but also
     `sudo git x`, `env A=1 git x`, `xargs git x`, and a quoted script such as
     `bash -c 'git x'` (searched recursively, a few levels deep)."""
@@ -61,13 +61,28 @@ def _git_verbs(segment: str, depth: int = 0):
 
     for k, token in enumerate(tokens):
         if token.rsplit("/", 1)[-1] == "git":
-            verb = _git_verb(["git", *tokens[k + 1:]])
-            if verb is not None:
-                yield verb
+            invocation = _git_invocation(["git", *tokens[k + 1:]])
+            if invocation is not None:
+                yield invocation
         elif depth < 3 and " " in token and "git" in token:
             # An argument that is itself a script (bash -c "git push").
             for inner in _SEGMENT_SPLIT_RE.split(token):
-                yield from _git_verbs(inner, depth + 1)
+                yield from _git_invocations(inner, depth + 1)
+
+
+def _is_read_only(invocation: list[str]) -> bool:
+    """Branch and remote mix inspection and mutation under the same verb."""
+    verb, *args = invocation
+    if verb == "branch":
+        listing_flags = {"--list", "-l", "--show-current", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose"}
+        # A positional name creates a branch unless listing was requested.
+        # Unknown flags default to mutation, including --delete/-D and --move.
+        return all(arg in listing_flags or (not arg.startswith("-") and any(flag in args for flag in ("--list", "-l"))) for arg in args)
+    if verb == "remote":
+        if not args or all(arg in {"-v", "--verbose"} for arg in args):
+            return True
+        return args[0] in {"get-url", "show"}
+    return verb in _READ_VERBS
 
 
 def classify_bash_command(command: str) -> tuple[str, str, str] | None:
@@ -84,10 +99,11 @@ def classify_bash_command(command: str) -> tuple[str, str, str] | None:
     matched_verb: str | None = None
 
     for segment in _SEGMENT_SPLIT_RE.split(command):
-        for verb in _git_verbs(segment):
+        for invocation in _git_invocations(segment):
+            verb = invocation[0]
             if verb in _PUBLISH_VERBS:
                 candidate = "publish"
-            elif verb in _READ_VERBS:
+            elif _is_read_only(invocation):
                 candidate = "read"
             else:
                 candidate = "create"

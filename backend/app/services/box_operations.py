@@ -35,6 +35,7 @@ class ASCIIBoxService:
         return Configuration(
             host=settings.BOAT_BASE_URL,
             access_token=settings.BOAT_API_KEY,
+            ssl_ca_cert=settings.SSL_CERT_FILE or None,
         )
 
     def create_box(self, ttl_seconds: int = 1800):

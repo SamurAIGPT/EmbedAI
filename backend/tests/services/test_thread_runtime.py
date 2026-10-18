@@ -518,7 +518,7 @@ async def test_stopping_twice_ends_the_turn_once(rt, sessions, cli, owner):
     assert ends == ["turn.cancelled"]
 
 
-async def test_a_turn_that_finishes_on_its_own_just_as_stop_arrives_keeps_its_result(rt, sessions, owner):
+async def test_a_turn_that_finishes_on_its_own_just_as_stop_arrives_keeps_its_result(rt, sessions, owner, tmp_path):
     import asyncio
 
     release = asyncio.Event()
@@ -534,7 +534,7 @@ async def test_a_turn_that_finishes_on_its_own_just_as_stop_arrives_keeps_its_re
             return TurnOutcome("succeeded", result="done anyway", session_state="active")
 
     rt.adapters = {"claude": SlowThenDone()}
-    thread = await new_thread(sessions, owner)
+    thread = await new_thread(sessions, owner, workspace_path=str(tmp_path))
     turn = await rt.send_turn(thread.id, "quick one")
     await rt.stop_turn(thread.id)  # the stop is requested ...
     release.set()  # ... but the provider had already finished

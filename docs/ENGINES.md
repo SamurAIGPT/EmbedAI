@@ -195,7 +195,15 @@ reset time, and the message "Switched this turn to X because Y refused it
 before starting: ...") shown as its own notice, and the same turn runs on the
 fallback. The conversation stays on its own engine: the fallback's session and
 state are not kept, so the next message tries the conversation's engine again.
-Otherwise the turn fails with `engine_limited`, the reason the fallback could
+For an engine with a native session, that next message includes the missing
+fallback exchanges as explicitly framed historical records, including partial
+output and tool records from failed fallback turns. This handoff is derived
+from the stored transcript and survives a backend restart. It grants no new
+permission and does not rerun a turn. A successful turn on the original engine
+consumes the handoff; an explicit session reset discards it. Records over
+24,000 characters use a bounded excerpt summary; the full transcript stays
+stored. A replaying fallback uses its own context budget and token estimate.
+When a switching condition fails, the turn fails with `engine_limited`, the reason the fallback could
 not take it, and the next step. There is never a silent switch, and a limit is
 never retried on the same engine.
 

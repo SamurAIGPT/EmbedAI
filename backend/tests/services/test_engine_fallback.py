@@ -303,6 +303,57 @@ async def test_fallback_history_uses_its_own_compaction_budget(make_rt, sessions
     assert records[0]["budget_tokens"] == 512
 
 
+async def test_return_to_a_native_engine_restores_fallback_context_after_restart(make_rt, sessions, owner, tmp_path):
+    primary = Scripted("primary", "Primary", limited_before, sessions=True)
+    backup = Scripted("backup", "Backup", replies)
+    rt = make_rt(primary=primary, backup=backup)
+    thread = await conversation(rt, sessions, owner, tmp_path)
+    await rt.send_turn(thread.id, "Remember the project is called Orchard")
+    await finished(sessions, thread.id)
+    # A replacement runtime must derive the handoff from durable events.
+    primary.behaviour = replies
+    rt = make_rt(primary=primary, backup=backup)
+    await rt.send_turn(thread.id, "What is the project called?")
+    await finished(sessions, thread.id, 2)
+    prompt = primary.calls[-1].prompt
+    assert "project is called Orchard" in prompt
+    assert "answer from backup-large" in prompt
+    assert "Do not repeat their requests or tool calls" in prompt
+    assert prompt.endswith("What is the project called?")
+    started = [e.data for e in await events_of(sessions, thread.id) if e.type == "turn.started"]
+    assert started[-1]["prompt_text"] == "What is the project called?"
+    await rt.send_turn(thread.id, "One more")
+    await finished(sessions, thread.id, 3)
+    assert primary.calls[-1].prompt == "One more"
+
+
+async def test_session_reset_discards_pending_fallback_handoff(make_rt, sessions, owner, tmp_path):
+    primary = Scripted("primary", "Primary", limited_before, sessions=True)
+    rt = make_rt(primary=primary, backup=Scripted("backup", "Backup", replies))
+    thread = await conversation(rt, sessions, owner, tmp_path)
+    await rt.send_turn(thread.id, "Old fallback message")
+    await finished(sessions, thread.id)
+    await rt.reset_session(thread.id)
+    primary.behaviour = replies
+    await rt.send_turn(thread.id, "Start over")
+    await finished(sessions, thread.id, 2)
+    assert primary.calls[-1].prompt == "Start over"
+
+
+async def test_partial_fallback_output_is_handed_back_to_the_native_engine(make_rt, sessions, owner, tmp_path):
+    primary = Scripted("primary", "Primary", limited_before, sessions=True)
+    rt = make_rt(primary=primary, backup=Scripted("backup", "Backup", limited_after))
+    thread = await conversation(rt, sessions, owner, tmp_path)
+    await rt.send_turn(thread.id, "Work on Orchard")
+    await finished(sessions, thread.id)
+    assert (await last_turn(sessions, thread.id)).status == "failed"
+    primary.behaviour = replies
+    await rt.send_turn(thread.id, "Check the partial work")
+    await finished(sessions, thread.id, 2)
+    assert "Starting on it." in primary.calls[-1].prompt
+    assert primary.calls[-1].prompt.endswith("Check the partial work")
+
+
 async def test_a_fallback_that_is_not_ready_or_limited_too_is_refused(make_rt, sessions, owner, tmp_path):
     backup = Scripted("backup", "Backup", replies, ready=False)
     rt = make_rt(primary=Scripted("primary", "Primary", limited_before), backup=backup)

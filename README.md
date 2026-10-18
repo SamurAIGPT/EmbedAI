@@ -1,19 +1,21 @@
 # Open Dots: Open-Source Alternative to Paid AI Agents
 
-**Open Dots is an open-source, self-hosted alternative for people exploring
-paid AI agent products such as OpenAI Dots, Meta Muse, Grok Bot, Instinct,
-Manus Cue, Claude Cowork, and ChatGPT agent.** The current prototype focuses
-on coding-agent workflows: run Claude Code tasks from Telegram or the web,
-review risky actions, connect GitHub, and schedule recurring prompts. Its
-features differ from those services; it is not a feature-for-feature
-replacement.
+**Open Dots is an open-source, self-hosted workspace for running coding-agent
+tasks, aimed at people exploring paid AI agent products such as OpenAI Dots,
+Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent.**
+Today it wraps the Claude Code CLI: run tasks from Telegram or the web, review
+risky actions before they run, connect GitHub, schedule recurring prompts, and
+chat with a locally signed-in Claude from a desktop app. It supports Claude
+only, has named agents but no multi-agent features yet, and is not a
+feature-for-feature replacement for those services. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for what is planned.
 
 Both interfaces use the same API, sandbox, and credentials for each user.
 
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Dots demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Dots demo video thumbnail — click to watch on YouTube" width="720"></a></p>
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Dots demo on YouTube</b></a></p>
 
-> **Status:** Prototype / active development. See [Known limitations](#known-limitations) before running it for others.
+> **Status:** Active development. See [Known limitations](#known-limitations) before running it for others.
 
 ## Contents
 
@@ -34,23 +36,25 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 - Connect Claude through its OAuth login flow and optionally connect a user's GitHub account.
 - Ask for approval before risky actions such as file writes, shell commands, and Git pushes.
 - Continue completed tasks in the same Claude conversation from the web UI.
-- Schedule recurring prompts and receive run results in Telegram.
-- Store user credentials encrypted and manage sandbox, task, permission, and schedule records in PostgreSQL.
+- Schedule recurring prompts and receive run results in Telegram (Boat sandboxes).
+- Run routines on your local agents (no Boat): cron, weekday, interval or one-off schedules with timezones, webhook triggers, run history, missed-run tracking, restart recovery and an in-app notification feed (see [docs/ROUTINES.md](docs/ROUTINES.md)).
+- Keep durable local conversations (threads) with streaming answers, a tool-call timeline, inline approvals, Stop, and rename/archive/delete, using your own signed-in `claude` CLI (opt-in; see [Local Claude](#local-claude-experimental)).
+- Run as a desktop app from a source checkout, or from unsigned installers built by the release workflow (experimental; see [Desktop app](#desktop-app-from-source-experimental)).
+- Store user credentials encrypted and manage sandbox, task, permission, thread, and schedule records in PostgreSQL (default) or SQLite (experimental, no Docker).
 
 ## Why Open Dots
 
-Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity.
+Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity. Read [Known limitations](#known-limitations) before running it for others.
 
 ## Quick start
 
 ### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python dependency management
-- [Node.js](https://nodejs.org/) (18+) and npm, for the web UI
-- [Docker](https://docs.docker.com/get-docker/) (for Postgres)
+- [Node.js](https://nodejs.org/) (20.9+) and npm, for the web UI (required by Next.js 16)
+- [Docker](https://docs.docker.com/get-docker/) (for Postgres; not needed with the experimental SQLite option, see `DATABASE_BACKEND` below)
 - Bash (Git Bash on Windows works fine) to use `scripts/dev.sh`
-- A [Boat API key](https://docs.boat.dev/api-keys) for sandbox creation (optional
-  when starting the API and web UI for local development). If
+- Optionally, a [Boat API key](https://docs.boat.dev/api-keys) for sandbox creation. If
   it belongs to a personal account that also has an org/team on a paid plan,
   you also need
   that org's id (see `BOAT_ORG_ID` below) — otherwise sandbox creation bills
@@ -65,58 +69,41 @@ Open Dots gives individuals and developers an inspectable workspace they can run
   for any task that triggers a risky action (writing files, shell commands,
   etc.) to actually get a decision instead of hanging until it times out.
 
-### Automatic environment setup
+### Configure the environment
 
-`scripts/dev.sh` prepares the local environment on the first run:
+`scripts/dev.sh` creates `backend/.env` from the example on first run, saves a
+private encryption key and webhook token, and preserves existing secrets on
+later runs. It also selects a trusted CA bundle for outbound HTTPS. Set
+`SSL_CERT_FILE` in your shell or in `backend/.env` to use a custom PEM bundle;
+certificate and hostname verification remain enabled. When Boat is configured,
+the script checks its TLS certificate before starting services, without sending
+credentials or creating a sandbox. You can start the API and web UI without a
+Boat key; sandbox features then remain unavailable.
 
-- Copies `backend/.env.example` to `backend/.env` with private file permissions.
-- Installs backend dependencies with `uv`, which also supplies the required Python.
-- Generates and saves `TOKEN_ENCRYPTION_KEYS` and a random `HOOK_TOKEN` when
-  missing; replaces the example webhook token. Existing secrets and encryption
-  key rotation lists are preserved, so stored credentials remain decryptable.
-- Loads dotenv values as data, including quoted values with spaces or special
-  characters. Variables already exported in your shell take precedence.
-- Selects a valid CA certificate bundle for outbound HTTPS and exports
-  `SSL_CERT_FILE`. It uses OpenSSL's default or an available system bundle
-  (including Bazzite/Fedora paths), falling back to certifi when needed. Explicit
-  `SSL_CERT_FILE` settings are preserved and validated; certificate and hostname
-  verification stay enabled. Detected paths are not saved to `.env`.
-- Checks the Boat TLS handshake before starting services when `BOAT_API_KEY`
-  is set. This sends no API credentials and creates no sandbox. If HTTPS
-  inspection is enabled on your network, obtain its trusted CA certificate
-  from your administrator and include it in the bundle selected by
-  `SSL_CERT_FILE` (export it in your shell or set it in `backend/.env`).
-- Starts the API and web UI without a Boat key, and skips the Telegram bot when
-  its token is missing. Sandbox tasks require a real Boat API key. Without one,
-  sandbox requests return HTTP 503 with setup instructions and make no Boat calls.
-- Copies `frontend/.env.example` to `.env.local` when needed.
-
-Add external credentials to `backend/.env` when you need those integrations.
-Keep the generated encryption key: replacing it prevents decryption of existing
-stored credentials. Invalid existing encryption keys stop startup instead of
-being replaced.
-
-For manual startup, create the environment file yourself:
+For manual setup, copy the example yourself:
 
 ```bash
 cp backend/.env.example backend/.env
 ```
 
-Configuration in `backend/.env`:
+Fill in `backend/.env`:
 
 | Var | Required | Notes |
 |---|---|---|
-| `BOAT_API_KEY` | for sandbox tasks | From the Boat dashboard. The local API and web UI can start without it. |
+| `BOAT_API_KEY` | no (optional provider) | From the Boat dashboard. Leave empty to run without Boat (for example with only local Claude); anything that needs a Boat sandbox then answers "Boat is not configured". Without Boat the app is chat-only unless you enable local tools (`LOCAL_TOOLS_ENABLED`, see [SETUP.md](docs/SETUP.md#tools-and-approvals-local-claude)); schedules, Telegram tasks and GitHub push need Boat. If set, `HOOK_TOKEN` and `PERMISSION_HOOK_BASE_URL` are also required. |
 | `BOAT_BASE_URL` | no | Defaults to `https://boat.dev/api/v1`. |
 | `BOAT_ORG_ID` | see note above | Team/org id (e.g. `team_...`) to attach to sandbox creation so it bills the org instead of your personal account. |
+| `PARALLEL_SEARCH_ENABLED` | no | Set to `true` to add free Parallel web search and page fetching to Claude tasks. Defaults to `false`. See [Optional web search](#optional-web-search). |
 | `TOKEN_ENCRYPTION_KEYS` | generated by `dev.sh` | Persistent Fernet key used to encrypt stored credentials. For manual setup, generate with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Comma-separate multiple keys to support rotation. |
-| `TELEGRAM_BOT_TOKEN` | only for the bot / Telegram linking | From @BotFather. |
+| `TELEGRAM_BOT_TOKEN` | only for the bot / Telegram linking | From @BotFather. `dev.sh` skips the bot when this or the Boat key is missing. |
 | `TELEGRAM_BOT_USERNAME` | no | Your bot's `@username` (no `@`), shown as a clickable link in the web UI. Cosmetic only. |
 | `FRONTEND_ORIGINS` | no | Comma-separated origins allowed to call the API from a browser. Defaults to `http://localhost:3000`. |
-| `HOOK_TOKEN` | generated by `dev.sh` | Shared secret the sandbox must present when requesting permission decisions. For manual setup, generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
-| `PERMISSION_HOOK_BASE_URL` | for sandbox permission callbacks | The public URL from the ngrok-or-similar prerequisite above, no trailing slash — e.g. `https://your-tunnel.ngrok-free.app`. Baked into each sandbox's `.claude/settings.json` at task start. |
+| `HOOK_TOKEN` | generated by `dev.sh` | Shared secret the permission hook's caller (the sandbox) must present, so only your backend's own sandboxes can submit permission decisions. For manual setup, generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `PERMISSION_HOOK_BASE_URL` | only with Boat | The public URL from the ngrok-or-similar prerequisite above, no trailing slash — e.g. `https://your-tunnel.ngrok-free.app`. Baked into each sandbox's `.claude/settings.json` at task start. |
 | `POSTGRES_*` | no | Defaults match `backend/docker-compose.yml`. |
-| `SSL_CERT_FILE` | no | Trusted PEM CA bundle for outbound HTTPS. Detected automatically by `dev.sh`; set it explicitly for a custom CA. |
+| `DATABASE_BACKEND` | no | Empty (the default) means PostgreSQL. Set `sqlite` to use a local SQLite file instead (experimental, no Docker). An existing setup never changes database unless you set this. See [docs/SETUP.md](docs/SETUP.md#database). |
+| `SQLITE_PATH` | no | SQLite file when `DATABASE_BACKEND=sqlite`. Defaults to `~/.open-dots/open-dots.db`. |
+| `SSL_CERT_FILE` | no | Trusted PEM bundle for outbound HTTPS. Detected by `dev.sh`; set explicitly to add a custom CA. |
 
 The web UI (`frontend/`) has its own `.env.example` — `scripts/dev.sh` copies
 it to `.env.local` automatically on first run. Copy it yourself if you're
@@ -129,14 +116,13 @@ backend if you're not using the defaults.
 ./scripts/dev.sh
 ```
 
-From the repo root, this prepares configuration, installs backend dependencies,
-starts Postgres via Docker, waits for it to be healthy, installs frontend
-dependencies when needed, runs migrations, and
+From the repo root, this prepares local configuration, starts Postgres via
+Docker when PostgreSQL is selected, waits for it to be healthy, installs
+backend and frontend dependencies, runs migrations, and
 starts the FastAPI app (`http://127.0.0.1:8000`, docs at `/docs`), the
-Telegram bot when configured, and the web UI (`http://127.0.0.1:3000`). You can
-also run `sh dev.sh` from the `scripts/` directory; the script re-enters Bash
-when needed and resolves paths from its own location. Ctrl+C stops
-everything it started (Postgres keeps running — `docker compose -f
+Telegram bot when configured, and the web UI (`http://127.0.0.1:3000`). Without
+a Boat key, the API and web UI still start, while sandbox tasks stay unavailable.
+Ctrl+C stops everything it started (Postgres keeps running — `docker compose -f
 backend/docker-compose.yml down` to stop it too).
 
 Skip pieces you don't need:
@@ -145,19 +131,6 @@ Skip pieces you don't need:
 ./scripts/dev.sh --no-bot        # API + web UI only
 ./scripts/dev.sh --no-frontend   # API + bot only
 ```
-
-#### Test development startup
-
-```bash
-uv run --project backend python -m unittest discover -s scripts -p 'test_*.py' -v
-```
-
-The tests use temporary directories and simulated Docker, uv, and npm commands.
-They cover initial setup, repeated startup, preserved secrets, dotenv quoting,
-optional integrations, missing tools, and startup failures without launching
-containers or contacting external services. A local HTTPS regression test
-checks that selected CA roots work and untrusted certificates and incorrect
-hostnames are rejected.
 
 #### Run the pieces manually
 
@@ -201,10 +174,11 @@ The Telegram bot walks a user through:
 
 The web UI covers the same ground from a browser:
 
-1. **Get started** — either continue as a guest (a local id, no Telegram
-   needed) or link Telegram: the page generates a one-time code, you send
-   `/link <code>` to the bot, and that links the browser to your real
-   Telegram user id instead.
+1. **Get started** — either continue as a guest (an id the server makes, no
+   Telegram needed) or link Telegram: the page generates a one-time code, you
+   send `/link <code>` to the bot, and the server links your signed-in session
+   to your real Telegram user id instead. (Sign in first: the web UI asks for
+   the owner passphrase, see [docs/AUTH.md](docs/AUTH.md).)
 2. **Connect Claude** — same OAuth flow as `/connect`, driven by REST
    endpoints instead of chat messages (get-or-create the sandbox, start
    login, paste the code back into the page).
@@ -239,7 +213,8 @@ In Telegram:
    must be running for it to actually fire — see [Scheduling
    tasks](#scheduling-tasks).
 
-In the web UI (`http://localhost:3000`):
+In the web UI (`http://localhost:3000`), after setting the owner passphrase
+on first start (or signing in):
 
 1. **Get started** — click "Continue without Telegram" for a standalone
    guest session, or "Link Telegram instead" and send `/link <code>` to the
@@ -255,6 +230,21 @@ In the web UI (`http://localhost:3000`):
 5. Check **"Repeat this on a schedule"**, pick Daily and a time a couple of
    minutes out, and click "Create schedule". It appears in the schedules
    list below with its next run time; pause/resume/delete it from there.
+
+### Optional web search
+
+Set `PARALLEL_SEARCH_ENABLED=true` in `backend/.env` and restart the backend
+and bot processes to make [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+available to new Claude task launches, including replies and scheduled runs.
+It connects over HTTP to `https://search.parallel.ai/mcp` and provides
+`web_search` and `web_fetch` without a Parallel account or API key. Anonymous
+search uses Fast mode and is intended for light use, with rate limits.
+
+For example, submit: “Use Parallel to find the latest Python release, then
+fetch its release page and summarize the changes.” Approve the MCP tool calls
+through the existing permission prompts when asked. Claude still needs its
+usual connected account. The setting is off by default and leaves saved MCP
+configuration in place.
 
 ## Scheduling tasks
 
@@ -319,12 +309,20 @@ contributions welcome.
 ## Architecture
 
 ```text
-Telegram bot ─┐
-              ├── FastAPI backend ── PostgreSQL
-Next.js web UI┘          ├── disposable sandboxes (Boat provider)
-                         ├── permission prompts and rules
-                         └── task and schedule services
+Telegram bot ─┐                         ┌── PostgreSQL (default) or SQLite
+Next.js web UI├── FastAPI backend ──────┤
+Desktop app ──┘      │                  └── encrypted credentials
+ (Electron,          ├── Boat sandboxes (optional): tasks, schedules, GitHub push
+  local Claude)      ├── permission prompts and rules (git command classifier)
+                     ├── task and schedule services (polling loops in the API process)
+                     └── threads: local `claude` CLI turns, events stored then
+                         streamed over SSE, approvals, resume after restart
 ```
+
+Boat sandboxes are optional. Without a Boat key the app is chat-only unless
+local tools are enabled, and schedules, Telegram tasks and GitHub push are
+unavailable. The desktop app runs local Claude only. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the target design.
 
 ## Project layout
 
@@ -333,7 +331,37 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
   for backend-specific details (REST endpoints, env vars, DB models).
 - [frontend/](frontend) — Next.js web UI. See
   [frontend/README.md](frontend/README.md) for frontend-specific notes.
-- [scripts/dev.sh](scripts/dev.sh) — one-command dev environment for both.
+- [desktop/](desktop) — Electron desktop app (local Claude, SQLite, no `.env`).
+- [scripts/dev.sh](scripts/dev.sh) — one-command dev environment for the backend, bot and web UI.
+- [.github/workflows/](.github/workflows) — CI (backend on SQLite and PostgreSQL, frontend lint/build, desktop tests) and the tag-triggered installer build.
+
+### Local Claude (experimental)
+
+Optionally run prompts through your own signed-in `claude` CLI on the
+machine running the backend, with no Boat sandbox. It is off by default and
+only usable from that machine. The answer streams into the page as it is written.
+It is chat-only unless you set `LOCAL_TOOLS_ENABLED=true`, which lets Claude
+read and write files in its workspace folder and run commands, each call waiting
+for your Allow or Deny in the page (an allowed command runs as you, with no
+sandbox). See [docs/SETUP.md](docs/SETUP.md#local-claude-experimental).
+
+A separate set of endpoints, `/api/v1/threads`, keeps conversations in the
+database so they continue and survive a restart. The Chat page (`/chat`, linked
+as "Open chat" on the home page) is their interface. See
+[docs/SETUP.md](docs/SETUP.md#the-chat-page).
+
+### Desktop app (from source, experimental)
+
+An Electron window around the local backend, for local Claude only: from the
+`desktop/` folder, `npm run app` (or the steps one at a time: `npm run setup`,
+`npm run build`, `npm run start`). It
+needs no `.env` file: it makes and keeps its own encryption key in the
+operating system's secret storage, creates its SQLite database, and only its own
+window can use the backend. `npm run app` does the setup and build on the first
+run and then opens it. Tagged releases build unsigned installers (Windows NSIS
+x64, macOS arm64 DMG) with GitHub Actions; neither has been verified on a
+clean machine apart from a Windows smoke test, and there is no auto-update. See
+[docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental).
 
 ## Known limitations
 
@@ -341,24 +369,39 @@ Next.js web UI┘          ├── disposable sandboxes (Boat provider)
   testing will accumulate them on the Boat account.
 - Link codes expire after 10 minutes; there's no rate limiting on generating
   them.
-- The web UI has no real authentication — a browser's identity is whatever
-  id (guest or Telegram) it last linked, persisted in `localStorage`. This
-  also means the permission engine's accumulated rules are only as safe as
-  that identity.
-- Automated tests exist for the permission engine
-  (`backend/tests/services/`) but not yet for the rest of the app
-  (sandbox/task/schedule services, routers).
+- Authentication is single-owner: one passphrase per install, plus devices
+  paired with one-time codes ([docs/AUTH.md](docs/AUTH.md)). There are no
+  separate user accounts; every signed-in browser or paired device acts as the
+  owner (a `chat` device only within conversations), and the `user_id` older
+  routes take is not checked against the session. Sign-in lockouts are kept in
+  memory per process. Use HTTPS beyond a trusted private network.
+- Automated tests cover the permission engine and git classifier, schedules,
+  local Claude (runner, stream, approvals, access policy), threads (store,
+  runtime, stream, API), settings, the SQLite and PostgreSQL schemas and
+  migrations, the desktop entry and launch token, and some task, sandbox and
+  Telegram paths (`backend/tests/`, `desktop/test/`). Boat-sandbox task and
+  sandbox services have only partial coverage, and there are no frontend
+  tests. The GitHub Actions workflows have not yet run on GitHub, so treat
+  them as untested until the first run.
+- Only the Claude Code CLI is supported. Named agents exist, but there is no
+  delegation, connectors beyond an optional search MCP, or memory.
+- Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows
   about (see `github_classifier.py`); an unrecognized verb defaults to the
   safer "mutation" bucket rather than being assumed read-only.
-- Schedules poll on a 30s interval, so a run can start up to ~30s after its
-  exact due time.
-- A schedule missed by more than 15 minutes (e.g. the API was down) is
-  skipped rather than run late; the schedule's `last_error` records that it
-  happened.
-- Scheduled-run notifications only reach Telegram-linked users (a numeric
-  `user_id`) and only if `TELEGRAM_BOT_TOKEN` is set — a web-only guest has
-  no chat to message and only sees outcomes in the UI's schedules list.
+- Boat schedules (`/schedules`, Telegram `/schedule`) poll on a 30s
+  interval, skip an occurrence missed by more than 15 minutes (recorded in
+  `last_error`), and notify only Telegram-linked users (a numeric `user_id`)
+  when `TELEGRAM_BOT_TOKEN` is set. Local routines
+  ([docs/ROUTINES.md](docs/ROUTINES.md)) do not need Boat: they poll every
+  5s, record missed and skipped occurrences, notify in the app (and
+  optionally one Telegram chat via `ROUTINE_TELEGRAM_CHAT_ID`), but only run
+  while the backend is running, do not retry failed or interrupted runs, and
+  do not de-duplicate webhook deliveries.
+- Durable threads (`/api/v1/threads`) and the Chat page are tested on SQLite only, and store transcripts (including
+  what Claude read, wrote and ran) in the database. A conversation can be deleted
+  from there (not a secure erase), but the Claude CLI's own copy in your `.claude`
+  folder is never touched.
 
 ## Contributing
 

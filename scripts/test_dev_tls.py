@@ -222,24 +222,20 @@ with ApiClient(configuration) as client:
             "TOKEN_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
             "HOOK_TOKEN": "fixture",
             "PERMISSION_HOOK_BASE_URL": "http://localhost:8000",
+            "LOOPBACK_TRUST": "all",
         }
         code = """
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from app.main import app
-from app.db.session import get_db
-database = AsyncMock()
-async def fake_db():
-    return database
-app.dependency_overrides[get_db] = fake_db
+from app.services.box_operations import BoatNotConfigured
 with patch('app.services.box_operations.ApiClient') as remote, \
-     patch('app.services.user_sandbox_service.get_active_by_user_id', new=AsyncMock(return_value=None)):
-    client = TestClient(app)
+     patch('app.services.user_sandbox_service.ensure', new=AsyncMock(side_effect=BoatNotConfigured('Boat sandboxes are not configured'))):
+    client = TestClient(app, base_url="http://localhost", client=("127.0.0.1", 50000))
     for path in ('/api/v1/sandboxes', '/api/v1/sandboxes/ensure'):
         response = client.post(path, json={'user_id': 'fixture-user'})
         assert response.status_code == 503, response.text
-        assert 'BOAT_API_KEY' in response.json()['detail']
-        assert 'restart' in response.json()['detail']
+        assert 'Boat sandboxes are not configured' in response.json()['detail']
     remote.assert_not_called()
 """
         result = subprocess.run(

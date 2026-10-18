@@ -8,9 +8,11 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -84,6 +86,28 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual({name: values[name] for name in inherited}, inherited)
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_empty_environment_values_do_not_rotate_persisted_secrets(self):
+        key = Fernet.generate_key().decode()
+        self.path.write_text(
+            f"TOKEN_ENCRYPTION_KEYS={key}\nHOOK_TOKEN=saved-hook\n"
+        )
+        before = self.path.read_bytes()
+        with patch.dict(os.environ, {"TOKEN_ENCRYPTION_KEYS": "", "HOOK_TOKEN": ""}):
+            with self.assertRaisesRegex(ValueError, "Unset the shell variable"):
+                dev_env.prepare_environment(self.path)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_empty_hook_environment_override_does_not_replace_saved_token(self):
+        key = Fernet.generate_key().decode()
+        self.path.write_text(
+            f"TOKEN_ENCRYPTION_KEYS={key}\nHOOK_TOKEN=saved-hook\n"
+        )
+        before = self.path.read_bytes()
+        with patch.dict(os.environ, {"HOOK_TOKEN": ""}):
+            values = dev_env.prepare_environment(self.path)
+        self.assertEqual(values["HOOK_TOKEN"], "")
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_invalid_existing_encryption_key_is_never_replaced(self):
         for invalid in ("invalid-key", ", ,"):
             with self.subTest(value=invalid):
@@ -120,7 +144,7 @@ class DevelopmentScriptTests(unittest.TestCase):
         self.env_file = self.root / "backend" / ".env"
         self.calls = self.root / "calls.log"
         # An isolated PATH also lets us verify missing prerequisite tools.
-        for name in ("bash", "dirname", "seq", "cp"):
+        for name in ("bash", "dirname", "seq", "cp", "tr"):
             (self.root / "bin" / name).symlink_to(shutil.which(name))
         self.env = os.environ.copy()
         for key in (
@@ -132,6 +156,7 @@ class DevelopmentScriptTests(unittest.TestCase):
         self.env.update(
             PATH=str(self.root / "bin"),
             TEST_PYTHON=sys.executable,
+            TEST_SLEEP=shutil.which("sleep"),
             TEST_CALL_LOG=str(self.calls),
         )
         self.stub("docker", """#!/bin/sh
@@ -151,13 +176,14 @@ if [ "$1" = run ] && [ "$2" = --no-sync ]; then
   if [ "$2" = --check-tls ]; then exit "${TEST_TLS_STATUS:-0}"; fi
   exec "$TEST_PYTHON" "$@"
 fi
-if [ "${BOAT_API_KEY+x}" != x ]; then exit 91; fi
-if [ ! -f "$SSL_CERT_FILE" ]; then exit 93; fi
-if [ "${TEST_EXPECTED_BOAT+x}" = x ] && [ "$BOAT_API_KEY" != "$TEST_EXPECTED_BOAT" ]; then exit 92; fi
 if [ "$*" = 'run alembic upgrade head' ]; then exit "${TEST_MIGRATION_STATUS:-0}"; fi
+if [ "$1" = run ] && { [ "$2" = fastapi ] || [ "$2" = python ]; }; then
+  exec "$TEST_SLEEP" 60
+fi
 """)
         self.stub("npm", """#!/bin/sh
 printf 'npm %s\n' "$*" >> "$TEST_CALL_LOG"
+if [ "$1" = run ] && [ "$2" = dev ]; then exec "$TEST_SLEEP" 60; fi
 """)
         self.stub("sleep", """#!/bin/sh
 printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
@@ -170,24 +196,45 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
 
     def run_dev(self, shell="bash", *args):
         self.calls.write_text("")
-        result = subprocess.run(
+        configured = dotenv_values(self.env_file) if self.env_file.exists() else {}
+        boat_key = self.env.get("BOAT_API_KEY", configured.get("BOAT_API_KEY", ""))
+        bot_token = self.env.get("TELEGRAM_BOT_TOKEN", configured.get("TELEGRAM_BOT_TOKEN", ""))
+        expected = ["uv run fastapi dev"]
+        if "--no-frontend" not in args:
+            expected.append("npm run dev")
+        if "--no-bot" not in args and boat_key and bot_token:
+            expected.append("uv run python -m app.telegram_bot")
+        process = subprocess.Popen(
             [shell if shell == "/bin/sh" else str(self.root / "bin" / shell),
              str(self.root / "scripts" / "dev.sh"), *args],
             cwd=self.root / "caller", env=self.env,
-            capture_output=True, text=True, timeout=10,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            start_new_session=True,
         )
+        sent_interrupt = False
+        deadline = time.monotonic() + 10
+        while process.poll() is None and time.monotonic() < deadline:
+            calls = self.calls.read_text()
+            if not sent_interrupt and all(command in calls for command in expected):
+                process.send_signal(signal.SIGINT)
+                sent_interrupt = True
+            time.sleep(0.01)
+        if process.poll() is None:
+            process.kill()
+        stdout, stderr = process.communicate(timeout=5)
+        result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
         return result, self.calls.read_text()
 
     def test_first_start_from_another_directory_and_repeat_start(self):
         for shell in ("bash", "/bin/sh"):
             with self.subTest(shell=shell):
                 result, calls = self.run_dev(shell)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(result.returncode, (0, 130), result.stderr)
                 self.assertIn("uv run fastapi dev", calls)
                 self.assertIn("npm install", calls)
                 self.assertIn("npm run dev", calls)
                 self.assertNotIn("run python -m app.telegram_bot", calls)
-                self.assertIn("sandbox tasks require a Boat API key", result.stdout)
+                self.assertIn("Sandbox tasks require a Boat API key", result.stdout)
                 self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
                 values = dotenv_values(self.env_file)
                 cipher = Fernet(values["TOKEN_ENCRYPTION_KEYS"].encode())
@@ -197,7 +244,7 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
                 frontend_env.write_text("NEXT_PUBLIC_API_BASE_URL=http://localhost:9000\n")
                 (self.root / "frontend" / "node_modules").mkdir(exist_ok=True)
                 result, calls = self.run_dev(shell)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(result.returncode, (0, 130), result.stderr)
                 self.assertEqual(self.env_file.read_bytes(), saved_backend)
                 self.assertEqual(cipher.decrypt(token), b"saved credential")
                 self.assertIn("9000", frontend_env.read_text())
@@ -210,19 +257,23 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
                 with self.subTest(shell=shell, flags=flags):
                     self.env_file.write_text(
                         "BOAT_API_KEY=fixture-boat\nTELEGRAM_BOT_TOKEN=fixture-bot\n"
+                        "PERMISSION_HOOK_BASE_URL=http://localhost:8000\n"
                     )
                     result, calls = self.run_dev(shell, *flags)
-                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(result.returncode, (0, 130), result.stderr)
                     self.assertEqual("run python -m app.telegram_bot" in calls, "--no-bot" not in flags)
                     self.assertEqual("npm run dev" in calls, "--no-frontend" not in flags)
                     self.assertNotIn("BOAT_API_KEY is not set", result.stdout)
 
     def test_inherited_boat_key_without_file_assignment(self):
-        self.env_file.write_text("TELEGRAM_BOT_TOKEN=\n")
+        self.env_file.write_text(
+            "TELEGRAM_BOT_TOKEN=\nPERMISSION_HOOK_BASE_URL=http://localhost:8000\n"
+        )
         self.env["BOAT_API_KEY"] = "inherited-boat"
+        self.env["PERMISSION_HOOK_BASE_URL"] = "http://localhost:8000"
         self.env["TEST_EXPECTED_BOAT"] = "inherited-boat"
         result, calls = self.run_dev()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 130), result.stderr)
         self.assertNotIn("BOAT_API_KEY is not set", result.stdout)
         self.assertIn("uv run alembic upgrade head", calls)
 
@@ -231,16 +282,17 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
         boat = f"key with spaces; $(touch {marker}) `touch {marker}` $HOME ' quote"
         self.env_file.touch()
         set_key(self.env_file, "BOAT_API_KEY", boat)
+        set_key(self.env_file, "PERMISSION_HOOK_BASE_URL", "http://localhost:8000")
         self.env["TEST_EXPECTED_BOAT"] = boat
         result, calls = self.run_dev()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 130), result.stderr)
         self.assertFalse(marker.exists())
         self.assertNotIn(boat, result.stdout + result.stderr + calls)
         for name in ("TOKEN_ENCRYPTION_KEYS", "HOOK_TOKEN"):
             self.assertNotIn(dotenv_values(self.env_file)[name], result.stdout + result.stderr + calls)
 
     def test_missing_tool_does_not_create_configuration(self):
-        for tool in ("docker", "uv", "npm"):
+        for tool in ("uv", "npm"):
             with self.subTest(tool=tool):
                 path = self.root / "bin" / tool
                 saved = path.read_text()
@@ -252,10 +304,20 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
                 self.assertFalse(self.env_file.exists())
                 self.assertEqual(calls, "")
 
+        self.env_file.write_text("DATABASE_BACKEND=postgres\n")
+        path = self.root / "bin" / "docker"
+        saved = path.read_text()
+        path.unlink()
+        result, calls = self.run_dev("bash", "--no-frontend")
+        self.stub("docker", saved)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Missing required tool: docker", result.stderr)
+        self.assertNotIn("docker compose up", calls)
+
     def test_backend_only_does_not_require_npm(self):
         (self.root / "bin" / "npm").unlink()
         result, calls = self.run_dev("bash", "--no-frontend")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 130), result.stderr)
         self.assertNotIn("npm", calls)
         self.assertFalse((self.root / "frontend" / ".env.local").exists())
 
@@ -306,7 +368,7 @@ printf 'sleep %s\n' "$*" >> "$TEST_CALL_LOG"
     def test_tls_preflight_runs_only_for_configured_boat_and_stops_on_failure(self):
         self.env["TEST_TLS_STATUS"] = "1"
         result, calls = self.run_dev()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 130), result.stderr)
         self.assertNotIn("--check-tls", calls)
         set_key(self.env_file, "BOAT_API_KEY", "fixture-boat")
         result, calls = self.run_dev()

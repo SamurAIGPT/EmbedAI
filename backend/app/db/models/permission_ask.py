@@ -1,15 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, String, func
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Identity, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.db.types import BigIntPK, UTCDateTime
 
 
 class PermissionAsk(Base):
     __tablename__ = "permission_ask"
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)
     task_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("task.id", name="fk_permission_ask_task_id_task"), nullable=False, index=True
     )
@@ -24,6 +25,6 @@ class PermissionAsk(Base):
     # Whether "allow"/"deny" should also be written as a standing permission_rule.
     always: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UTCDateTime, server_default=func.now(), nullable=False
     )
-    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

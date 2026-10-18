@@ -6,11 +6,13 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.routers.task import router
 from app.services import task_execution_service
+from app.services.box_operations import ascii_box_service
 
 
 @pytest.fixture
@@ -71,7 +73,7 @@ def boat_api():
                 raise AssertionError(self.path)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker = threading.Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
     worker.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}", state
@@ -131,3 +133,67 @@ async def test_completed_task_uses_full_log(
         assert payload["status"] == ("failed" if is_error else "succeeded")
         assert payload["error" if is_error else "result"] == report
         assert state["log_reads"] == int(truncated)
+
+
+@pytest.mark.parametrize(
+    "stdout, expected_status, expected_text",
+    [
+        ("[]", "failed", "[]"),
+        ("null", "failed", "null"),
+        ('"unexpected"', "failed", '"unexpected"'),
+        ("true", "failed", "true"),
+        ("42", "failed", "42"),
+        ("3.5", "failed", "3.5"),
+        ('{"type":"result","is_error":false,"result":"report"}', "succeeded", "report"),
+        ('{"type":"result","is_error":true,"result":"provider error"}', "failed", "provider error"),
+        ("not JSON", "failed", "not JSON"),
+    ],
+    ids=["array", "null", "string", "boolean", "integer", "float",
+         "success-control", "error-control", "invalid-json-control"],
+)
+async def test_completed_task_records_malformed_result_output(
+    db_session, user_id, monkeypatch, boat_api, stdout, expected_status, expected_text,
+):
+    # The owned command emits malformed provider output, not a valid Claude result.
+    # JSON syntax alone does not make the six non-object shapes result records.
+    if stdout != "not JSON":
+        decoded = json.loads(stdout)
+        assert isinstance(decoded, dict) is (stdout.startswith("{"))
+    assert len(stdout.encode()) < 128
+    base_url, state = boat_api
+    state.update(stdout=stdout, truncated=False, running=False)
+    monkeypatch.setattr(settings, "BOAT_BASE_URL", base_url)
+    task = await task_execution_service.create_task(
+        db_session, user_id=user_id, provider="claude", box_id="bx_abcdefgh",
+        prompt_text="produce a report",
+    )
+    task.status = "running"
+    task.prompt_id = "1"
+    await db_session.commit()
+
+    # First admit the actual installed SDK over owned TCP without using the
+    # production result parser as the expected status oracle.
+    command = await run_in_threadpool(
+        ascii_box_service.command_status, task.box_id, int(task.prompt_id),
+    )
+    assert not command.running
+    assert command.stdout == stdout
+    assert not command.stdout_truncated
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = lambda: db_session
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://owned",
+    ) as client:
+        response = await client.get(f"/api/v1/tasks/{task.id}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == expected_status
+        assert payload["error" if expected_status == "failed" else "result"] == expected_text
+        # A second poll must observe the same persisted terminal result.
+        repeated = await client.get(f"/api/v1/tasks/{task.id}")
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == expected_status
+    assert state["log_reads"] == 0

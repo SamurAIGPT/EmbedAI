@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+            desktop:
+              - 'desktop/**'
+              - 'backend/**'
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+
+  backend-sqlite:
+    name: Backend tests (SQLite)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_BACKEND: sqlite
+      # Throwaway key for tests only (a valid Fernet key; protects nothing).
+      TOKEN_ENCRYPTION_KEYS: 3n3b2YkQd0xVv8m1c1m0nq1l4Z3xk9q0n7xv7y5q8wE=
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  backend-postgres:
+    name: Backend tests (PostgreSQL)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vadoo
+          POSTGRES_PASSWORD: vadoo
+          POSTGRES_DB: vadoo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vadoo -d vadoo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      # Throwaway key for tests only (a valid Fernet key; protects nothing).
+      TOKEN_ENCRYPTION_KEYS: 3n3b2YkQd0xVv8m1c1m0nq1l4Z3xk9q0n7xv7y5q8wE=
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - run: uv run pytest -q
+
+  # The real backend process end to end: scratch SQLite, a fake claude CLI,
+  # sign-in, an agent turn, an approval, a routine, a refused second backend,
+  # SIGTERM mid-turn and a restart (scripts/smoke-backend.py, under a minute).
+  backend-smoke:
+    name: Backend smoke (real process)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: uv sync --frozen
+      - run: uv run python ../scripts/smoke-backend.py
+
+  frontend:
+    name: Frontend lint and build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  desktop:
+    name: Desktop node tests
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+      - run: npm test
+
+  # The one check to require in branch protection. Skipped jobs (docs-only
+  # changes) count as passing; failed or cancelled jobs do not.
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, frontend, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo '${{ toJSON(needs) }}'
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            exit 1
+          fi

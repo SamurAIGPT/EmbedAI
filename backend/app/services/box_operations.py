@@ -15,8 +15,8 @@ from boat_sdk.models.prompt_request import PromptRequest
 from app.core.config import settings
 
 
-class BoatConfigurationError(ValueError):
-    """A sandbox operation requires credentials not configured on this server."""
+class BoatNotConfigured(RuntimeError):
+    """Raised when a Boat sandbox is needed but BOAT_API_KEY is not set."""
 
 
 class ASCIIBoxService:
@@ -28,10 +28,9 @@ class ASCIIBoxService:
     """
 
     def _configuration(self) -> Configuration:
-        if not settings.BOAT_API_KEY:
-            raise BoatConfigurationError(
-                "Boat is not configured. Set BOAT_API_KEY in backend/.env "
-                "and restart the backend to enable sandbox tasks."
+        if not settings.BOAT_ENABLED:
+            raise BoatNotConfigured(
+                "Boat sandboxes are not configured (BOAT_API_KEY is empty)."
             )
         return Configuration(
             host=settings.BOAT_BASE_URL,

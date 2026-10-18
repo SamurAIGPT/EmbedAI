@@ -69,7 +69,8 @@ async def check_permission(
     UI or Telegram, or the poll times out — returns the result in the
     shape Claude Code expects either way.
     """
-    if request.headers.get("authorization") != f"Bearer {settings.HOOK_TOKEN}":
+    # An empty HOOK_TOKEN (Boat not configured) must never match "Bearer ".
+    if not settings.HOOK_TOKEN or request.headers.get("authorization") != f"Bearer {settings.HOOK_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     body = await request.json()

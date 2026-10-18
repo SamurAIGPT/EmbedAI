@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user_sandbox import UserSandbox
+from app.db.transactions import begin_write, release_snapshot
 from app.services.box_operations import ascii_box_service
 
 
@@ -52,6 +53,7 @@ async def get_active_by_user_id(db: AsyncSession, user_id: str) -> UserSandbox |
 async def update_state(
     db: AsyncSession, box_id: str, *, state: str | None
 ) -> UserSandbox | None:
+    await begin_write(db)
     record = await get_by_box_id(db, box_id)
     if record is None:
         return None
@@ -63,6 +65,7 @@ async def update_state(
 
 
 async def deactivate(db: AsyncSession, box_id: str) -> UserSandbox | None:
+    await begin_write(db)
     record = await get_by_box_id(db, box_id)
     if record is None:
         return None
@@ -78,6 +81,8 @@ async def ensure(
 ) -> tuple[UserSandbox | None, Sandbox]:
     """Reuse an existing sandbox, replacing its stale row only on remote 404."""
     existing = await get_active_by_user_id(db, user_id)
+    # The box calls below take seconds; hold no snapshot while they run.
+    await release_snapshot(db)
     if existing is not None:
         try:
             response = await run_in_threadpool(

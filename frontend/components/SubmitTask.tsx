@@ -5,6 +5,7 @@ import { api, ApiError, PermissionAsk, Schedule, Task } from "@/lib/api";
 import { Button, Card, ErrorText } from "./Card";
 
 const POLL_INTERVAL_MS = 3000;
+const HISTORY_REFRESH_INTERVAL_MS = 30_000;
 const ACTIVE_STATUSES: Task["status"][] = [
   "queued",
   "starting",
@@ -71,10 +72,21 @@ function statusColor(status: Task["status"]) {
 export function SubmitTask({
   userId,
   boxId,
+  step = 4,
+  blockedReason = null,
+  showComposer = true,
 }: {
   userId: string;
   boxId: string | null;
+  step?: number;
+  // false hides the new-task box and schedule option entirely (Boat is off, so
+  // they could never work); true shows them, disabled until Claude is connected.
+  showComposer?: boolean;
+  // Shown instead of the composer's usual hint when submitting is not possible.
+  blockedReason?: string | null;
 }) {
+  // History is always readable; only sending needs a sandbox signed in to Claude.
+  const canSubmit = Boolean(boxId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [composer, setComposer] = useState("");
@@ -93,11 +105,14 @@ export function SubmitTask({
   const [replyBusy, setReplyBusy] = useState<Record<number, boolean>>({});
   const [replyErrors, setReplyErrors] = useState<Record<number, string | null>>({});
   const pollers = useRef<Map<number, ReturnType<typeof setInterval>>>(new Map());
+  const knownTaskIds = useRef(new Set<number>());
+  const listVersion = useRef(0);
 
   const [pendingAsks, setPendingAsks] = useState<Record<number, PermissionAsk>>({});
   const [askBusy, setAskBusy] = useState<Record<number, boolean>>({});
 
   const upsertTask = (task: Task) => {
+    knownTaskIds.current.add(task.id);
     setTasks((prev) => {
       const next = prev.filter((t) => t.id !== task.id);
       next.unshift(task);
@@ -127,7 +142,9 @@ export function SubmitTask({
   const fetchPendingAsk = async (taskId: number) => {
     try {
       const ask = await api.getPendingAsk(taskId);
-      if (ask) setPendingAsks((prev) => ({ ...prev, [taskId]: ask }));
+      if (ask && pollers.current.has(taskId)) {
+        setPendingAsks((prev) => ({ ...prev, [taskId]: ask }));
+      }
     } catch {
       // transient — the next poll tick will retry
     }
@@ -135,9 +152,13 @@ export function SubmitTask({
 
   const startPolling = (taskId: number) => {
     if (pollers.current.has(taskId)) return;
+    let pending = false;
     const handle = setInterval(async () => {
+      if (pending) return;
+      pending = true;
       try {
         const updated = await api.getTask(taskId);
+        if (pollers.current.get(taskId) !== handle) return;
         upsertTask(updated);
         if (updated.status === "waiting_approval") {
           fetchPendingAsk(taskId);
@@ -149,34 +170,70 @@ export function SubmitTask({
         }
       } catch {
         // transient — keep polling
+      } finally {
+        pending = false;
       }
     }, POLL_INTERVAL_MS);
     pollers.current.set(taskId, handle);
   };
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    let refreshing = false;
+    let replaceHistory = true;
+    knownTaskIds.current.clear();
+
+    const refresh = async () => {
+      if (cancelled || refreshing || document.visibilityState !== "visible") return;
+      refreshing = true;
+      const version = listVersion.current;
       try {
-        const history = await api.listTasks(userId);
-        setTasks(history);
-        history
-          .filter((t) => ACTIVE_STATUSES.includes(t.status))
-          .forEach((t) => {
-            startPolling(t.id);
-            if (t.status === "waiting_approval") fetchPendingAsk(t.id);
-          });
-      } catch {
-        // non-fatal — history is a nice-to-have
+        try {
+          const history = await api.listTasks(userId);
+          if (cancelled) return;
+          if (version === listVersion.current) {
+            if (replaceHistory) {
+              const retainedIds = new Set(knownTaskIds.current);
+              setTasks((prev) => prev.filter((task) => retainedIds.has(task.id)));
+              replaceHistory = false;
+            }
+            // Known tasks are updated by their task poller or local mutation;
+            // an older history snapshot must not replace those results.
+            history.slice().reverse().forEach((task) => {
+              if (knownTaskIds.current.has(task.id)) return;
+              upsertTask(task);
+              if (ACTIVE_STATUSES.includes(task.status)) {
+                startPolling(task.id);
+                if (task.status === "waiting_approval") fetchPendingAsk(task.id);
+              }
+            });
+          }
+        } catch {
+          // transient — retry the history on the next refresh
+        }
+        if (cancelled) return;
+        try {
+          const updated = await api.listSchedules(userId);
+          if (!cancelled && version === listVersion.current) setSchedules(updated);
+        } catch {
+          // transient — retain the schedule list and retry
+        }
+      } finally {
+        refreshing = false;
       }
-      try {
-        setSchedules(await api.listSchedules(userId));
-      } catch {
-        // non-fatal — schedule list is a nice-to-have
-      }
-    })();
+    };
+    const refreshVisible = () => {
+      void refresh();
+    };
+    void refresh();
+    const handle = setInterval(refreshVisible, HISTORY_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshVisible);
 
     return () => {
-      pollers.current.forEach((handle) => clearInterval(handle));
+      cancelled = true;
+      clearInterval(handle);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      pollers.current.forEach((poller) => clearInterval(poller));
       pollers.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,6 +242,7 @@ export function SubmitTask({
   const submitNew = async () => {
     if (!boxId || !composer.trim()) return;
     setComposerError(null);
+    listVersion.current += 1;
     setComposerBusy(true);
     try {
       if (scheduleEnabled) {
@@ -213,11 +271,13 @@ export function SubmitTask({
           : `Could not ${scheduleEnabled ? "create schedule" : "submit task"}.`
       );
     } finally {
+      listVersion.current += 1;
       setComposerBusy(false);
     }
   };
 
   const toggleSchedule = async (schedule: Schedule) => {
+    listVersion.current += 1;
     setScheduleBusy((prev) => ({ ...prev, [schedule.id]: true }));
     try {
       const updated = schedule.is_active
@@ -227,17 +287,21 @@ export function SubmitTask({
     } catch {
       // transient — leave state as-is, user can retry
     } finally {
+      listVersion.current += 1;
       setScheduleBusy((prev) => ({ ...prev, [schedule.id]: false }));
     }
   };
 
   const removeSchedule = async (schedule: Schedule) => {
+    listVersion.current += 1;
     setScheduleBusy((prev) => ({ ...prev, [schedule.id]: true }));
     try {
       await api.deleteSchedule(userId, schedule.id);
       setSchedules((prev) => prev.filter((s) => s.id !== schedule.id));
     } catch {
       setScheduleBusy((prev) => ({ ...prev, [schedule.id]: false }));
+    } finally {
+      listVersion.current += 1;
     }
   };
 
@@ -245,6 +309,7 @@ export function SubmitTask({
     const text = (replyDrafts[parent.id] ?? "").trim();
     if (!boxId || !text) return;
     setReplyErrors((prev) => ({ ...prev, [parent.id]: null }));
+    listVersion.current += 1;
     setReplyBusy((prev) => ({ ...prev, [parent.id]: true }));
     try {
       const task = await api.submitTask(userId, boxId, text, parent.id);
@@ -258,6 +323,7 @@ export function SubmitTask({
         [parent.id]: err instanceof ApiError ? err.message : "Could not send reply.",
       }));
     } finally {
+      listVersion.current += 1;
       setReplyBusy((prev) => ({ ...prev, [parent.id]: false }));
     }
   };
@@ -280,19 +346,29 @@ export function SubmitTask({
   };
 
   return (
-    <Card step={4} title="Submit a task" disabled={!boxId}>
+    <Card step={step} title={canSubmit ? "Submit a task" : "Task history"}>
       <div className="space-y-3">
+        {!canSubmit && (
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {blockedReason ?? "Connect Claude above to submit new tasks."} Your earlier tasks
+            stay readable below.
+          </p>
+        )}
+        {showComposer && (
+        <>
         <textarea
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
           placeholder='e.g. "create a webpage that says hello"'
           rows={3}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          disabled={!canSubmit}
+          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
         />
         <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
           <input
             type="checkbox"
             checked={scheduleEnabled}
+            disabled={!canSubmit}
             onChange={(e) => setScheduleEnabled(e.target.checked)}
           />
           Repeat this on a schedule
@@ -339,7 +415,7 @@ export function SubmitTask({
           </div>
         )}
 
-        <Button onClick={submitNew} disabled={composerBusy || !composer.trim()}>
+        <Button onClick={submitNew} disabled={!canSubmit || composerBusy || !composer.trim()}>
           {composerBusy
             ? scheduleEnabled
               ? "Creating…"
@@ -349,6 +425,8 @@ export function SubmitTask({
               : "Submit task"}
         </Button>
         <ErrorText message={composerError} />
+        </>
+        )}
 
         {schedules.length > 0 && (
           <ul className="space-y-2 pt-2">
@@ -472,7 +550,7 @@ export function SubmitTask({
                         <p className="text-xs text-zinc-500">Working…</p>
                       )}
 
-                      {!active && (
+                      {!active && showComposer && (
                         <div className="mt-3 space-y-2">
                           <textarea
                             value={replyDrafts[task.id] ?? ""}
@@ -481,12 +559,15 @@ export function SubmitTask({
                             }
                             placeholder="Reply in this conversation…"
                             rows={2}
-                            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                            disabled={!canSubmit}
+                            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
                           />
                           <Button
                             onClick={() => submitReply(task)}
                             disabled={
-                              replyBusy[task.id] || !(replyDrafts[task.id] ?? "").trim()
+                              !canSubmit ||
+                              replyBusy[task.id] ||
+                              !(replyDrafts[task.id] ?? "").trim()
                             }
                           >
                             {replyBusy[task.id] ? "Sending…" : "Reply"}

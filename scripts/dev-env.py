@@ -51,9 +51,10 @@ def select_ca_bundle(values: dict[str, str]) -> str:
 
 
 def prepare_environment(path: Path) -> dict[str, str]:
+    dotenv = dotenv_values(path)
     values = {
         name: os.environ.get(name, value)
-        for name, value in dotenv_values(path).items()
+        for name, value in dotenv.items()
         if value is not None
     }
     for name in values:
@@ -65,9 +66,13 @@ def prepare_environment(path: Path) -> dict[str, str]:
     # Export this for child processes, without persisting a machine-specific path.
     values["SSL_CERT_FILE"] = select_ca_bundle(values)
 
-    encryption_keys = os.environ.get(
-        "TOKEN_ENCRYPTION_KEYS", values.get("TOKEN_ENCRYPTION_KEYS", "")
-    )
+    file_encryption_keys = dotenv.get("TOKEN_ENCRYPTION_KEYS") or ""
+    encryption_keys = os.environ.get("TOKEN_ENCRYPTION_KEYS", file_encryption_keys)
+    if "TOKEN_ENCRYPTION_KEYS" in os.environ and not encryption_keys and file_encryption_keys:
+        raise ValueError(
+            "TOKEN_ENCRYPTION_KEYS is empty in the shell, but backend/.env contains a saved key. "
+            "Unset the shell variable or restore the saved key to avoid losing access to stored credentials."
+        )
     if encryption_keys:
         keys = [key.strip() for key in encryption_keys.split(",") if key.strip()]
         try:
@@ -86,8 +91,11 @@ def prepare_environment(path: Path) -> dict[str, str]:
         print("==> Generated and saved TOKEN_ENCRYPTION_KEYS", file=sys.stderr)
     values["TOKEN_ENCRYPTION_KEYS"] = encryption_keys
 
-    hook_token = os.environ.get("HOOK_TOKEN", values.get("HOOK_TOKEN", ""))
-    if not hook_token or hook_token == "your-secret-token-here":
+    file_hook_token = dotenv.get("HOOK_TOKEN") or ""
+    hook_token = os.environ.get("HOOK_TOKEN", file_hook_token)
+    if "HOOK_TOKEN" not in os.environ and (
+        not hook_token or hook_token == "your-secret-token-here"
+    ):
         hook_token = secrets.token_urlsafe(32)
         set_key(path, "HOOK_TOKEN", hook_token)
         print("==> Generated and saved HOOK_TOKEN", file=sys.stderr)

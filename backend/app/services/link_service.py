@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.link_code import LinkCode
+from app.db.transactions import begin_write
 
 CODE_ALPHABET = string.ascii_uppercase + string.digits
 CODE_LENGTH = 6
@@ -41,6 +42,7 @@ class LinkCodeExpiredError(Exception):
 
 
 async def claim_code(db: AsyncSession, code: str, user_id: str) -> LinkCode:
+    await begin_write(db)  # check-then-claim: two claimers must not both pass the check
     record = await get_code(db, code.strip().upper())
     if record is None:
         raise LinkCodeInvalidError(f"Unknown link code: {code}")

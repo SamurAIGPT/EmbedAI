@@ -4,10 +4,11 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, event, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.config import settings
 from app.db.models.permission_ask import PermissionAsk
+from app.db.engine import create_app_async_engine
 from app.db.models.task import Tasks
 from app.db.session import get_db
 from app.main import app
@@ -16,7 +17,7 @@ from app.routers import permission as permission_router
 
 @pytest.mark.parametrize("answer,phase", [("allow", "last"), ("deny", "last"), ("allow", "early"), (None, "never")])
 async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, phase):
-    engine = create_async_engine(settings.ASYNC_DATABASE_URL)
+    engine = create_app_async_engine()
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     user = "web_deadline_" + uuid4().hex
     first_read, second_read = asyncio.Event(), asyncio.Event()
@@ -40,6 +41,9 @@ async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, ph
     # Keep the actual two-poll request/answer flow; reduce only its configured wall-clock budget.
     monkeypatch.setattr(permission_router, "ASK_POLL_TIMEOUT_SECONDS", 0.4)
     monkeypatch.setattr(permission_router, "ASK_POLL_INTERVAL_SECONDS", 0.2)
+    # The hook rejects every request when HOOK_TOKEN is empty (Boat is optional),
+    # so the test must not depend on what backend/.env happens to contain.
+    monkeypatch.setattr(settings, "HOOK_TOKEN", "test-hook-token")
     hook = None
     try:
         async with sessions() as db:
@@ -47,7 +51,10 @@ async def test_hook_honors_answer_in_final_poll_interval(monkeypatch, answer, ph
             db.add(task)
             await db.commit()
             task_id = task.id
-        async with AsyncClient(transport=ASGITransport(app), base_url="http://owned.test") as client:
+        # The answering side is a trusted program on this machine (docs/AUTH.md).
+        monkeypatch.setattr(settings, "LOOPBACK_TRUST", "programs")
+        transport = ASGITransport(app, client=("127.0.0.1", 50000))
+        async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             hook = asyncio.create_task(client.post(
                 f"/api/v1/permissions/check/{user}/{task_id}",
                 headers={"Authorization": f"Bearer {settings.HOOK_TOKEN}"},

@@ -10,6 +10,7 @@ dependencies = [
     "boat-sdk>=1.0.0",
     "cryptography>=50.0.1",
     "fastapi[standard]>=0.141.1",
+    "httpx>=0.28",
     "psycopg2-binary>=2.9.13",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.3",
@@ -18,6 +19,7 @@ dependencies = [
     "structlog>=26.1.0",
     "apscheduler>=3.11,<4",
     "tzdata>=2026.4",
+    "aiosqlite>=0.20",
 ]
 
 [tool.fastapi]

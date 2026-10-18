@@ -1,0 +1,57 @@
+name: Release desktop
+
+# Builds unsigned desktop installers when a version tag is pushed and attaches
+# them to a GitHub release. Windows: NSIS installer (x64). macOS: DMG (arm64).
+# Installers are not code-signed or notarized; see docs/SETUP.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            glob: desktop/release/*.dmg
+          - os: windows-latest
+            glob: desktop/release/*.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5.4.2
+      - name: Set up desktop and frontend dependencies
+        working-directory: desktop
+        run: npm run setup
+      - name: Build the installer
+        working-directory: desktop
+        run: npm run package
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: installer-${{ matrix.os }}
+          path: ${{ matrix.glob }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2.2.2
+        with:
+          files: installers/*
+          generate_release_notes: true

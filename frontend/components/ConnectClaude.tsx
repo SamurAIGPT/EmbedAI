@@ -7,9 +7,13 @@ import { Button, Card, ErrorText } from "./Card";
 export function ConnectClaude({
   userId,
   onReady,
+  onSandbox,
 }: {
   userId: string;
+  // Claude is signed in inside the sandbox: tasks can be submitted.
   onReady: (boxId: string) => void;
+  // The sandbox exists (Claude may not be signed in yet): enough for GitHub login.
+  onSandbox?: (boxId: string) => void;
 }) {
   const [boxId, setBoxId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -30,6 +34,7 @@ export function ConnectClaude({
         const sandbox = await api.ensureSandbox(userId);
         if (cancelled) return;
         setBoxId(sandbox.box_id);
+        onSandbox?.(sandbox.box_id);
 
         const authStatus = await api.getClaudeStatus(sandbox.box_id);
         if (cancelled) return;

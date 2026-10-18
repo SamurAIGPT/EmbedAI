@@ -657,8 +657,6 @@ class ThreadRuntime:
             async with self.session() as db:
                 await store.append_turn_event(db, turn.id, turn.owner_token, "memory.recalled", recall.event_data())
 
-        budget = context_compaction.budget_for(adapter, config)
-
         async def history() -> list[dict]:
             async with self.session() as db:
                 items = store.history_items(await store.list_all_events(db, thread_id))
@@ -667,9 +665,11 @@ class ThreadRuntime:
             plan = context_compaction.plan(
                 items,
                 current_turn_id=turn.id,
-                budget_tokens=budget,
-                engine=thread.provider,
-                extra_chars=len(ctx.instructions or ""),
+                budget_tokens=context_compaction.budget_for(
+                    self.adapters[run.engine_id], run.ctx.engine_config
+                ),
+                engine=run.engine_id,
+                extra_chars=len(run.ctx.instructions or ""),
             )
             if plan.record is not None and run.recorder is not None:
                 await run.recorder.emit("context.compacted", plan.record)

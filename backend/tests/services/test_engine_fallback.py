@@ -279,6 +279,30 @@ async def test_no_fallback_fails_with_the_limit_and_a_next_step(make_rt, session
     assert "give it a fallback engine" in turn.error
 
 
+async def test_fallback_history_uses_its_own_compaction_budget(make_rt, sessions, owner, tmp_path):
+    async def replay(ctx, sink, gate):
+        await ctx.history()
+        return await replies(ctx, sink, gate)
+
+    backup = Scripted("backup", "Backup", replay)
+    backup.replays_history = True
+    backup.compact_at_tokens = 512
+    primary = Scripted("primary", "Primary", replies)
+    rt = make_rt(primary=primary, backup=backup)
+    thread = await conversation(rt, sessions, owner, tmp_path)
+    for n in range(6):
+        await rt.send_turn(thread.id, f"Earlier message {n}: " + "history " * 150)
+        await finished(sessions, thread.id, n + 1)
+    primary.behaviour = limited_before
+    await rt.send_turn(thread.id, "Continue on the fallback")
+    await finished(sessions, thread.id, 7)
+    assert (await last_turn(sessions, thread.id)).status == "succeeded"
+    records = [e.data for e in await events_of(sessions, thread.id) if e.type == "context.compacted"]
+    assert len(records) == 1
+    assert records[0]["engine"] == "backup"
+    assert records[0]["budget_tokens"] == 512
+
+
 async def test_a_fallback_that_is_not_ready_or_limited_too_is_refused(make_rt, sessions, owner, tmp_path):
     backup = Scripted("backup", "Backup", replies, ready=False)
     rt = make_rt(primary=Scripted("primary", "Primary", limited_before), backup=backup)

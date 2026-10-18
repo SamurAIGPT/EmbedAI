@@ -24,7 +24,9 @@ import {
   runStateTone,
   SCHEDULE_KINDS,
   scheduleDraftOf,
+  schedulePreviewKey,
   scheduleSpec,
+  canSaveSchedulePreview,
   triggerLabel,
   webhookUrl,
   type ScheduleDraft,
@@ -95,20 +97,40 @@ function State({ state }: { state: string }) {
 }
 
 // The schedule part of the editor, with the server's own summary and next three dates.
-function ScheduleFields({ value, onChange }: { value: ScheduleDraft; onChange: (next: ScheduleDraft) => void }) {
-  const [preview, setPreview] = useState<SchedulePreview | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+function ScheduleFields({ value, onChange, onPreviewResult }: {
+  value: ScheduleDraft;
+  onChange: (next: ScheduleDraft) => void;
+  onPreviewResult: (key: string, valid: boolean) => void;
+}) {
+  const [previewResult, setPreviewResult] = useState<{
+    key: string;
+    preview: SchedulePreview | null;
+    problem: string | null;
+  } | null>(null);
+  const previewKey = schedulePreviewKey(value);
   const set = (patch: Partial<ScheduleDraft>) => onChange({ ...value, ...patch });
 
   useEffect(() => {
     let live = true;
     const timer = setTimeout(() => {
       api.previewSchedule(value.kind, scheduleSpec(value), value.timezone.trim() || "UTC")
-        .then((result) => { if (live) { setPreview(result); setProblem(null); } })
-        .catch((err) => { if (live) { setPreview(null); setProblem(errorText(err, "This schedule is not valid.")); } });
+        .then((preview) => {
+          if (live) {
+            setPreviewResult({ key: previewKey, preview, problem: null });
+            onPreviewResult(previewKey, true);
+          }
+        })
+        .catch((err) => {
+          if (live) {
+            setPreviewResult({ key: previewKey, preview: null, problem: errorText(err, "This schedule is not valid.") });
+            onPreviewResult(previewKey, false);
+          }
+        });
     }, 300);
     return () => { live = false; clearTimeout(timer); };
-  }, [value]);
+  }, [value, previewKey, onPreviewResult]);
+
+  const currentPreview = previewResult?.key === previewKey ? previewResult : null;
 
   return (
     <fieldset className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
@@ -147,17 +169,19 @@ function ScheduleFields({ value, onChange }: { value: ScheduleDraft; onChange: (
           <input aria-label="Time zone" value={value.timezone} onChange={(e) => set({ timezone: e.target.value })} placeholder="Europe/Berlin" spellCheck={false} className={input} />
         </label>
       )}
-      {problem ? (
-        <p role="alert" className="text-xs text-red-600 dark:text-red-400">{problem}</p>
-      ) : preview && (
+      {currentPreview?.problem ? (
+        <p role="alert" className="text-xs text-red-600 dark:text-red-400">{currentPreview.problem}</p>
+      ) : currentPreview?.preview ? (
         <div className="text-xs text-zinc-600 dark:text-zinc-400" aria-label="Schedule preview">
-          <p className="font-medium">{preview.summary}</p>
-          {preview.next_dates.length > 0 && (
+          <p className="font-medium">{currentPreview.preview.summary}</p>
+          {currentPreview.preview.next_dates.length > 0 && (
             <ul className="mt-1 list-inside list-disc">
-              {preview.next_dates.map((date) => <li key={date}>{formatWhen(date, value.timezone.trim() || "UTC")}</li>)}
+              {currentPreview.preview.next_dates.map((date) => <li key={date}>{formatWhen(date, value.timezone.trim() || "UTC")}</li>)}
             </ul>
           )}
         </div>
+      ) : (
+        <p role="status" className="text-xs text-zinc-500">Checking schedule…</p>
       )}
     </fieldset>
   );
@@ -205,6 +229,7 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [validPreviewKey, setValidPreviewKey] = useState<string | null>(null);
   const [history, setHistory] = useState<Routine | null>(null);
   const [secret, setSecret] = useState<{ routineId: number; secret: string; url: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
@@ -212,6 +237,10 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
 
   const load = useCallback(() => {
     api.listRoutines().then(setRoutines).catch((err) => setError(errorText(err, "Could not load routines.")));
+  }, []);
+
+  const reportPreviewResult = useCallback((key: string, valid: boolean) => {
+    setValidPreviewKey(valid ? key : null);
   }, []);
 
   useEffect(() => {
@@ -239,7 +268,10 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
     if (!draft) return;
     const body = inputOf(draft);
     const ok = await act(() => (draft.id === null ? api.createRoutine(body) : api.updateRoutine(draft.id, body)), "Could not save the routine.");
-    if (ok) setDraft(null);
+    if (ok) {
+      setValidPreviewKey(null);
+      setDraft(null);
+    }
   };
 
   const agentName = (id: number) => agents.find((agent) => agent.id === id)?.name ?? `Agent ${id}`;
@@ -271,7 +303,14 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
               <label className="block text-xs text-zinc-500">What it should do
                 <textarea aria-label="Prompt" required rows={4} value={draft.prompt} onChange={(e) => setDraft({ ...draft, prompt: e.target.value })} className={input} />
               </label>
-              <ScheduleFields value={draft.schedule} onChange={(schedule) => setDraft({ ...draft, schedule })} />
+              <ScheduleFields
+                value={draft.schedule}
+                onChange={(schedule) => {
+                  setValidPreviewKey(null);
+                  setDraft({ ...draft, schedule });
+                }}
+                onPreviewResult={reportPreviewResult}
+              />
               <details className="rounded-md border border-zinc-200 p-3 text-xs dark:border-zinc-800">
                 <summary className="cursor-pointer font-medium text-zinc-500">Limits and approvals</summary>
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -290,8 +329,8 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                 </p>
               </details>
               <div className="flex gap-2">
-                <button type="submit" disabled={busy || draft.agentId === null} className="cursor-pointer rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">{busy ? "Saving…" : "Save"}</button>
-                <button type="button" onClick={() => setDraft(null)} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700">Cancel</button>
+                <button type="submit" disabled={busy || draft.agentId === null || !canSaveSchedulePreview(draft.schedule, validPreviewKey)} className="cursor-pointer rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">{busy ? "Saving…" : "Save"}</button>
+                <button type="button" onClick={() => { setValidPreviewKey(null); setDraft(null); }} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700">Cancel</button>
               </div>
             </form>
           ) : (
@@ -301,7 +340,7 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                   A routine runs a prompt as a new conversation of one of your agents, on a schedule, by webhook, or when you press Run now.
                   The backend must be running for it to run.
                 </p>
-                <button disabled={live.length === 0} onClick={() => setDraft(newDraft(live))} className={button}>New routine</button>
+                <button disabled={live.length === 0} onClick={() => { setValidPreviewKey(null); setDraft(newDraft(live)); }} className={button}>New routine</button>
               </div>
               {live.length === 0 && <p className="text-sm text-zinc-500">Create an agent first: every routine runs as one.</p>}
               {routines === null ? <p className="text-sm text-zinc-500">Loading…</p> : routines.length === 0 ? (
@@ -340,7 +379,7 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                         <div className="mt-2 flex flex-wrap gap-1">
                           <button disabled={busy || active} title={active ? "A run is in progress" : undefined} onClick={() => void act(() => api.runRoutineNow(routine.id), "Could not start the routine.")} className={button}>Run now</button>
                           <button disabled={busy} onClick={() => void act(() => (routine.paused ? api.resumeRoutine(routine.id) : api.pauseRoutine(routine.id)), "Could not change the routine.")} className={button}>{routine.paused ? "Resume" : "Pause"}</button>
-                          <button disabled={busy} onClick={() => setDraft(draftOf(routine))} className={button}>Edit</button>
+                          <button disabled={busy} onClick={() => { setValidPreviewKey(null); setDraft(draftOf(routine)); }} className={button}>Edit</button>
                           <button disabled={busy} onClick={() => setHistory(routine)} className={button}>History</button>
                           <button disabled={busy} onClick={() => void act(async () => {
                             const result = await api.enableRoutineWebhook(routine.id);

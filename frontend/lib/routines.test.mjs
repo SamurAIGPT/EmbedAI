@@ -4,6 +4,7 @@ import { api } from './api.ts';
 import {
   badgeText,
   curlExample,
+  canSaveSchedulePreview,
   emptySchedule,
   isActiveRun,
   localInputValue,
@@ -11,6 +12,7 @@ import {
   runStateLabel,
   runStateTone,
   scheduleDraftOf,
+  schedulePreviewKey,
   scheduleSpec,
   triggerLabel,
   webhookUrl,
@@ -35,6 +37,21 @@ test('a draft becomes the spec of its kind only', () => {
   assert.deepEqual(scheduleSpec({ ...draft, kind: 'cron', expression: ' */5 * * * * ' }), { expression: '*/5 * * * *' });
   assert.deepEqual(scheduleSpec({ ...draft, kind: 'once', at: '2026-10-18T09:00' }), { at: '2026-10-18T09:00' });
   assert.deepEqual(scheduleSpec({ ...draft, kind: 'manual' }), {});
+});
+
+test('schedule save requires a valid preview for the current draft', () => {
+  const weekdays = { ...emptySchedule('UTC'), days: [1, 3, 5] };
+  const weekdayPreview = schedulePreviewKey(weekdays);
+  assert.equal(canSaveSchedulePreview(weekdays, null), false);
+  assert.equal(canSaveSchedulePreview(weekdays, weekdayPreview), true);
+
+  const noWeekdays = { ...weekdays, days: [] };
+  assert.equal(canSaveSchedulePreview(noWeekdays, weekdayPreview), false);
+  assert.equal(canSaveSchedulePreview(noWeekdays, schedulePreviewKey(noWeekdays)), false);
+
+  const interval = { ...emptySchedule('UTC'), kind: 'interval', everyMinutes: '60' };
+  const intervalPreview = schedulePreviewKey(interval);
+  assert.equal(canSaveSchedulePreview({ ...interval, everyMinutes: '30' }, intervalPreview), false);
 });
 
 test('a saved routine opens as the same draft', () => {

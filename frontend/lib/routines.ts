@@ -97,6 +97,25 @@ export function scheduleSpec(draft: ScheduleDraft): Record<string, unknown> {
   }
 }
 
+export function schedulePreviewKey(draft: ScheduleDraft): string {
+  return JSON.stringify({
+    kind: draft.kind,
+    spec: scheduleSpec(draft),
+    timezone: draft.timezone.trim() || "UTC",
+  });
+}
+
+export function canSaveSchedulePreview(draft: ScheduleDraft, validPreviewKey: string | null): boolean {
+  if (draft.kind === "weekdays" && draft.days.length === 0) return false;
+  if (draft.kind === "interval") {
+    const minutes = Number(draft.everyMinutes);
+    if (!Number.isInteger(minutes) || minutes < 5 || minutes > 10080) return false;
+  }
+  if (draft.kind === "cron" && !draft.expression.trim()) return false;
+  if (draft.kind === "once" && !draft.at.trim()) return false;
+  return validPreviewKey === schedulePreviewKey(draft);
+}
+
 const STATE_LABEL: Record<RoutineRunState, string> = {
   queued: "Queued",
   running: "Running",

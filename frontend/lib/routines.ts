@@ -21,6 +21,8 @@ export type ScheduleDraft = {
   intervalOriginalMinutes: string | null;
   expression: string;
   at: string;
+  originalAt: string | null;
+  originalAtDisplay: string | null;
   timezone: string;
 };
 
@@ -33,7 +35,7 @@ export function browserTimezone(): string {
 }
 
 export function emptySchedule(timezone = browserTimezone()): ScheduleDraft {
-  return { kind: "weekdays", days: [1, 2, 3, 4, 5], time: "09:00", everyMinutes: "60", intervalAnchor: null, intervalOriginalMinutes: null, expression: "0 9 * * 1-5", at: "", timezone };
+  return { kind: "weekdays", days: [1, 2, 3, 4, 5], time: "09:00", everyMinutes: "60", intervalAnchor: null, intervalOriginalMinutes: null, expression: "0 9 * * 1-5", at: "", originalAt: null, originalAtDisplay: null, timezone };
 }
 
 // The editor's draft for a saved routine.
@@ -53,6 +55,8 @@ export function scheduleDraftOf(routine: Pick<Routine, "schedule_kind" | "schedu
     draft.expression = spec.expression;
   } else if (routine.schedule_kind === "once" && typeof spec.at === "string") {
     draft.at = localInputValue(spec.at, routine.timezone);
+    draft.originalAt = spec.at;
+    draft.originalAtDisplay = draft.at;
   }
   return draft;
 }
@@ -90,8 +94,12 @@ export function scheduleSpec(draft: ScheduleDraft): Record<string, unknown> {
     case "cron":
       return { expression: draft.expression.trim() };
     case "once":
-      // No offset: the server reads it in the routine's timezone.
-      return { at: draft.at };
+      // Preserve seconds on title-only edits; edited values are local to the routine's timezone.
+      return {
+        at: draft.originalAt !== null && draft.originalAtDisplay === draft.at
+          ? draft.originalAt
+          : draft.at,
+      };
     default:
       return {};
   }

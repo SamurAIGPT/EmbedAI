@@ -67,6 +67,16 @@ test('a saved routine opens as the same draft', () => {
   assert.equal(localInputValue('not a date', 'UTC'), '');
 });
 
+test('an unchanged one-time minute preserves its original seconds and milliseconds', () => {
+  const originalAt = '2026-10-18T03:30:42.987+00:00';
+  const draft = scheduleDraftOf({ schedule_kind: 'once', schedule_spec: { at: originalAt }, timezone: 'Asia/Kolkata' });
+  assert.equal(draft.at, '2026-10-18T09:00');
+  assert.deepEqual(scheduleSpec(draft), { at: originalAt });
+
+  assert.deepEqual(scheduleSpec({ ...draft, at: '2026-10-18T09:01' }), { at: '2026-10-18T09:01' });
+  assert.deepEqual(scheduleSpec({ ...draft, at: '2026-10-18T09:00' }), { at: originalAt });
+});
+
 test('run states and triggers read as words', () => {
   assert.equal(runStateLabel('needs_input'), 'Needs your approval');
   assert.equal(runStateTone('needs_input'), 'warn');

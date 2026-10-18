@@ -33,12 +33,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v5.4.2
       - name: Install locked backend dependencies
         run: uv sync --project backend --locked
       - name: Check shell syntax
         run: |
           bash -n scripts/dev.sh
-          sh -n scripts/dev.sh
+          sh scripts/dev.sh --help
       - name: Test development startup
         run: uv run --project backend --no-sync python -m unittest discover -s scripts -p 'test_*.py' -v

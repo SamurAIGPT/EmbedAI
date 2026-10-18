@@ -629,7 +629,12 @@ export function ChatApp() {
               </button>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <ComputerView agent={threadAgent} onChanged={() => setAgentTick((n) => n + 1)} />
+              <ComputerView
+                agent={threadAgent}
+                onChanged={() => setAgentTick((n) => n + 1)}
+                engineSupportsComputers={engines?.find((engine) => engine.id === threadAgent.provider)?.capabilities.computers}
+                engineLabel={engines?.find((engine) => engine.id === threadAgent.provider)?.label ?? threadAgent.provider}
+              />
             </div>
           </div>
         </div>

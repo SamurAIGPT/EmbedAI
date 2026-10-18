@@ -8,6 +8,20 @@ export const NETWORK_MODES: { value: ComputerNetwork; label: string; description
   { value: "default", label: "Internet", description: "Docker's default network: it can reach the internet; nothing can reach it." },
 ];
 
+export function computerCreationGate(supported: boolean | undefined, engineLabel: string): { enabled: boolean; reason: string | null } {
+  if (supported === true) return { enabled: true, reason: null };
+  if (supported === false) {
+    return {
+      enabled: false,
+      reason: `${engineLabel} can't run its tools in an agent computer. Choose an engine that supports computers to create one.`,
+    };
+  }
+  return {
+    enabled: false,
+    reason: `Computer support for ${engineLabel} could not be confirmed. Refresh engine details before creating one.`,
+  };
+}
+
 const STATE_LABEL: Record<string, string> = {
   missing: "Not made yet",
   creating: "Starting…",

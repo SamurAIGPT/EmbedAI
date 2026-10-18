@@ -4,6 +4,7 @@ import { api } from './api.ts';
 import { canAlwaysAllow, decisionText } from './approvals.ts';
 import {
   computerChip,
+  computerCreationGate,
   computerStateLabel,
   computersUnsupported,
   effectiveState,
@@ -57,6 +58,19 @@ test('an older backend without computers is told apart from an agent without one
   assert.equal(computersUnsupported(404, null), true);
   assert.equal(computersUnsupported(404, 'no_computer'), false);
   assert.equal(computersUnsupported(503, 'docker_unavailable'), false);
+});
+
+test('computer creation is gated by the selected engine capability', () => {
+  assert.deepEqual(computerCreationGate(true, 'Claude'), { enabled: true, reason: null });
+
+  const unsupported = computerCreationGate(false, 'Codex');
+  assert.equal(unsupported.enabled, false);
+  assert.match(unsupported.reason, /Codex can't run its tools in an agent computer/);
+  assert.match(unsupported.reason, /engine that supports computers/);
+
+  const unknown = computerCreationGate(undefined, 'Codex');
+  assert.equal(unknown.enabled, false);
+  assert.match(unknown.reason, /support for Codex could not be confirmed/);
 });
 
 test('labels for state, image, limits and the chip', () => {

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { api, ApiError, type Agent, type Computer, type ComputerHealth, type ComputerNetwork } from "@/lib/api";
 import {
   ACTION_LABEL,
   NETWORK_MODES,
   computerStateLabel,
+  computerCreationGate,
   computersUnsupported,
   effectiveState,
   imageLabel,
@@ -49,13 +50,25 @@ function errorText(err: unknown): string {
 
 // An agent's computer: whether it has one, its state, image and limits, what
 // it ran last, and the buttons to make, start, stop, recreate or remove it.
-export function ComputerView({ agent, onChanged }: { agent: Agent; onChanged?: () => void }) {
+export function ComputerView({
+  agent,
+  onChanged,
+  engineSupportsComputers,
+  engineLabel,
+}: {
+  agent: Agent;
+  onChanged?: () => void;
+  engineSupportsComputers: boolean | undefined;
+  engineLabel: string;
+}) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [limits, setLimits] = useState<Limits | null>(null);
   const [network, setNetwork] = useState<ComputerNetwork>("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const capabilityHelpId = useId();
+  const createGate = computerCreationGate(engineSupportsComputers, engineLabel);
 
   const load = useCallback(async () => {
     try {
@@ -122,7 +135,8 @@ export function ComputerView({ agent, onChanged }: { agent: Agent; onChanged?: (
         <p className="text-zinc-600 dark:text-zinc-400">
           {agent.name} works on this machine. Give it its own computer, an isolated Docker container, and its commands and
           file edits run there instead: only its workspace folder is shared, it runs as a normal user with CPU, memory and
-          process limits, and every call still asks you first (or follows a saved rule).
+          process limits. Reading files and listing folders inside the computer are automatically allowed. File writes and commands
+          follow the agent&apos;s approval mode and any applicable saved rule.
         </p>
         {docker && !docker.available && (
           <p className="text-amber-700 dark:text-amber-400">Docker is not available: {docker.error}</p>
@@ -138,7 +152,17 @@ export function ComputerView({ agent, onChanged }: { agent: Agent; onChanged?: (
             </label>
           ))}
         </fieldset>
-        <button disabled={busy} className={PRIMARY} onClick={() => act(() => api.createAgentComputer(agent.id, { network }))}>
+        {!createGate.enabled && (
+          <p id={capabilityHelpId} className="text-xs text-amber-700 dark:text-amber-400">
+            {createGate.reason}
+          </p>
+        )}
+        <button
+          disabled={busy || !createGate.enabled}
+          aria-describedby={!createGate.enabled ? capabilityHelpId : undefined}
+          className={PRIMARY}
+          onClick={() => act(() => api.createAgentComputer(agent.id, { network }))}
+        >
           {busy ? "Working…" : "Give it a computer"}
         </button>
       </div>

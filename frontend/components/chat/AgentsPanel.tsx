@@ -456,7 +456,12 @@ export function AgentsPanel({
             </form>
           ) : computerOf ? (
             <div className="space-y-3">
-              <ComputerView agent={computerOf} onChanged={onChanged} />
+              <ComputerView
+                agent={computerOf}
+                onChanged={onChanged}
+                engineSupportsComputers={engines.find((engine) => engine.id === computerOf.provider)?.capabilities.computers}
+                engineLabel={engines.find((engine) => engine.id === computerOf.provider)?.label ?? computerOf.provider}
+              />
               <button onClick={back} className={BUTTON}>
                 Back
               </button>

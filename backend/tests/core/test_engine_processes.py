@@ -104,6 +104,13 @@ def test_record_and_forget(procs):
     assert not (ep.records_dir() / f"{p.pid}.json").exists()
 
 
+def test_the_program_is_matched_by_file_name_only():
+    proc = ep.Proc(pid=1, pgid=1, zombie=False, started="", args="node /Users/me/.local/bin/claude -p --verbose")
+    assert ep._runs_program(proc, "claude")
+    assert not ep._runs_program(ep.Proc(1, 1, False, "", "/tmp/claude-501/venv/bin/python -c x"), "claude")
+    assert not ep._runs_program(proc, "")
+
+
 def test_mark_names_this_backend():
     env = ep.mark({})
     assert env[ep.MARKER_ENV] == ep.owner_token()
@@ -140,10 +147,14 @@ def test_a_recycled_pid_is_never_signalled(procs):
     other_two = procs(SLEEPER, "someone-else-too")
     write_record(other_two.pid, owner, program="claude")
 
+    # The right start time, and a path that merely contains the program's name.
+    other_three = procs(SLEEPER, "/tmp/claude-501/not-it")
+    write_record(other_three.pid, owner, program="claude")
+
     report = ep.sweep()
 
     assert not report.killed_groups and not report.killed_pids
-    assert alive(other.pid) and alive(other_two.pid)
+    assert alive(other.pid) and alive(other_two.pid) and alive(other_three.pid)
     assert not list(ep.records_dir().glob("*.json"))
 
 

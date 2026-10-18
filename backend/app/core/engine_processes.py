@@ -286,7 +286,12 @@ def _records() -> list[tuple[Path, dict]]:
 
 
 def _runs_program(proc: Proc, program: str) -> bool:
-    return bool(program) and program in proc.args
+    """The process runs `program`: its executable, or the script an
+    interpreter runs (a `node .../claude` shim), has that file name. A path
+    that merely contains the name does not count."""
+    if not program:
+        return False
+    return any(os.path.basename(token) == program for token in proc.args.split()[:3])
 
 
 def _kill(target: int, group: bool) -> bool:

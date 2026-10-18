@@ -810,6 +810,7 @@ class ThreadRuntime:
                 # done something (thread_store._interrupt).
                 async with self.session() as db:
                     await store.mark_engine_sent(db, run.turn_id, run.owner_token)
+                run.touch()  # the engine's silence is counted from here
                 outcome = await self._run_adapter(run, adapter)
                 outcome = await self._after_limit(run, adapter, outcome)
             except _EngineWithoutComputers:

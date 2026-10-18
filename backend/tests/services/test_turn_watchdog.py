@@ -85,7 +85,12 @@ class SlowButFineAdapter:
 
 
 @pytest.mark.parametrize("step", ["silent", "hang"])
-async def test_an_engine_that_goes_quiet_is_stopped_and_the_turn_fails_clearly(rt, sessions, cli, owner, stall, step):
+async def test_an_engine_that_goes_quiet_is_stopped_and_the_turn_fails_clearly(
+    rt, sessions, cli, owner, stall, step, monkeypatch
+):
+    # Long enough for the fake CLI to start and say it is hanging on a busy
+    # machine (its start-up counts as silence too), short enough to be quick.
+    monkeypatch.setattr(settings, "TURN_STALL_SECONDS", 2.0)
     thread = await new_thread(sessions, owner)
     cli.script({"type": step})
     turn = await rt.send_turn(thread.id, "do it")

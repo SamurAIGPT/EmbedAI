@@ -452,6 +452,8 @@ export type Agent = {
   pinned?: boolean;
   // Off: the agent's notes (MEMORY.md) are not loaded into its conversations.
   memory_enabled?: boolean;
+  // Off: no notes or earlier conversations are recalled before a turn.
+  recall_enabled?: boolean;
   archived_at: string | null;
   created_at?: string;
   updated_at?: string;
@@ -471,6 +473,7 @@ export type AgentInput = {
   approval_mode?: ApprovalMode;
   pinned?: boolean;
   memory_enabled?: boolean;
+  recall_enabled?: boolean;
   // Create only: the first contents of the agent's notes.
   starter_notes?: string | null;
 };
@@ -499,6 +502,44 @@ export type EngineConfigInput = {
   model?: string;
   api_key?: string;
   clear_api_key?: boolean;
+};
+
+// Topic notes (memory/<topic>.md), the journal and proposed notes (docs/MEMORY.md).
+export type TopicInfo = { name: string; title: string | null; aliases: string[]; bytes: number; modified_at: string };
+export type TopicList = { topics: TopicInfo[]; max_topics: number; max_bytes: number; folder: string };
+export type TopicDoc = {
+  name: string;
+  path: string;
+  text: string;
+  // Send back as expected_hash; a note not created yet has the hash of "".
+  hash: string;
+  bytes: number;
+  exists: boolean;
+  redacted: number;
+};
+export type MemoryJournalRow = {
+  id: string;
+  at: string;
+  path: string;
+  actor: string;
+  kind: "created" | "edited" | "deleted";
+  before_hash: string | null;
+  after_hash: string | null;
+  diff: string;
+  added: number;
+  removed: number;
+  can_undo: boolean;
+  reason: string | null;
+};
+export type MemoryProposal = {
+  id: string;
+  at: string;
+  text: string;
+  line: string;
+  target: string;
+  thread_id: number | null;
+  thread_title: string | null;
+  turn_id: number | null;
 };
 
 // An agent's notes and how much of them loads into each turn.
@@ -848,6 +889,39 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(expectedHash ? { text, expected_hash: expectedHash } : { text }),
     }),
+
+  listTopics: (agentId: number) => request<TopicList>(`/agents/${agentId}/memory/topics`),
+
+  getTopic: (agentId: number, name: string) =>
+    request<TopicDoc>(`/agents/${agentId}/memory/topics/${encodeURIComponent(name)}`),
+
+  // 409 memory_changed when the note changed since `expectedHash` was read.
+  saveTopic: (agentId: number, name: string, text: string, expectedHash?: string | null) =>
+    request<TopicDoc>(`/agents/${agentId}/memory/topics/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify(expectedHash ? { text, expected_hash: expectedHash } : { text }),
+    }),
+
+  deleteTopic: (agentId: number, name: string) =>
+    request<void>(`/agents/${agentId}/memory/topics/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  memoryJournal: (agentId: number) => request<MemoryJournalRow[]>(`/agents/${agentId}/memory/journal`),
+
+  undoMemoryChange: (agentId: number, entryId: string) =>
+    request<MemoryJournalRow | null>(`/agents/${agentId}/memory/journal/${encodeURIComponent(entryId)}/undo`, {
+      method: "POST",
+    }),
+
+  memoryProposals: (agentId: number) => request<MemoryProposal[]>(`/agents/${agentId}/memory/proposals`),
+
+  acceptProposal: (agentId: number, proposalId: string, line?: string) =>
+    request<{ path: string; hash: string }>(
+      `/agents/${agentId}/memory/proposals/${encodeURIComponent(proposalId)}/accept`,
+      { method: "POST", body: JSON.stringify(line ? { line } : {}) }
+    ),
+
+  rejectProposal: (agentId: number, proposalId: string) =>
+    request<void>(`/agents/${agentId}/memory/proposals/${encodeURIComponent(proposalId)}/reject`, { method: "POST" }),
 
   exportAgent: (agentId: number, includeNotes = false) =>
     request<AgentExport>(`/agents/${agentId}/export${includeNotes ? "?include_notes=true" : ""}`),

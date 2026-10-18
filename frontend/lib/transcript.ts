@@ -5,6 +5,7 @@
 // twice. Typing text (text.delta) has no seq and is never stored: it is a
 // preview that the stored assistant.message replaces.
 import type { ThreadEvent } from "./api";
+import type { RecalledNote, RecalledPassage } from "./memory";
 
 export type ApprovalStatus = "pending" | "allowed" | "denied" | "expired" | "cancelled";
 
@@ -64,7 +65,11 @@ export type TranscriptItem =
       // What the engine reported it used, or null when it reported nothing.
       usage: Record<string, unknown> | null;
     }
-  | { kind: "session_reset"; key: string; message: string };
+  | { kind: "session_reset"; key: string; message: string }
+  // What was recalled and put in front of the person's message (docs/MEMORY.md).
+  | { kind: "recalled"; key: string; turnId: number | null; notes: RecalledNote[]; conversations: RecalledPassage[] }
+  // Earlier messages were folded into a summary for an engine that replays the transcript.
+  | { kind: "compacted"; key: string; turnId: number | null; folded: number; summary: string };
 
 export type Transcript = {
   items: TranscriptItem[];
@@ -297,6 +302,34 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
       return {
         ...base,
         items: [...state.items, { kind: "session_reset", key, message: text(data.message) }],
+      };
+
+    case "memory.recalled": {
+      const list = (value: unknown) => (Array.isArray(value) ? value.map(record) : []);
+      const notes = list(data.notes).map((n) => ({ name: text(n.name), title: text(n.title) || null, snippet: text(n.snippet) }));
+      const conversations = list(data.conversations).map((c) => ({
+        thread_id: typeof c.thread_id === "number" ? c.thread_id : 0,
+        title: text(c.title) || null,
+        role: text(c.role),
+        at: text(c.at) || null,
+        snippet: text(c.snippet),
+      }));
+      return { ...base, items: [...state.items, { kind: "recalled", key, turnId: id, notes, conversations }] };
+    }
+
+    case "context.compacted":
+      return {
+        ...base,
+        items: [
+          ...state.items,
+          {
+            kind: "compacted",
+            key,
+            turnId: id,
+            folded: typeof data.folded_messages === "number" ? data.folded_messages : 0,
+            summary: text(data.summary),
+          },
+        ],
       };
 
     default:

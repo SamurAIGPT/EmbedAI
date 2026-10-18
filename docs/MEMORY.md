@@ -149,6 +149,10 @@ budget, the earlier part is folded:
 - **Visible.** The transcript shows **Earlier messages summarized** with the
   number of messages folded and a button that shows the summary. The full
   conversation stays stored and visible; only what the engine is sent changes.
+- With a very small window (around 1,000 tokens) and long instructions, even
+  one kept exchange plus the summary can exceed 70% of the budget; the
+  conversation is then folded a little further on every turn (still correct,
+  but the replay changes each turn).
 - When only the kept exchanges are left and they are too large by themselves,
   nothing more is folded and the engine's own size limit applies, as before.
 

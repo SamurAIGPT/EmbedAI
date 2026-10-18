@@ -111,9 +111,23 @@ async def _agent_or_404(rt: ThreadRuntime, agent_id: int) -> store.Agent:
     return agent
 
 
+def _check_fallback(rt: ThreadRuntime, provider: str, fallback: str | None, model: str | None) -> None:
+    """A fallback engine must be registered, accept its model and differ from
+    the agent's own engine. What it must be able to do is checked per turn
+    (thread_runtime.py), since that depends on the turn."""
+    if fallback is None:
+        if model is not None:
+            raise _error(422, "invalid_fallback", "A fallback model needs a fallback engine.")
+        return
+    if fallback == provider:
+        raise _error(422, "invalid_fallback", "The fallback engine must be another engine than the agent's own.")
+    _check_engine(rt, fallback, model)
+
+
 @router.post("", response_model=AgentResponse, status_code=201)
 async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
     _check_engine(rt, payload.provider, payload.model)
+    _check_fallback(rt, payload.provider, payload.fallback_provider, payload.fallback_model)
     workspace = _check_workspace(payload.workspace_path)
     try:
         async with rt.session() as db:
@@ -131,6 +145,8 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 pinned=payload.pinned,
                 memory_enabled=payload.memory_enabled,
                 recall_enabled=payload.recall_enabled,
+                fallback_provider=payload.fallback_provider,
+                fallback_model=payload.fallback_model,
             )
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "An agent with this name already exists.") from None
@@ -179,9 +195,13 @@ async def update_agent(
             "pinned",
             "memory_enabled",
             "recall_enabled",
+            "fallback_provider",
+            "fallback_model",
         )
         if field in payload.model_fields_set
     }
+    if "fallback_provider" in changes and changes["fallback_provider"] != agent.fallback_provider:
+        changes.setdefault("fallback_model", None)  # the old fallback's model means nothing to the new one
     provider = changes.get("provider", agent.provider)
     if "provider" in changes and changes["provider"] != agent.provider:
         if "model" not in changes:
@@ -199,6 +219,13 @@ async def update_agent(
             )
     if "provider" in changes or "model" in changes:
         _check_engine(rt, provider, changes.get("model", agent.model if provider == agent.provider else None))
+    if {"provider", "fallback_provider", "fallback_model"} & set(changes):
+        _check_fallback(
+            rt,
+            provider,
+            changes.get("fallback_provider", agent.fallback_provider),
+            changes.get("fallback_model", agent.fallback_model),
+        )
     if "workspace_path" in changes:
         changes["workspace_path"] = _check_workspace(changes["workspace_path"])
     try:

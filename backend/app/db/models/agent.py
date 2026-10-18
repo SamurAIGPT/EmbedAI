@@ -48,6 +48,11 @@ class Agent(Base):
     )
     # Null means the provider's default model.
     model: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Another engine (and its model, null for its default) a turn moves to when
+    # this agent's engine refuses it for a usage or rate limit before starting
+    # on it, if that engine can do what the turn needs (docs/ENGINES.md).
+    fallback_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    fallback_model: Mapped[str | None] = mapped_column(String, nullable=True)
     # Null means the default workspace root, resolved when a thread is created.
     workspace_path: Mapped[str | None] = mapped_column(String, nullable=True)
     approval_mode: Mapped[str] = mapped_column(

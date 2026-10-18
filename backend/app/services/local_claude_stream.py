@@ -117,6 +117,15 @@ class StreamNormalizer:
     # What the CLI reported about itself and the run, for the stored turn.
     model: str | None = None
     usage: dict | None = None
+    # A usage or rate limit refusing this account, as the CLI reported it
+    # (`rate_limit_event` with status "rejected"): when it resets (epoch
+    # seconds) and which window, when said.
+    limit_refused: bool = False
+    limit_resets_at: float | None = None
+    limit_window: str | None = None
+    # The text of an API error the CLI reported as a synthetic assistant
+    # message (a refused call, never the model's answer).
+    api_error: str | None = None
     _text_parts: list[str] = field(default_factory=list)
     # Text streamed since the last completed assistant message: what would be
     # lost if the run ended now.
@@ -163,6 +172,11 @@ class StreamNormalizer:
                 model = event.get("model")
                 self.model = model if isinstance(model, str) else None
             return []
+        if kind == "rate_limit_event":
+            self._rate_limit(event)
+            return []
+        if kind == "assistant" and self._api_error(event):
+            return []
         if kind == "assistant":
             self._tool_uses(event)
             chunks = self._assistant(event)
@@ -179,6 +193,37 @@ class StreamNormalizer:
         elif kind == "result":
             self._result(event)
         return []
+
+    def _rate_limit(self, event: dict) -> None:
+        info = event.get("rate_limit_info")
+        if not isinstance(info, dict) or info.get("status") != "rejected" or info.get("isUsingOverage") is True:
+            return
+        self.limit_refused = True
+        resets = info.get("resetsAt")
+        if isinstance(resets, (int, float)) and resets > 0:
+            self.limit_resets_at = float(resets)
+        window = info.get("rateLimitType")
+        self.limit_window = window if isinstance(window, str) else None
+
+    def _api_error(self, event: dict) -> bool:
+        """A refused API call the CLI reports as an assistant message (with
+        `error` or `isApiErrorMessage`): kept as the error, never stored or
+        shown as the model's answer."""
+        message = event.get("message") if isinstance(event.get("message"), dict) else {}
+        flagged = (
+            isinstance(event.get("error"), str)
+            or event.get("isApiErrorMessage") is True
+            or event.get("is_api_error_message") is True
+            or message.get("isApiErrorMessage") is True
+        )
+        if not flagged:
+            return False
+        content = message.get("content")
+        text = "".join(
+            block.get("text", "") for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)
+        ) if isinstance(content, list) else ""
+        self.api_error = text.strip() or (event.get("error") if isinstance(event.get("error"), str) else "API error")
+        return True
 
     def _complete_message(self, event: dict) -> None:
         """An `assistant` event carries a finished block of the answer. Its text

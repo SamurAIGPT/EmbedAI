@@ -70,3 +70,7 @@ class Turn(Base):
         UTCDateTime, server_default=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # "preparing" until the prompt is handed to the engine, then "sent" (null
+    # for turns from before this was recorded). A turn cut by a crash or stop
+    # is classified from it and its stored events (thread_store._interrupt).
+    engine_phase: Mapped[str | None] = mapped_column(String, nullable=True)

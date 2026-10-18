@@ -7,6 +7,8 @@ CREATE TABLE agent (
 	instructions TEXT DEFAULT '' NOT NULL, 
 	provider VARCHAR DEFAULT 'claude' NOT NULL, 
 	model VARCHAR, 
+	fallback_provider VARCHAR, 
+	fallback_model VARCHAR, 
 	workspace_path VARCHAR, 
 	approval_mode VARCHAR DEFAULT 'ask' NOT NULL, 
 	memory_enabled BOOLEAN DEFAULT true NOT NULL, 

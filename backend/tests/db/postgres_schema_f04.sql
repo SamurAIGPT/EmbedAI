@@ -36,6 +36,7 @@ CREATE TABLE turn (
 	heartbeat_at TIMESTAMP WITH TIME ZONE, 
 	started_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
 	finished_at TIMESTAMP WITH TIME ZONE, 
+	engine_phase VARCHAR, 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_turn_thread_id_seq UNIQUE (thread_id, seq), 
 	CONSTRAINT fk_turn_thread_id_thread FOREIGN KEY(thread_id) REFERENCES thread (id)

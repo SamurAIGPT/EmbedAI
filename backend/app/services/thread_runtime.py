@@ -18,8 +18,9 @@ database, so after a restart everything that was stored is still there.
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 from pathlib import Path
 
@@ -31,10 +32,17 @@ from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
 from app.services import engine_config
-from app.services.engine_registry import EngineRegistry, InvalidModel, UnknownEngine, capabilities_of, default_adapters
+from app.services.engine_registry import (
+    EngineRegistry,
+    InvalidModel,
+    UnknownEngine,
+    capabilities_of,
+    default_adapters,
+    label_of,
+)
 from app.computers import policy as computer_policy
 from app.computers import service as computer_service
-from app.services import approval_allowlist, approval_modes, decision_log, safety_floor
+from app.services import approval_allowlist, approval_modes, decision_log, engine_errors, safety_floor
 from app.services.provider_adapter import (
     ALLOW,
     CANCELLED,
@@ -64,6 +72,12 @@ STATUS_CACHE_SECONDS = 30.0
 # runs two CLI calls of up to 20 seconds each.
 STATUS_TIMEOUT_SECONDS = 45.0
 SHUTDOWN_WAIT_SECONDS = 10.0
+# A rate limit that named no reset time is assumed over after this long.
+RATE_LIMIT_SECONDS = 60.0
+
+# Events the runtime itself stores for a turn: not a sign the engine started
+# working on the prompt.
+RUNTIME_EVENTS = frozenset({"context.compacted", "memory.recalled", "engine.switched"})
 
 
 # Every thread belongs to the person at this machine. A runtime can be given
@@ -150,6 +164,16 @@ class ActiveRun:
     last_activity: float = 0.0
     stalled: bool = False
     adapter_task: asyncio.Task | None = None
+    # The engine the turn runs on now (its conversation's, or the agent's
+    # fallback after a switch), and the fallback the agent names, if any.
+    engine_id: str = ""
+    fallback: tuple[str, str | None] | None = None
+    # The engine started working on the prompt: it stored output, a tool call
+    # or a question, or typed. A limit after this is never moved elsewhere.
+    accepted: bool = False
+    switched: bool = False
+    # The conversation already had turns before this one.
+    continues: bool = False
 
     def touch(self) -> None:
         try:
@@ -192,6 +216,8 @@ class TurnRecorder:
             self.lose()
             return False
         run.touch()
+        if type not in RUNTIME_EVENTS:
+            run.accepted = True
         self._last_seq = event.seq
         if type == "assistant.message":
             self._runtime.hub.message_done(run.thread_id)
@@ -201,6 +227,7 @@ class TurnRecorder:
     def delta(self, text: str) -> None:
         if not self._lost:
             self._run.touch()
+            self._run.accepted = True
             self._runtime.hub.delta(
                 self._run.thread_id, self._run.turn_id, text, after_seq=self._last_seq
             )
@@ -259,6 +286,7 @@ class ThreadApprovalGate:
         self, *, request_id: str, tool: str, input: dict, summary: str | None, kind: str | None
     ) -> ApprovalHandle | None:
         run, runtime = self._run, self._runtime
+        run.accepted = True
         async with runtime.session() as db:
             try:
                 approval = await store.create_approval(
@@ -405,6 +433,9 @@ class ThreadRuntime:
     engines: EngineRegistry | None = None
     # Set by shutdown(): no new turn starts in a process that is stopping.
     _closing: bool = False
+    # Engines refusing turns for a limit, as their last turn said (this
+    # process only): engine id -> (EngineLimit, wall time noted, message).
+    _limits: dict[str, tuple] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.computers is None:
@@ -442,6 +473,36 @@ class ThreadRuntime:
             raise UnknownProvider(provider) from None
         except InvalidModel as exc:
             raise EngineModelInvalid(str(exc)) from None
+
+    # -- engine limits ------------------------------------------------------------------
+
+    def engine_limit(self, engine_id: str) -> dict | None:
+        """The limit `engine_id` reported, while it holds: until its reset
+        time, a minute for a rate limit that named none, otherwise until a turn
+        on the engine succeeds. None when it is not limited."""
+        entry = self._limits.get(engine_id)
+        if entry is None:
+            return None
+        limit, noted, message = entry
+        now = time.time()
+        expired = (
+            limit.resets_at.timestamp() <= now
+            if limit.resets_at is not None
+            else limit.kind == engine_errors.RATE_LIMIT and now - noted >= RATE_LIMIT_SECONDS
+        )
+        if expired:
+            self._limits.pop(engine_id, None)
+            return None
+        return {
+            **limit.as_dict(),
+            "since": datetime.fromtimestamp(noted, UTC).isoformat(),
+            "message": message,
+        }
+
+    def _note_limit(self, engine_id: str, limit, message: str) -> None:
+        self._limits[engine_id] = (limit, time.time(), message)
+        logger.warning("engine is limited", engine=engine_id, kind=limit.kind,
+                       resets_at=limit.resets_at.isoformat() if limit.resets_at else None)
 
     def session(self):
         """A new database session. Looked up late so tests can substitute it."""
@@ -647,6 +708,9 @@ class ThreadRuntime:
             ctx=ctx,
             agent_id=agent.id if agent is not None else None,
             approval_timeout=approval_timeout,
+            engine_id=thread.provider,
+            fallback=_fallback_of(agent, thread.provider),
+            continues=turn.seq > 1,
         )
         run.settings_snapshot = snapshot
         run.recorder = TurnRecorder(self, run)
@@ -735,17 +799,12 @@ class ThreadRuntime:
                 # is not the engine doing nothing.
                 run.touch()
                 watchdog = asyncio.create_task(self._watchdog(run))
-                with app_settings.use(run.settings_snapshot):
-                    run.adapter_task = asyncio.ensure_future(adapter.run_turn(run.ctx, run.recorder, run.gate))
-                try:
-                    outcome = await run.adapter_task
-                except asyncio.CancelledError:
-                    task = asyncio.current_task()
-                    if not run.stalled or (task is not None and task.cancelling()):
-                        raise
-                    # The watchdog gave up on an adapter that did not return
-                    # after its engine was stopped.
-                    outcome = TurnOutcome("failed", error_code="engine_stalled")
+                # From here the engine has the prompt: a turn cut now may have
+                # done something (thread_store._interrupt).
+                async with self.session() as db:
+                    await store.mark_engine_sent(db, run.turn_id, run.owner_token)
+                outcome = await self._run_adapter(run, adapter)
+                outcome = await self._after_limit(run, adapter, outcome)
             except _EngineWithoutComputers:
                 outcome = TurnOutcome(
                     "failed",
@@ -801,6 +860,156 @@ class ThreadRuntime:
             self._runs.pop(run.turn_id, None)
             self.hub.message_done(run.thread_id)
             self.hub.notify(run.thread_id)
+
+    async def _run_adapter(self, run: ActiveRun, adapter: ProviderAdapter) -> TurnOutcome:
+        with app_settings.use(run.settings_snapshot):
+            run.adapter_task = asyncio.ensure_future(adapter.run_turn(run.ctx, run.recorder, run.gate))
+        try:
+            return await run.adapter_task
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if not run.stalled or (task is not None and task.cancelling()):
+                raise
+            # The watchdog gave up on an adapter that did not return
+            # after its engine was stopped.
+            return TurnOutcome("failed", error_code="engine_stalled")
+
+    def _limit_of(self, run: ActiveRun, outcome: TurnOutcome):
+        if (
+            outcome.status != "failed"
+            or outcome.error_code not in engine_errors.ENGINE_REPORTED
+            or run.stop_requested
+            or run.stalled
+            or run.recorder.lost
+        ):
+            return None
+        return engine_errors.classify(outcome.error, resets_at=getattr(outcome, "limit_resets_at", None))
+
+    async def _after_limit(self, run: ActiveRun, adapter: ProviderAdapter, outcome: TurnOutcome) -> TurnOutcome:
+        """A turn its engine refused for a usage or rate limit (or credits):
+        the engine is marked limited, and when the engine never accepted the
+        prompt and the agent names a fallback that can do what this turn
+        needs, the turn starts again on the fallback, with a visible
+        `engine.switched` event. Never for a turn the engine had started on,
+        never silently, and never to an engine that lacks what the turn needs:
+        then the turn fails with the reason and what to do."""
+        if outcome.status == "succeeded":
+            self._limits.pop(run.engine_id, None)
+            return outcome
+        limit = self._limit_of(run, outcome)
+        if limit is None:
+            return outcome
+        label = label_of(adapter, run.engine_id)
+        message = engine_errors.describe(label, limit)
+        self._note_limit(run.engine_id, limit, message)
+        limited = _replace(outcome, error=message, error_code=engine_errors.ENGINE_LIMITED)
+        if run.accepted:
+            if run.fallback is not None:
+                limited.error = (
+                    f"{message} {label} had already started on this message, so it was not moved to the "
+                    "fallback engine (it may have run tools). Check what it did, then send it again."
+                )
+            return limited
+        if run.fallback is None or run.switched:
+            return limited
+        fallback_id, fallback_model = run.fallback
+        fallback = self.adapters.get(fallback_id)
+        fallback_label = label_of(fallback, fallback_id) if fallback is not None else fallback_id
+        refusal = await self._fallback_refusal(run, adapter, fallback, fallback_id, fallback_model)
+        if refusal is not None:
+            limited.error = (
+                f"{message} The agent's fallback engine, {fallback_label}, cannot take this turn: {refusal}. "
+                "Wait for the limit to reset, or change the agent's engine or fallback."
+            )
+            return limited
+        config = await self.prepare_adapter(fallback_id, fallback)
+        switched = await run.recorder.emit("engine.switched", {
+            "from": run.engine_id,
+            "from_label": label,
+            "to": fallback_id,
+            "to_label": fallback_label,
+            "model": fallback_model,
+            "reason": limit.kind,
+            "resets_at": limit.resets_at.isoformat() if limit.resets_at else None,
+            "message": f"Switched this turn to {fallback_label} because {label} refused it before starting: {message}",
+        })
+        if not switched:
+            return limited
+        old = run.ctx
+        run.ctx = TurnContext(
+            thread_id=old.thread_id,
+            turn_id=old.turn_id,
+            prompt=old.prompt,
+            workspace=old.workspace,
+            model=fallback_model,
+            provider_session_id=fallback.new_session_id(),
+            provider_state=None,
+            resume=False,
+            history=old.history,
+            approval_mode=old.approval_mode,
+            instructions=old.instructions,
+            computer=old.computer,
+            engine_config=config,
+            images=list(old.images),
+        )
+        if old.aborted:
+            run.ctx.abort()
+        run.engine_id, run.switched = fallback_id, True
+        run.touch()
+        async with self.session() as db:
+            await store.mark_engine_sent(db, run.turn_id, run.owner_token)
+        result = await self._run_adapter(run, fallback)
+        # The conversation stays on its own engine: the fallback's session and
+        # state are not kept for it.
+        result = _replace(result, session_state=None, provider_state=None)
+        if result.status == "succeeded":
+            self._limits.pop(fallback_id, None)
+            return result
+        again = self._limit_of(run, result)
+        if again is not None:
+            text = engine_errors.describe(fallback_label, again)
+            self._note_limit(fallback_id, again, text)
+            return _replace(result, error=f"{message} {text}", error_code=engine_errors.ENGINE_LIMITED)
+        return result
+
+    async def _fallback_refusal(self, run: ActiveRun, adapter, fallback, fallback_id: str, model: str | None) -> str | None:
+        """Why the fallback cannot take this turn, or None when it can."""
+        if fallback is None:
+            return "it is not an engine this app has"
+        if self.engine_limit(fallback_id) is not None:
+            return "it is limited too"
+        try:
+            self.engines.check_model(fallback_id, model)
+        except (UnknownEngine, InvalidModel) as exc:
+            return str(exc) or "its model is not accepted"
+        own, other = capabilities_of(adapter), capabilities_of(fallback)
+        computer = run.ctx.computer is not None
+        with app_settings.use(run.settings_snapshot):
+            tools_on = bool(app_settings.get("LOCAL_TOOLS_ENABLED"))
+        tools = own.tools and (computer or tools_on)
+        missing = []
+        if tools and not other.tools:
+            missing.append("tools")
+        if tools and own.approvals and not other.approvals:
+            missing.append("approvals")
+        if run.ctx.images and not other.images:
+            missing.append("images")
+        if computer and not other.computers:
+            missing.append("an agent computer")
+        # A conversation that already has earlier messages needs an engine
+        # that reads them from the stored transcript: another engine cannot
+        # resume this one's own session.
+        if run.continues or run.ctx.resume or run.ctx.provider_state:
+            if fallback.new_session_id() is not None:
+                missing.append("this conversation's earlier messages (it cannot resume another engine's session)")
+        if missing:
+            return "it lacks " + ", ".join(missing)
+        config = await self.prepare_adapter(fallback_id, fallback)
+        with app_settings.use(run.settings_snapshot):
+            status = await self._provider_status(fallback, config)
+        if not status.ready:
+            return f"it is not ready ({status.error or 'no reason given'})"
+        return None
 
     async def _watchdog(self, run: ActiveRun) -> None:
         """Fail a turn whose engine has done nothing (no event, no typing) for
@@ -991,6 +1200,20 @@ class ThreadRuntime:
         tasks = [run.task for run in runs if run.task is not None]
         if tasks:
             await asyncio.wait(tasks, timeout=SHUTDOWN_WAIT_SECONDS)
+
+
+def _fallback_of(agent, provider: str) -> tuple[str, str | None] | None:
+    """The agent's fallback engine and model for a conversation on `provider`."""
+    engine = getattr(agent, "fallback_provider", None) if agent is not None else None
+    if not engine or engine == provider:
+        return None
+    return engine, getattr(agent, "fallback_model", None)
+
+
+def _replace(outcome: TurnOutcome, **changes) -> TurnOutcome:
+    from dataclasses import replace
+
+    return replace(outcome, **changes)
 
 
 runtime = ThreadRuntime()

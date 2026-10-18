@@ -81,9 +81,20 @@ def delete_conversation(connection, thread_id):
     connection.execute("DELETE FROM thread WHERE id = ?", (thread_id,))
 
 
-def all_rows(connection) -> dict:
+def columns_of(connection) -> dict:
     return {
-        table: connection.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        table: [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
+        for table in REBUILT_TABLES
+    }
+
+
+def all_rows(connection, columns: dict | None = None) -> dict:
+    """Every row of the rebuilt tables; with `columns`, only those columns
+    (the ones a table had before later migrations added more)."""
+    return {
+        table: connection.execute(
+            f"SELECT {', '.join(columns[table]) if columns else '*'} FROM {table} ORDER BY id"
+        ).fetchall()
         for table in REBUILT_TABLES
     }
 
@@ -153,13 +164,14 @@ def existing(tmp_path):
 def test_upgrading_keeps_every_row_index_and_foreign_key(existing, tmp_path):
     connection = connect(existing)
     rows_before, indexes_before = all_rows(connection), index_sql(connection)
+    columns_before = columns_of(connection)
     connection.close()
 
     upgrade(existing)
 
     connection = connect(existing)
     try:
-        assert all_rows(connection) == rows_before
+        assert all_rows(connection, columns_before) == rows_before
         assert index_sql(connection) == indexes_before
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         assert connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
@@ -232,15 +244,19 @@ def test_the_decision_log_is_not_read_for_a_database_without_conversations(tmp_p
 
 
 def test_downgrade_and_upgrade_again_keep_the_data(existing):
+    connection = connect(existing)
+    # The columns this migration's era knew; later migrations add more.
+    columns = columns_of(connection)
+    connection.close()
     upgrade(existing)
     connection = connect(existing)
-    rows = all_rows(connection)
+    rows = all_rows(connection, columns)
     connection.close()
 
     down = run_alembic(existing, "downgrade", BEFORE)
     assert down.returncode == 0, down.stderr
     connection = connect(existing)
-    assert all_rows(connection) == rows
+    assert all_rows(connection, columns) == rows
     assert "AUTOINCREMENT" not in table_sql(connection, "thread")
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     connection.close()
@@ -248,7 +264,7 @@ def test_downgrade_and_upgrade_again_keep_the_data(existing):
     upgrade(existing)
     connection = connect(existing)
     try:
-        assert all_rows(connection) == rows
+        assert all_rows(connection, columns) == rows
         assert "AUTOINCREMENT" in table_sql(connection, "thread")
     finally:
         connection.close()

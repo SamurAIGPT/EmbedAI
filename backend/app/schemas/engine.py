@@ -42,6 +42,12 @@ class EngineResponse(BaseModel):
     # What is saved, without secrets: an ACP `command` and `label`, or an
     # endpoint's `base_url`, `model` and `has_api_key`.
     config: dict | None = None
+    # Set while the engine is refusing turns for a usage or rate limit or a lack
+    # of credits, as its last turn reported: {"kind": "usage_limit" |
+    # "rate_limit" | "credits", "resets_at": ISO time or null, "since": ISO
+    # time, "message": plain words}. Kept in this backend's memory; cleared at
+    # the reset time or when a turn on the engine succeeds.
+    limit: dict | None = None
 
 
 class EngineConfigRequest(BaseModel):

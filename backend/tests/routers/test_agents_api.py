@@ -372,3 +372,17 @@ async def test_the_runner_adds_the_model_and_instructions_to_the_cli_arguments()
     assert "--system-prompt" not in args  # appended to the CLI's prompt, never replacing it
     plain = local_claude_runner.build_args(Path("claude"), "sid")
     assert "--model" not in plain and "--append-system-prompt" not in plain
+
+
+# --- fallback engine ---------------------------------------------------------------------------------
+
+
+async def test_an_agent_may_name_a_fallback_engine_and_it_is_checked(api):
+    agent = await make(api)
+    assert agent["fallback_provider"] is None and agent["fallback_model"] is None
+    same = await api.patch(f"/api/v1/agents/{agent['id']}", json={"fallback_provider": "claude"})
+    assert same.status_code == 422 and code_of(same) == "invalid_fallback"
+    unknown = await api.patch(f"/api/v1/agents/{agent['id']}", json={"fallback_provider": "nope"})
+    assert unknown.status_code == 422 and code_of(unknown) == "unknown_provider"
+    orphan = await api.patch(f"/api/v1/agents/{agent['id']}", json={"fallback_model": "x"})
+    assert orphan.status_code == 422 and code_of(orphan) == "invalid_fallback"

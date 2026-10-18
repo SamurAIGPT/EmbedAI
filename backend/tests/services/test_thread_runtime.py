@@ -382,7 +382,7 @@ async def test_shutdown_interrupts_this_processs_own_turns_at_once(rt, sessions,
     assert (await reload(sessions, Turn, turn.id)).status == "interrupted"
     events = await events_of(sessions, thread.id)
     assert [e.type for e in events] == ["turn.started", "turn.interrupted"]
-    assert events[1].data == {"reason": "shutdown"}
+    assert events[1].data == {"reason": "shutdown", "replay": "unknown"}
     async with sessions() as db:  # no 60-second wait: the thread can take a new turn
         await store.start_turn(db, thread.id, "next")
 

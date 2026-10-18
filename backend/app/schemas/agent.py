@@ -53,6 +53,11 @@ class AgentCreateRequest(BaseModel):
     # Before each turn, add relevant notes and earlier conversations to the
     # person's message (docs/MEMORY.md). Has no effect while memory is off.
     recall_enabled: bool = True
+    # Optional: another engine (and its model; null for its default) a turn
+    # moves to when this agent's engine refuses it for a usage or rate limit
+    # before starting on it (docs/ENGINES.md). It must differ from `provider`.
+    fallback_provider: str | None = Field(default=None, min_length=1, max_length=64)
+    fallback_model: str | None = Field(default=None, max_length=200)
     # Optional first contents of the agent's notes (MEMORY.md).
     starter_notes: str | None = Field(default=None, max_length=256 * 1024)
 
@@ -89,6 +94,9 @@ class AgentUpdateRequest(BaseModel):
     pinned: bool | None = None
     memory_enabled: bool | None = None
     recall_enabled: bool | None = None
+    # An explicit null removes the fallback engine (and its model).
+    fallback_provider: str | None = Field(default=None, min_length=1, max_length=64)
+    fallback_model: str | None = Field(default=None, max_length=200)
     archived: bool | None = None
 
     @field_validator("name")
@@ -133,6 +141,8 @@ class AgentResponse(BaseModel):
     pinned: bool
     memory_enabled: bool
     recall_enabled: bool = True
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

@@ -29,7 +29,7 @@ from app.computers import grants
 from app.computers.service import COMPUTER_TOOL_PREFIX
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import local_claude_runner
+from app.services import engine_errors, local_claude_runner
 from app.services.local_approval_broker import (
     DENY_BY_USER,
     DENY_CANCELLED,
@@ -404,7 +404,16 @@ class ClaudeAdapter:
                 return failed(f"Claude exited with code {out.exit_code}", "cli_error")
             return failed("Claude ended without a result", "no_result")
         if final.is_error:
-            return failed(final.text or stderr or "Claude reported an error", "claude_error")
+            # A refused API call (a usage or rate limit) keeps Claude's own
+            # words and the reset time it reported; the runtime classifies it.
+            said = final.text or n.api_error or stderr or "Claude reported an error"
+            if n.limit_refused and n.api_error and n.api_error not in said:
+                said = f"{said} {n.api_error}"
+            if n.limit_refused and engine_errors.classify(said) is None:
+                # The CLI said the account's limit refused the call, in words
+                # that do not say so (older versions blamed the model).
+                said = f"Usage limit reached. {said}"
+            return failed(said, "claude_error", limit_resets_at=n.limit_resets_at)
         if final.permission_denied and not tools:
             return failed(
                 "Claude tried to use a tool, which is turned off for local chat", "tools_disabled"

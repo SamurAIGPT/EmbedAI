@@ -247,4 +247,5 @@ class EngineRegistry:
             "capabilities": capabilities_of(adapter).as_dict(),
             "configurable": bool(getattr(adapter, "needs_config", False)),
             "config": config,
+            "limit": self.runtime.engine_limit(engine_id) if callable(getattr(self.runtime, "engine_limit", None)) else None,
         }

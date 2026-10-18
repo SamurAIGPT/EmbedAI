@@ -496,6 +496,7 @@ async def start_turn(
         status="running",
         owner_token=secrets.token_urlsafe(24),
         owner_instance=owner_instance,
+        engine_phase="preparing",
         heartbeat_at=now,
         started_at=now,
     )
@@ -596,24 +597,63 @@ async def finish_turn(
     return True
 
 
+# Events a turn stores that are not the engine's own work.
+NOT_ENGINE_EVENTS = ("turn.started", "memory.recalled", "context.compacted", "engine.switched", "approval.resolved")
+
+# How far a turn cut by a crash or a stop had got (docs/RELIABILITY.md):
+# before_accept  the prompt never reached the engine: nothing ran, safe to send again;
+# after_accept   the engine produced output or tool calls: it may have changed things;
+# unknown        the prompt reached the engine, which had reported nothing yet;
+#                treated like after_accept.
+# None of them is ever re-run automatically.
+BEFORE_ACCEPT, AFTER_ACCEPT, UNKNOWN_ACCEPT = "before_accept", "after_accept", "unknown"
+
+
+async def mark_engine_sent(db: AsyncSession, turn_id: int, owner_token: str) -> bool:
+    """The run is handing the prompt to its engine now. False means the run no
+    longer owns its turn."""
+    await begin_write(db)
+    result = await db.execute(
+        update(Turn)
+        .where(Turn.id == turn_id, Turn.status == "running", Turn.owner_token == owner_token)
+        .values(engine_phase="sent")
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return result.rowcount == 1
+
+
 async def _interrupt(db: AsyncSession, turn_id: int, *conditions, reason: str) -> bool:
     """Move a running turn to `interrupted` under extra conditions, in one
     atomic update, and (only for the winner) cancel its open approvals and store
-    `turn.interrupted`, in the same transaction."""
+    `turn.interrupted`, in the same transaction. The event says how far the
+    turn had got (`replay`), from its engine phase and stored events."""
     await begin_write(db)
     updated = await db.execute(
         update(Turn)
         .where(Turn.id == turn_id, Turn.status == "running", *conditions)
         .values(status="interrupted", finished_at=utcnow(), error_code="interrupted")
-        .returning(Turn.thread_id)
+        .returning(Turn.thread_id, Turn.engine_phase)
         .execution_options(synchronize_session=False)
     )
-    thread_id = updated.scalar_one_or_none()
-    if thread_id is None:
+    row = updated.one_or_none()
+    if row is None:
         await db.rollback()
         return False
+    thread_id, phase = row
+    worked = (
+        await db.execute(
+            select(Event.id).where(Event.turn_id == turn_id, Event.type.not_in(NOT_ENGINE_EVENTS)).limit(1)
+        )
+    ).first()
+    if worked is not None:
+        replay = AFTER_ACCEPT
+    elif phase == "preparing":
+        replay = BEFORE_ACCEPT
+    else:  # "sent", or a turn from before phases were recorded
+        replay = UNKNOWN_ACCEPT
     await _cancel_open_approvals(db, thread_id, turn_id)
-    await _add_event(db, thread_id, "turn.interrupted", {"reason": reason}, turn_id)
+    await _add_event(db, thread_id, "turn.interrupted", {"reason": reason, "replay": replay}, turn_id)
     await db.commit()
     return True
 

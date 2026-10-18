@@ -614,7 +614,7 @@ async def test_a_process_can_interrupt_only_its_own_turn_when_it_shuts_down(sess
     assert await call(sessions, store.interrupt_own_turn, turn.id, turn.owner_token, reason="shutdown")
     assert not await call(sessions, store.interrupt_own_turn, turn.id, turn.owner_token)  # once
     events = await events_of(sessions, thread.id)
-    assert events[-1].type == "turn.interrupted" and events[-1].data == {"reason": "shutdown"}
+    assert events[-1].type == "turn.interrupted" and events[-1].data == {"reason": "shutdown", "replay": "after_accept"}
     assert (await reload(sessions, Approval, approval.id)).status == "cancelled"
 
 

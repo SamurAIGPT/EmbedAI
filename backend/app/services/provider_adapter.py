@@ -124,6 +124,9 @@ class TurnOutcome:
     # engine's own conversation id), or None to leave it as it is. Never
     # secrets, endpoints or keys.
     provider_state: dict | None = None
+    # When a usage or rate limit that refused this turn resets (epoch seconds),
+    # when the engine said so in a structured form (app/services/engine_errors.py).
+    limit_resets_at: float | None = None
 
 
 @dataclass

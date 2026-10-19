@@ -1,6 +1,9 @@
 """Saved rules, approval modes and the decision log, through a real runtime and
 a real child process playing the Claude CLI."""
 
+import asyncio
+import time
+
 import pytest
 
 from app.core.config import settings
@@ -32,6 +35,15 @@ def logged(event=None):
     return list(reversed(items))
 
 
+async def logged_shown_cards(count=1, timeout=10.0):
+    """The log entry is written just after the card is stored, so a test that saw the card
+    waits for its entry instead of assuming it is there already (slower on PostgreSQL)."""
+    deadline = time.monotonic() + timeout
+    while len(logged("shown")) < count and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    return logged()
+
+
 async def save_rule(rt, kind, command):
     async with rt.session() as db:
         await allow.add_rule(db, rt.owner_id, kind, command)
@@ -42,7 +54,7 @@ async def test_a_card_that_is_shown_and_allowed_leaves_two_records(rt, sessions,
     cli.script(BASH)
     await rt.send_turn(thread.id, "status")
     approval = await pending_approval(sessions, thread.id)
-    assert [e["event"] for e in logged()] == ["shown"]
+    assert [e["event"] for e in await logged_shown_cards()] == ["shown"]
     assert await rt.answer_approval(approval.id, "allow")
     await finished(sessions, thread.id)
     shown, allowed = logged()
@@ -213,7 +225,7 @@ async def test_a_saved_rule_never_allows_a_command_on_the_safety_floor(rt, sessi
     await rt.send_turn(thread.id, "push")
     approval = await pending_approval(sessions, thread.id)  # asked, not auto-allowed
     assert cli.log("reply") == []
-    [entry] = logged()
+    [entry] = await logged_shown_cards()
     assert (entry["event"], entry["rule"]) == ("shown", "safety_floor:force-push")
     assert await rt.answer_approval(approval.id, "deny")
     await finished(sessions, thread.id)
@@ -229,7 +241,7 @@ async def test_a_saved_rule_does_not_allow_a_command_that_cannot_be_read(rt, ses
     cli.script({"type": "tool", "tool_name": "Bash", "tool_input": {"command": "echo $(whoami)"}})
     await rt.send_turn(thread.id, "who")
     approval = await pending_approval(sessions, thread.id)
-    assert logged()[0]["rule"] == "safety_floor:unreadable"
+    assert (await logged_shown_cards())[0]["rule"] == "safety_floor:unreadable"
     assert await rt.answer_approval(approval.id, "deny")
     await finished(sessions, thread.id)
 

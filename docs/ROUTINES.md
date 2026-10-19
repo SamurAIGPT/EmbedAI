@@ -148,6 +148,11 @@ header shows a bell with the unread count. When `TELEGRAM_BOT_TOKEN` and
 `ROUTINE_TELEGRAM_CHAT_ID` are set, the same messages are also sent to that
 Telegram chat.
 
+Feed entries remain after their routine or conversation is deleted. Deleting
+a linked conversation clears the entry's `thread_id` while preserving its text
+and read state, so it no longer opens a missing conversation. On upgrade, a
+data migration clears links to conversations that were deleted earlier.
+
 ## Import and export
 
 `GET /routines/{id}/export` returns the definition without any secret.

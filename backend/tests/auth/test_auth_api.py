@@ -70,7 +70,14 @@ def app(factory) -> FastAPI:
     return application
 
 
-def client(app, *, peer=REMOTE, base_url=f"http://{PUBLIC_HOST}", headers=None) -> httpx.AsyncClient:
+def client(app, *, peer=REMOTE, base_url=f"http://{PUBLIC_HOST}", headers=None, behind=None) -> httpx.AsyncClient:
+    """`behind` is the server's trusted-proxy list: the app is then wrapped in Uvicorn's own
+    proxy-header middleware, as `python -m app.server` runs it. Without it the app sees the
+    socket and headers only, like a server that has no proxy configured."""
+    if behind is not None:
+        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+        app = ProxyHeadersMiddleware(app, trusted_hosts=",".join(behind))
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app, client=peer), base_url=base_url, headers=headers or {}
     )
@@ -229,19 +236,63 @@ async def test_login_sets_an_httponly_samesite_cookie_and_session_works(app, fac
         assert body["csrf_token"] == response.json()["csrf_token"]
 
 
-async def test_cookie_is_secure_over_https_and_behind_a_local_tls_proxy(app, factory):
+async def test_cookie_is_secure_over_https_and_behind_a_trusted_tls_proxy(app, factory):
+    from app.server import proxies
+
     await set_owner(factory)
+    login_as = {"passphrase": PASSPHRASE}
     async with client(app, base_url=f"https://{PUBLIC_HOST}") as api:
-        response = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE})
+        response = await api.post("/api/v1/auth/login", json=login_as)
         assert "Secure" in response.headers["set-cookie"]
+    proto = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "198.51.100.9"}
+    # A proxy on this machine, through the server's own proxy-header handling: believed.
+    async with client(app, peer=LOCAL, behind=proxies.parse(None)) as api:
+        assert "Secure" in (await api.post("/api/v1/auth/login", json=login_as, headers=proto)).headers["set-cookie"]
+    # A proxy on a private network that was listed: believed. Not listed: it is just another peer.
+    container = ("172.18.0.2", 40000)
+    async with client(app, peer=container, behind=proxies.parse("172.18.0.0/16")) as api:
+        assert "Secure" in (await api.post("/api/v1/auth/login", json=login_as, headers=proto)).headers["set-cookie"]
+    async with client(app, peer=container, behind=proxies.parse(None)) as api:
+        assert "Secure" not in (await api.post("/api/v1/auth/login", json=login_as, headers=proto)).headers["set-cookie"]
+    # A stranger's header is never believed, listed proxies or not.
+    async with client(app, peer=REMOTE, behind=proxies.parse("172.18.0.0/16")) as api:
+        assert "Secure" not in (await api.post("/api/v1/auth/login", json=login_as, headers=proto)).headers["set-cookie"]
+
+
+async def test_the_application_never_believes_a_forwarded_header_itself(app, factory):
+    """Without the proxy-header handling in front (a different server, a mistake), a header from
+    a loopback peer changes nothing: only Uvicorn's trusted list decides what is believed."""
+    await set_owner(factory)
+    proto = {"X-Forwarded-Proto": "https", "X-Forwarded-For": "198.51.100.9"}
     async with client(app, peer=LOCAL) as api:
-        response = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE},
-                                  headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "198.51.100.9"})
-        assert "Secure" in response.headers["set-cookie"]
-    async with client(app, peer=REMOTE) as api:
-        spoofed = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE},
-                                 headers={"X-Forwarded-Proto": "https"})
-        assert "Secure" not in spoofed.headers["set-cookie"]
+        response = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE}, headers=proto)
+        assert "Secure" not in response.headers["set-cookie"]
+        for _ in range(limiter.login_lockout.max_failures):
+            await api.post("/api/v1/auth/login", json={"passphrase": "wrong one"}, headers={"X-Forwarded-For": "198.51.100.9"})
+        # counted against the socket's address, so another claimed visitor on the same socket is locked out too
+        other = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE}, headers={"X-Forwarded-For": "198.51.100.77"})
+        assert other.status_code == 429
+
+
+async def test_each_visitor_behind_a_trusted_proxy_has_their_own_lockout(app, factory):
+    from app.server import proxies
+
+    await set_owner(factory)
+    behind = proxies.parse(None)
+
+    def forwarded(address):
+        return {"X-Forwarded-For": address, "X-Forwarded-Proto": "https"}
+
+    async with client(app, peer=LOCAL, behind=behind) as api:
+        for _ in range(limiter.login_lockout.max_failures):
+            await api.post("/api/v1/auth/login", json={"passphrase": "wrong one"}, headers=forwarded("198.51.100.1"))
+        locked = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE}, headers=forwarded("198.51.100.1"))
+        assert locked.status_code == 429
+        fresh = await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE}, headers=forwarded("198.51.100.2"))
+        assert fresh.status_code == 200  # another visitor of the same proxy is not locked out
+        # a client-supplied first hop does not choose the bucket: the proxy's own hop is the last one
+        spoof = {"X-Forwarded-For": "198.51.100.50, 198.51.100.1"}
+        assert (await api.post("/api/v1/auth/login", json={"passphrase": PASSPHRASE}, headers=spoof)).status_code == 429
 
 
 async def test_wrong_passphrases_lock_the_address_out(app, factory):

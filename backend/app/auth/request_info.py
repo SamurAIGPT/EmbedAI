@@ -3,6 +3,12 @@
 Shared by the middleware and the auth routes so both judge a request the same
 way. Nothing here trusts a header more than the socket: forwarding headers are
 only ever a reason to trust a request less.
+
+The client address and the scheme are read from the scope as they are. Behind a
+reverse proxy, Uvicorn has already replaced them with what the proxy reported,
+but only for a peer on the trusted list (app/server/proxies.py); this module never
+reads X-Forwarded-For or X-Forwarded-Proto itself, so it cannot believe a header
+that Uvicorn rejected.
 """
 
 import ipaddress
@@ -91,13 +97,8 @@ def from_browser(scope: Scope) -> bool:
 
 
 def is_https(scope: Scope) -> bool:
-    if scope.get("scheme") in ("https", "wss"):
-        return True
-    # Believed only from a proxy on this machine (the usual TLS front).
-    if peer_is_loopback(scope):
-        proto = (header(scope, b"x-forwarded-proto") or "").split(",")[0].strip().lower()
-        return proto == "https"
-    return False
+    """The scheme of the connection, or the one a trusted proxy reported (Uvicorn set it)."""
+    return scope.get("scheme") in ("https", "wss")
 
 
 def own_origin(scope: Scope) -> str | None:
@@ -148,15 +149,9 @@ def loopback_eligible(scope: Scope) -> bool:
 
 
 def client_source(scope: Scope) -> str:
-    """Who to count failed attempts against. Behind a proxy on this machine the
-    last X-Forwarded-For hop is the one that proxy wrote; anything earlier came
-    from the client and is ignored."""
+    """Who to count failed attempts against: the peer address in the scope, which behind a
+    trusted proxy is the visitor the proxy reported (Uvicorn set it) and otherwise the socket."""
     peer = peer_address(scope) or "unknown"
-    if is_loopback_hostname(peer):
-        forwarded = ",".join(header_values(scope, b"x-forwarded-for"))
-        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
-        if hops:
-            peer = hops[-1]
     clean = "".join(ch for ch in peer if ch.isalnum() or ch in ".:[]-%")
     return (clean or "unknown")[:64]
 

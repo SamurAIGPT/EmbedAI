@@ -111,15 +111,21 @@ def test_loopback_eligibility():
     assert not request_info.loopback_eligible(scope([("host", "localhost"), ("host", "localhost")]))
 
 
-def test_client_source_takes_only_the_last_hop_from_a_local_proxy():
-    assert request_info.client_source(scope([("x-forwarded-for", "6.6.6.6, 5.5.5.5")])) == "5.5.5.5"
-    # From a remote peer the header is the client's own claim: ignored.
+def test_client_source_is_the_peer_in_the_scope_and_never_a_header():
+    # Behind a trusted proxy Uvicorn has already put the visitor's address there; a header is never read here.
+    assert request_info.client_source(scope(client=("198.51.100.4", 1))) == "198.51.100.4"
+    assert request_info.client_source(scope([("x-forwarded-for", "6.6.6.6, 5.5.5.5")])) == "127.0.0.1"
     assert request_info.client_source(scope([("x-forwarded-for", "127.0.0.1")], client=("9.9.9.9", 1))) == "9.9.9.9"
+    assert request_info.client_source(scope(client=None)) == "unknown"
+    assert request_info.client_source(scope(client=("bad value\n<x>", 1))) == "badvaluex"
 
 
-def test_https_detection_trusts_forwarded_proto_only_from_a_local_proxy():
+def test_https_detection_reads_the_scheme_and_never_a_header():
     assert request_info.is_https(scope(scheme="https"))
-    assert request_info.is_https(scope([("x-forwarded-proto", "https")]))
+    assert request_info.is_https(scope(scheme="wss"))
+    assert not request_info.is_https(scope())
+    # From a loopback peer too: only Uvicorn's trusted list turns a header into a scheme.
+    assert not request_info.is_https(scope([("x-forwarded-proto", "https")]))
     assert not request_info.is_https(scope([("x-forwarded-proto", "https")], client=("9.9.9.9", 1)))
 
 

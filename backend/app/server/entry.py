@@ -13,6 +13,9 @@ Settings (bootstrap class, D-008: needed before the database is opened):
     OPEN_DOTS_PORT   port, default 8000
     OPEN_DOTS_UI_DIR folder holding the exported pages (a build with a relative API path)
     OPEN_DOTS_ALLOW_PUBLIC_BIND=1   needed to listen on anything but this machine's own address
+    TRUSTED_PROXIES  addresses or networks, besides loopback, whose X-Forwarded-For and
+                     X-Forwarded-Proto are believed (a proxy in another container or machine);
+                     for example 172.18.0.0/16. Not *, not /0. FORWARDED_ALLOW_IPS is ignored.
 
 The server is meant to sit behind a reverse proxy on the same machine (any proxy;
 it only reads standard forwarded headers) and to listen on loopback. Listening
@@ -33,6 +36,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.server import proxies
+
 EXIT_USAGE = 2
 EXIT_KEY_MISMATCH = 3  # same numbers as the desktop launch
 EXIT_DATABASE = 4
@@ -49,6 +54,7 @@ class ServerOptions:
     host: str
     port: int
     ui_dir: Path
+    trusted_proxies: tuple[str, ...] = proxies.LOOPBACK
 
 
 def _is_loopback(host: str) -> bool:
@@ -96,7 +102,11 @@ def read_options(argv: Sequence[str], environ: Mapping[str, str]) -> ServerOptio
             f"{ui_dir} has no index.html. Build the pages first: set NEXT_PUBLIC_API_BASE_URL=/api/v1 and "
             "OD_STATIC_EXPORT=1, run `npm run build` in frontend/, and point OPEN_DOTS_UI_DIR at the `out` folder."
         )
-    return ServerOptions(host=host, port=port, ui_dir=ui_dir)
+    try:
+        trusted = proxies.parse(environ.get(proxies.ENV_NAME))
+    except proxies.ProxyListError as exc:
+        raise ServerConfigError(str(exc)) from None
+    return ServerOptions(host=host, port=port, ui_dir=ui_dir, trusted_proxies=trusted)
 
 
 def build_app(options: ServerOptions):
@@ -180,10 +190,19 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     import uvicorn
 
     asgi = build_app(options)
+    override = proxies.environment_override(os.environ if environ is None else environ, options.trusted_proxies)
+    if override:
+        from app.core.logging import get_logger
+
+        get_logger(__name__).warning(override)
     uvicorn.run(
         asgi,
         host=options.host,
         port=options.port,
+        # Uvicorn is the only place that believes X-Forwarded-For and X-Forwarded-Proto, and only from
+        # these peers; its own FORWARDED_ALLOW_IPS is not consulted when a list is given.
+        proxy_headers=True,
+        forwarded_allow_ips=",".join(options.trusted_proxies),
         log_config=None,
         log_level="info",
         access_log=False,

@@ -720,6 +720,10 @@ async def sync_active_tasks() -> None:
         )
         await db.commit()
 
+        # The read below is followed by a write. On SQLite a transaction that reads first
+        # and then writes fails at once ("database is locked", whatever the busy timeout)
+        # if another process committed in between, so take the write lock up front.
+        await begin_write(db)
         # A run this process is still driving is not stale, however long it has
         # waited for a person to answer an approval.
         stale = await db.execute(

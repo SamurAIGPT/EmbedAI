@@ -246,9 +246,10 @@ def signs_in(server: Server) -> None:
 @check("a signed-in owner can use the API; a write without the CSRF token is refused")
 def uses_api(server: Server) -> int:
     headers, csrf = signed_in(server)
-    assert server.client.get("/api/v1/agents", headers=headers).status_code == 200
+    listed = server.client.get("/api/v1/agents", headers=headers)
+    assert listed.status_code == 200, f"GET /agents -> {listed.status_code} {listed.text[:300]}"
     no_csrf = server.client.post("/api/v1/agents", json={"name": "smoke"}, headers=headers)
-    assert no_csrf.status_code == 403 and no_csrf.json()["detail"]["error_code"] == "csrf_failed"
+    assert no_csrf.status_code == 403 and no_csrf.json()["detail"]["error_code"] == "csrf_failed",         f"POST /agents without CSRF -> {no_csrf.status_code} {no_csrf.text[:300]}"
     made = server.client.post("/api/v1/agents", json={"name": "smoke"}, headers={**headers, "X-CSRF-Token": csrf})
     assert made.status_code in (200, 201), made.text
     return made.json()["id"]
@@ -263,8 +264,10 @@ def pairs_phone(server: Server) -> None:
     paired = server.client.post("/api/v1/auth/pair", json={"code": code, "label": "phone"}, headers=PROXY)
     assert paired.status_code == 200, paired.text
     bearer = {**PROXY, "Authorization": f"Bearer {paired.json()['token']}"}
-    assert server.client.get("/api/v1/threads", headers=bearer).status_code == 200
-    assert server.client.get("/api/v1/settings", headers=bearer).status_code == 403
+    threads = server.client.get("/api/v1/threads", headers=bearer)
+    assert threads.status_code == 200, f"GET /threads with the paired token -> {threads.status_code} {threads.text[:300]}"
+    settings = server.client.get("/api/v1/settings", headers=bearer)
+    assert settings.status_code == 403, f"GET /settings with a chat-only token -> {settings.status_code} {settings.text[:300]}"
     again = server.client.post("/api/v1/auth/pair", json={"code": code, "label": "phone"}, headers=PROXY)
     assert again.status_code in (400, 401, 403, 404, 410), "a pairing code must work only once"
 

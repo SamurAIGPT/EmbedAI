@@ -20,6 +20,7 @@ from app.routers.local import router as local_router
 from app.services import local_approval_broker, local_claude_runner, task_execution_service
 from app.services.local_approval_broker import broker
 from app.services.local_run_hub import hub as run_hub
+from tests.conftest import using_sqlite
 
 
 def local_app(db_session) -> FastAPI:
@@ -407,3 +408,52 @@ async def test_a_live_run_waiting_for_approval_is_not_swept_as_stale(
     await db_session.refresh(dead)
     assert live.status == "running"
     assert dead.status == "failed"
+
+
+@pytest.mark.skipif(not using_sqlite(), reason="the lock is a SQLite behavior")
+async def test_the_stale_run_sweep_survives_another_process_writing_meanwhile(monkeypatch):
+    """Another process (the pairing command, a second tool) commits between the sweep's read
+    and its write. A read-then-write transaction on SQLite then fails at once with "database
+    is locked", whatever the busy timeout; the sweep must hold the write lock from the start."""
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select, update
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db.engine import create_app_async_engine
+
+    engine = create_app_async_engine()
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(task_execution_service, "AsyncSessionLocal", sessions)
+    async with sessions() as db:
+        dead = Tasks(user_id="race-user", provider="claude-local", box_id="local", prompt_text="y",
+                     status="running", session_id="race-dead")
+        db.add(dead)
+        await db.commit()
+        task_id = dead.id
+        await db.execute(update(Tasks).where(Tasks.id == task_id).values(updated_at=datetime.now(UTC) - timedelta(hours=1)))
+        await db.commit()
+
+    def another_process_writes(_task_id):
+        connection = sqlite3.connect(settings.SQLITE_PATH, timeout=0.3)
+        try:
+            connection.execute("UPDATE task SET prompt_text = 'touched by another process' WHERE id = ?", (task_id,))
+            connection.commit()
+        except sqlite3.OperationalError:
+            pass  # held off by the sweep's write lock: the safe outcome
+        finally:
+            connection.close()
+        return False
+
+    try:
+        monkeypatch.setattr(run_hub, "is_live", another_process_writes)
+        await task_execution_service.sync_active_tasks()  # must not raise "database is locked"
+        async with sessions() as db:
+            status = (await db.execute(select(Tasks.status).where(Tasks.id == task_id))).scalar_one()
+        assert status == "failed"
+    finally:
+        async with sessions() as db:
+            await db.execute(Tasks.__table__.delete().where(Tasks.id == task_id))
+            await db.commit()
+        await engine.dispose()

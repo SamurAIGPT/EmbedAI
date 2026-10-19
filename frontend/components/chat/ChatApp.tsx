@@ -196,7 +196,14 @@ export function ChatApp() {
   useEffect(() => {
     if (!ready || threadId === null) return;
     let cancelled = false;
-    api.getThread(threadId).then((value) => { if (!cancelled) setOpenedThread(value); }).catch(() => {});
+    api.getThread(threadId).then((value) => { if (!cancelled) setOpenedThread(value); }).catch((error: unknown) => {
+      // A deleted conversation can remain in local state until the next list
+      // poll. Clear its cached agent/computer metadata on a definite 404.
+      if (!cancelled && error instanceof ApiError && error.status === 404) {
+        setOpenedThread((current) => current?.id === threadId ? null : current);
+        setThreads((current) => current?.filter((item) => item.id !== threadId) ?? current);
+      }
+    });
     return () => { cancelled = true; };
   }, [ready, threadId, listTick, transcript.runningTurnId]);
 

@@ -62,10 +62,24 @@ async def test_only_the_missing_header_is_named(warnings):
     assert len(warnings) == 1 and "X-Forwarded-Proto" in warnings[0]
 
 
-async def test_the_standard_forwarded_header_counts_as_both(warnings):
+async def test_the_standard_forwarded_header_does_not_count_because_the_server_ignores_it(warnings):
     async with client(headers={"Forwarded": "for=203.0.113.9;proto=https"}) as api:
+        assert (await api.get("/")).text == "ok"  # still never blocked
+    assert len(warnings) == 2
+    for message, name in zip(warnings, ("X-Forwarded-For", "X-Forwarded-Proto")):
+        assert f"without {name}" in message and "standard `Forwarded` header" in message and "does not read it" in message
+
+
+async def test_the_hint_about_forwarded_appears_only_when_that_header_was_sent(warnings):
+    async with client() as api:
         await api.get("/")
-    assert warnings == []
+    assert warnings and not any("Forwarded` header" in message for message in warnings)
+
+
+async def test_forwarded_does_not_hide_the_one_header_that_is_missing(warnings):
+    async with client(headers={"Forwarded": "for=203.0.113.9", "X-Forwarded-For": "203.0.113.9"}) as api:
+        await api.get("/")
+    assert len(warnings) == 1 and "without X-Forwarded-Proto" in warnings[0] and "does not read it" in warnings[0]
 
 
 @pytest.mark.parametrize("base", ["http://localhost:8000", "http://127.0.0.1:8000", "http://[::1]:8000"])
@@ -95,7 +109,9 @@ def test_the_check_names_exactly_what_is_missing():
     assert missing_headers(scope("dots.example.com")) == ["X-Forwarded-For", "X-Forwarded-Proto"]
     assert missing_headers(scope("dots.example.com", "x-forwarded-for")) == ["X-Forwarded-Proto"]
     assert missing_headers(scope("dots.example.com", "x-forwarded-proto")) == ["X-Forwarded-For"]
-    assert missing_headers(scope("dots.example.com", "forwarded")) == []
+    # The standard header carries the same facts but the server does not read it, so it counts for nothing.
+    assert missing_headers(scope("dots.example.com", "forwarded")) == ["X-Forwarded-For", "X-Forwarded-Proto"]
+    assert missing_headers(scope("dots.example.com", "forwarded", "x-forwarded-for", "x-forwarded-proto")) == []
 
 
 async def test_the_server_application_is_wrapped_by_the_check(tmp_path, warnings, monkeypatch):

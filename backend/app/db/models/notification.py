@@ -23,7 +23,8 @@ class Notification(Base):
     kind: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # What a click opens. No foreign keys: a notification outlives what it names.
+    # What a click opens. No foreign key: deleting the thread clears this link,
+    # while preserving the notification in the feed.
     routine_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     run_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     thread_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

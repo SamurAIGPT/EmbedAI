@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.engine import create_app_async_engine
-from app.db.models import Approval, Event, Thread, Turn
+from app.db.models import Approval, Event, Notification, Thread, Turn
 from app.services import thread_store as store
 
 
@@ -37,6 +37,7 @@ async def cleanup(sessions, owner):
     yield
     async with sessions() as db:
         ids = select(Thread.id).where(Thread.owner_id == owner)
+        await db.execute(delete(Notification).where(Notification.owner_id == owner))
         await db.execute(delete(Approval).where(Approval.thread_id.in_(ids)))
         await db.execute(delete(Event).where(Event.thread_id.in_(ids)))
         await db.execute(delete(Turn).where(Turn.thread_id.in_(ids)))
@@ -726,6 +727,33 @@ async def test_delete_removes_the_thread_its_turns_events_and_approvals_and_noth
     assert len(await call(sessions, store.list_turns, other.id)) == 1
     assert await events_of(sessions, other.id)
     assert await call(sessions, store.get_approval, other_approval.id) is not None
+
+
+async def test_delete_detaches_feed_notifications_from_the_thread(sessions, owner):
+    doomed = await new_thread(sessions, owner)
+    other = await new_thread(sessions, owner)
+    async with sessions() as db:
+        linked = Notification(
+            owner_id=owner,
+            kind="routine_completed",
+            title="Finished",
+            thread_id=doomed.id,
+        )
+        unrelated = Notification(
+            owner_id=owner,
+            kind="routine_completed",
+            title="Other finished",
+            thread_id=other.id,
+        )
+        db.add_all([linked, unrelated])
+        await db.commit()
+        linked_id, unrelated_id = linked.id, unrelated.id
+
+    await call(sessions, store.delete_thread, doomed.id)
+
+    async with sessions() as db:
+        assert (await db.get(Notification, linked_id)).thread_id is None
+        assert (await db.get(Notification, unrelated_id)).thread_id == other.id
 
 
 async def test_a_deleted_conversations_ids_are_never_given_to_a_new_one(sessions, owner):

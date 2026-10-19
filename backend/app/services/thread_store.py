@@ -33,7 +33,7 @@ from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Approval, Event, Thread, Turn
+from app.db.models import Approval, Event, Notification, Thread, Turn
 from app.db.models.thread import SESSION_STATES
 from app.db.transactions import begin_write
 
@@ -172,6 +172,12 @@ async def delete_thread(db: AsyncSession, thread_id: int) -> None:
         await db.rollback()
         raise ThreadBusy(thread_id)
     # Children first: events and approvals point at turns, all of them at the thread.
+    # Notifications remain in the feed, but no longer have a conversation to open.
+    await db.execute(
+        update(Notification)
+        .where(Notification.thread_id == thread_id)
+        .values(thread_id=None)
+    )
     await db.execute(delete(Approval).where(Approval.thread_id == thread_id))
     await db.execute(delete(Event).where(Event.thread_id == thread_id))
     await db.execute(delete(Turn).where(Turn.thread_id == thread_id))

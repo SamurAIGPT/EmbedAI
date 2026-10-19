@@ -20,6 +20,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      server: ${{ steps.filter.outputs.server }}
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dorny/paths-filter@v3.0.2
@@ -36,6 +37,11 @@ jobs:
               - 'desktop/**'
               - 'backend/**'
               - 'frontend/**'
+              - '.github/workflows/ci.yml'
+            server:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'scripts/**'
               - '.github/workflows/ci.yml'
 
   backend-sqlite:
@@ -107,6 +113,33 @@ jobs:
       - run: uv sync --frozen
       - run: uv run python ../scripts/smoke-backend.py
 
+  # The server run mode end to end: the pages are built with a relative API path,
+  # then `python -m app.server` runs on scratch SQLite and is walked through
+  # migrate, sign-in through simulated proxy headers, pairing, a refused second
+  # server, SIGTERM and a restart (scripts/smoke-server.py, about a minute).
+  server-smoke:
+    name: Server smoke (pages and API in one process)
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: npm ci
+        working-directory: frontend
+      - run: node --test scripts/build-ui.test.js
+      - run: node scripts/build-ui.js
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run python ../scripts/smoke-server.py --ui-dir ../frontend/out
+        working-directory: backend
+
   frontend:
     name: Frontend lint and build
     needs: changes
@@ -146,7 +179,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, frontend, desktop]
+    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, server-smoke, frontend, desktop]
     runs-on: ubuntu-latest
     steps:
       - name: Check results

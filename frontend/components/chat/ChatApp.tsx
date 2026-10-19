@@ -23,6 +23,7 @@ import { ThreadList } from "./ThreadList";
 import { useThreadStream } from "./useThreadStream";
 
 const LIST_REFRESH_MS = 15_000;
+const COMPUTER_STATUS_REFRESH_MS = 15_000;
 
 type Gate =
   | { phase: "loading" }
@@ -233,6 +234,35 @@ export function ChatApp() {
   const threadAgent = thread?.agent_id != null ? (agents?.find((a) => a.id === thread.agent_id) ?? null) : null;
   // The computer this conversation's tools run in; older backends send none.
   const threadComputer = thread?.computer ?? threadAgent?.computer ?? null;
+  const [liveComputer, setLiveComputer] = useState<{ id: number; state: string } | null>(null);
+  const liveComputerState = liveComputer && liveComputer.id === threadComputer?.id ? liveComputer.state : null;
+
+  useEffect(() => {
+    if (!ready || !threadAgent || !threadComputer) return;
+    let cancelled = false;
+    const refreshComputer = async () => {
+      try {
+        const computer = await api.getAgentComputer(threadAgent.id);
+        if (!cancelled) setLiveComputer({ id: computer.id, state: computer.live_state ?? computer.state });
+      } catch {
+        if (!cancelled) setLiveComputer(null);
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshComputer();
+    };
+    void refreshComputer();
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    const timer = setInterval(() => {
+      refreshWhenVisible();
+    }, COMPUTER_STATUS_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [ready, threadAgent?.id, threadComputer?.id]);
+
   const choosable = activeAgents(agents);
   // The chosen agent may have been archived since: then the chat starts plain.
   const startingAgentId = choosable.some((a) => a.id === newAgentId) ? newAgentId : null;
@@ -461,7 +491,7 @@ export function ChatApp() {
           title={`This conversation's commands and file edits run in ${threadAgent.name}'s computer (${threadComputer.image}), not on this machine.`}
           className="cursor-pointer rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300"
         >
-          {computerChip(threadComputer)}
+          {computerChip(threadComputer, liveComputerState)}
         </button>
       )}
       {ready && gate.phase === "ready" && (gate.status.tools_enabled || threadComputer) && threadId !== null && (

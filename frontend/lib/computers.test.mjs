@@ -84,6 +84,7 @@ test('labels for state, image, limits and the chip', () => {
   assert.equal(limitsText(computer({ memory_mb: 512 })), '1 CPU · 512 MB · 256 processes');
   assert.equal(computerChip(null), null);
   assert.equal(computerChip(computer()), 'Computer · running');
+  assert.equal(computerChip(computer(), 'stopped'), 'Computer · stopped');
 });
 
 test('computer tools are recognised and described', () => {

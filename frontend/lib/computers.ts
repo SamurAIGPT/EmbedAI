@@ -44,9 +44,9 @@ export function effectiveState(computer: Pick<Computer, "state" | "live_state">)
   return computer.live_state ?? computer.state;
 }
 
-export function computerChip(summary: ComputerSummary | null | undefined): string | null {
+export function computerChip(summary: ComputerSummary | null | undefined, liveState?: string | null): string | null {
   if (!summary) return null;
-  return `Computer · ${computerStateLabel(summary.state).toLowerCase()}`;
+  return `Computer · ${computerStateLabel(liveState ?? summary.state).toLowerCase()}`;
 }
 
 // Short image name for a narrow space: "python:3.12-slim-bookworm" from a pinned reference.

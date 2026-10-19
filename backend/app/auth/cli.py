@@ -15,6 +15,8 @@ import getpass
 import sys
 
 from app.auth import credentials, store
+from app.core import public_url
+from app.core.config import settings
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -45,7 +47,10 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"pairing code: {credentials.format_pairing_code(code)}")
                 print(f"scope:        {args.scope}")
                 print(f"expires:      {record.expires_at.isoformat(timespec='seconds')} (single use)")
-                print("Open /pair on the web UI's address and type it.")
+                if settings.PUBLIC_ORIGIN:
+                    print(f"open:         {public_url.pairing_link(settings.PUBLIC_ORIGIN, credentials.format_pairing_code(code))}")
+                else:
+                    print("Open /pair on the web UI's address and type it.")
             elif args.command == "devices":
                 sessions = await store.list_active_sessions(db)
                 if not sessions:

@@ -101,9 +101,10 @@ def build_app(options: ServerOptions):
     if "LOCAL_EXECUTION_ENABLED" not in settings.model_fields_set:
         settings.LOCAL_EXECUTION_ENABLED = True
     from app.main import app
+    from app.server.proxy_check import check_forwarded_headers
     from app.server.static_ui import serve_ui
 
-    return serve_ui(app, options.ui_dir)
+    return check_forwarded_headers(serve_ui(app, options.ui_dir))
 
 
 def migrate() -> int:

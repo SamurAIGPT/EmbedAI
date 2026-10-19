@@ -4,6 +4,7 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from sqlalchemy import URL
 
+from app.core import public_url
 from app.desktop import profile
 
 
@@ -99,6 +100,11 @@ class Settings(BaseSettings):
     # "localhost,127.0.0.1,[::1],dots.example.com". A "*.example.com" entry
     # matches its subdomains.
     TRUSTED_HOSTS: str = "localhost,127.0.0.1,[::1]"
+    # The address people use to reach a self-hosted server, e.g.
+    # "https://dots.example.com" (scheme and host only, no path). Its host name
+    # is answered to as if it were listed in TRUSTED_HOSTS, and pairing links
+    # printed on the server use it. Empty for the desktop app and local use.
+    OPEN_DOTS_PUBLIC_URL: str = ""
     # Whether a request from this machine needs no sign-in:
     #   off       every request signs in (default; safest)
     #   programs  loopback programs (curl, scripts) act as the owner; browsers
@@ -159,7 +165,19 @@ class Settings(BaseSettings):
 
     @property
     def TRUSTED_HOST_LIST(self) -> list[str]:
-        return [host.strip().lower() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
+        hosts = [host.strip().lower() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
+        public = public_url.hostname(self.OPEN_DOTS_PUBLIC_URL)
+        return hosts + [public] if public and public not in hosts else hosts
+
+    @property
+    def PUBLIC_ORIGIN(self) -> str:
+        """The normalized public address, or "" when none is set."""
+        return self.OPEN_DOTS_PUBLIC_URL
+
+    @field_validator("OPEN_DOTS_PUBLIC_URL")
+    @classmethod
+    def _check_public_url(cls, value: str) -> str:
+        return public_url.normalize(value)
 
     @field_validator("LOOPBACK_TRUST")
     @classmethod

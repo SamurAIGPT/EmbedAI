@@ -195,8 +195,15 @@ export function nextRunText(routine: Pick<Routine, "paused" | "next_run_at" | "s
 }
 
 // The full address of a webhook path ("/hooks/12") on the configured backend.
-export function webhookUrl(path: string, apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1"): string {
-  return apiBase.replace(/\/api\/v1\/?$/, "") + path;
+// A page served by the backend itself is built with a relative API path ("/api/v1"),
+// so the address it was loaded from is the backend's address.
+export function webhookUrl(
+  path: string,
+  apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1",
+  origin = typeof window === "undefined" ? "" : window.location.origin,
+): string {
+  const base = apiBase.replace(/\/api\/v1\/?$/, "");
+  return (/^https?:\/\//.test(base) ? base : origin + base) + path;
 }
 
 export function curlExample(url: string, secret: string): string {

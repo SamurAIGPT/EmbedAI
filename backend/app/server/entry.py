@@ -1,6 +1,10 @@
 """Start the backend as a server that also serves the web pages.
 
     python -m app.server migrate               # create or update the database first (copies SQLite aside)
+    python -m app.server doctor                # check that this machine is ready (changes nothing)
+    python -m app.server backup [--out DIR]    # one archive of the database, attachments, decision log and workspace
+    python -m app.server restore ARCHIVE       # fill an empty data folder from an archive
+    python -m app.server service [--user NAME] # print a systemd unit for this installation
     python -m app.server                       # reads the settings below from the environment
     python -m app.server --ui-dir ../frontend/out --port 8000
 
@@ -14,9 +18,11 @@ The server is meant to sit behind a reverse proxy on the same machine (any proxy
 it only reads standard forwarded headers) and to listen on loopback. Listening
 on another address, as a container needs, is an explicit opt-in.
 
-Local execution is switched on here unless the environment or `.env` sets it either way: a
-server exists to run agents, and the desktop does the same through its profile.
-Tools and everything else keep their settings.
+The PATH gets the usual per-user program folders appended (app/server/engine_path.py), so an
+engine installed in the service account's home is found when the server runs as a service.
+
+Settings keep their usual defaults, local execution included: agents run only when the settings
+say LOCAL_EXECUTION_ENABLED=true, and `doctor` reports it when they do not.
 """
 
 import argparse
@@ -94,16 +100,17 @@ def read_options(argv: Sequence[str], environ: Mapping[str, str]) -> ServerOptio
 
 
 def build_app(options: ServerOptions):
-    """The application with the pages in front of it. Local execution defaults on
-    here unless the environment or `.env` sets it either way."""
-    from app.core.config import settings
-
-    if "LOCAL_EXECUTION_ENABLED" not in settings.model_fields_set:
-        settings.LOCAL_EXECUTION_ENABLED = True
+    """The application with the pages in front of it. Settings keep their usual defaults:
+    agents run only when LOCAL_EXECUTION_ENABLED=true is set (`doctor` says when it is not)."""
+    from app.core.logging import get_logger
     from app.main import app
+    from app.server.engine_path import augment_path
     from app.server.proxy_check import check_forwarded_headers
     from app.server.static_ui import serve_ui
 
+    added = augment_path()
+    if added:
+        get_logger(__name__).info(f"Added to the PATH for engines: {', '.join(added)}")
     return check_forwarded_headers(serve_ui(app, options.ui_dir))
 
 
@@ -147,6 +154,18 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["migrate"]:
         return migrate()
+    if arguments[:1] in (["backup"], ["restore"]):
+        from app.server import backup_cli
+
+        return backup_cli.main(arguments)
+    if arguments[:1] == ["service"]:
+        from app.server import service
+
+        return service.main(arguments[1:])
+    if arguments[:1] == ["doctor"]:
+        from app.server import doctor
+
+        return doctor.main(arguments[1:], os.environ if environ is None else environ)
     try:
         options = read_options(arguments, os.environ if environ is None else environ)
     except ServerConfigError as exc:

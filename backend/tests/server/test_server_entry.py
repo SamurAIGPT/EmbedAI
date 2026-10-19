@@ -102,16 +102,25 @@ def test_a_real_server_serves_pages_and_keeps_the_api_closed(ui, tmp_path):
     }
     # The test must not depend on how the machine's .env sets local execution.
     environment.pop("LOCAL_EXECUTION_ENABLED", None)
+    # The log goes to a file: a pipe nobody reads can fill up and stall the server, and the file
+    # lets a failure show what the server said.
+    log_path = tmp_path / "server.log"
+    log = log_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
         [sys.executable, "-m", "app.server"], cwd=BACKEND_DIR, env=environment,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        stdout=log, stderr=subprocess.STDOUT, text=True,
     )
+
+    def server_log() -> str:
+        log.flush()
+        return log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+
     base = f"http://127.0.0.1:{port}"
     try:
         deadline = time.monotonic() + 40
         while True:
             if process.poll() is not None:
-                pytest.fail(f"the server exited early ({process.returncode}):\n{process.stdout.read()}")
+                pytest.fail(f"the server exited early ({process.returncode}):\n{server_log()}")
             try:
                 status, body = fetch(f"{base}/api/v1/health")
                 if status == 200:
@@ -119,7 +128,7 @@ def test_a_real_server_serves_pages_and_keeps_the_api_closed(ui, tmp_path):
             except OSError:
                 pass
             if time.monotonic() > deadline:
-                pytest.fail("the server did not come up in 40 seconds")
+                pytest.fail(f"the server did not come up in 40 seconds (process running: {process.poll() is None}):\n{server_log()}")
             time.sleep(0.3)
 
         assert fetch(f"{base}/login/") == (200, "<html>login page</html>")
@@ -134,5 +143,4 @@ def test_a_real_server_serves_pages_and_keeps_the_api_closed(ui, tmp_path):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
-        if process.stdout:
-            process.stdout.close()
+        log.close()

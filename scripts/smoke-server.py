@@ -110,6 +110,7 @@ class Server:
             "OPEN_DOTS_UI_DIR": str(self.ui_dir),
             "OPEN_DOTS_PORT": str(self.port),
             "OPEN_DOTS_PUBLIC_URL": PUBLIC_URL,
+            "LOCAL_EXECUTION_ENABLED": "true",  # a server install sets this in its settings file; the agents API needs it
             **extra,
         }
 

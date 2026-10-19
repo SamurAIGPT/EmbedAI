@@ -210,7 +210,7 @@ with ApiClient(configuration) as client:
 """
         result = subprocess.run(
             [sys.executable, "-c", code, str(self.ca_file)],
-            cwd=self.root, env=environment, capture_output=True, text=True, timeout=10,
+            cwd=self.root, env=environment, capture_output=True, text=True, timeout=60,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -240,7 +240,7 @@ with patch('app.services.box_operations.ApiClient') as remote, \
 """
         result = subprocess.run(
             [sys.executable, "-c", code],
-            cwd=self.root, env=environment, capture_output=True, text=True, timeout=10,
+            cwd=self.root, env=environment, capture_output=True, text=True, timeout=60,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 

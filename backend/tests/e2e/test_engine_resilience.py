@@ -56,7 +56,15 @@ def test_a_hanging_and_a_crashing_engine_block_nothing(tmp_path):
 
             reader = threading.Thread(target=list_engines)
             reader.start()
-            wait_for(lambda: processes_running("hang-codex-od-test"), 10, what="the codex probe to start")
+            try:
+                wait_for(lambda: processes_running("hang-codex-od-test"), 10, what="the codex probe to start")
+            except AssertionError as exc:
+                everything = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+                raise AssertionError(
+                    f"{exc}\nlisting finished: {'response' in listing} {listing.get('response') and listing['response'].status_code}"
+                    f"\nprograms: {[p.name for p in hang.parent.iterdir()]} executable={hang.stat().st_mode & 0o111 != 0}"
+                    f"\nprocesses:\n{everything[-3000:]}\nbackend log:\n{b.log()[-3000:]}"
+                ) from None
 
             # ...does not hold up a Claude conversation.
             b.script({"type": "chat", "text": "fine here"})

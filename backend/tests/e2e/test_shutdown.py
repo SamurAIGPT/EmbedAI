@@ -114,7 +114,7 @@ def test_a_routine_run_in_flight_ends_interrupted_on_sigterm_with_a_notification
     assert b.wait_exit(timeout=30) in (0, -signal.SIGTERM), b.log()
     wait_for(lambda: not alive(engine["pid"]) and not alive(engine["child_pid"]), 10, what="the engine to end")
     state, error = b.query("SELECT state, error FROM routine_run WHERE id = ?", run_id)[0]
-    assert state == "interrupted", (state, error)
+    assert state == "interrupted", (state, error, b.log()[-3000:])
     kinds = [row[0] for row in b.query("SELECT kind FROM notification WHERE run_id = ?", run_id)]
     assert "routine_interrupted" in kinds
     turn_id = b.query("SELECT turn_id FROM routine_run WHERE id = ?", run_id)[0][0]

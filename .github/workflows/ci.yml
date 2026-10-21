@@ -48,6 +48,9 @@ jobs:
     name: Backend tests (SQLite)
     needs: changes
     if: needs.changes.outputs.backend == 'true'
+    # Pinned: on ubuntu-latest (Ubuntu 26 from 2026-10-19) test_a_hanging_and_a_crashing_engine_block_nothing
+    # fails every time, because the fake Codex program is never seen running. Cause not found yet.
+    # Move back to ubuntu-latest once it is.
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -66,6 +69,9 @@ jobs:
     name: Backend tests (PostgreSQL)
     needs: changes
     if: needs.changes.outputs.backend == 'true'
+    # Pinned: on ubuntu-latest (Ubuntu 26 from 2026-10-19) test_a_hanging_and_a_crashing_engine_block_nothing
+    # fails every time, because the fake Codex program is never seen running. Cause not found yet.
+    # Move back to ubuntu-latest once it is.
     runs-on: ubuntu-24.04
     defaults:
       run:

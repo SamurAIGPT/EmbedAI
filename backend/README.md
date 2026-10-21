@@ -33,6 +33,8 @@ the Telegram bot, and the [web UI](../frontend)) with one command, see the
 
 ## Running just the backend
 
+To run the whole app on a server (pages and API in one process, with its own database commands), see [docs/SELF-HOSTING.md](../docs/SELF-HOSTING.md); the steps below are for developing the backend.
+
 ```bash
 docker compose up -d                # Postgres
 uv sync                             # install deps

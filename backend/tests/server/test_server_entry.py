@@ -82,6 +82,15 @@ def fetch(url: str) -> tuple[int, str]:
         return error.code, error.read().decode()
 
 
+def test_migrate_help_prints_usage_and_migrates_nothing(capsys, monkeypatch):
+    called = []
+    monkeypatch.setattr("app.server.entry.migrate", lambda: called.append("migrated") or 0)
+    assert main(["migrate", "--help"]) == 0
+    assert "usage: python -m app.server migrate" in capsys.readouterr().out
+    assert main(["migrate", "--bogus"]) == EXIT_USAGE
+    assert called == []
+
+
 @pytest.mark.skipif(not using_sqlite(), reason="the real-process check uses its own SQLite file")
 def test_a_real_server_serves_pages_and_keeps_the_api_closed(ui, tmp_path):
     database = tmp_path / "server.db"

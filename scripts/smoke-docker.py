@@ -3,8 +3,8 @@
 
 scripts/smoke-server.py and smoke-server-chat.py check the server process. This one checks the
 packaging around it: what is (and is not) inside the image, that compose starts it healthy on a
-fresh volume, that the published port reaches the pages and the sign-in, that the compose network
-is trusted as a proxy (and nothing else is), that data survives `down` and `up`, that an older
+fresh volume, that the published port reaches the pages and the sign-in, that no address is
+believed as a proxy unless it is named, that data survives `down` and `up`, that an older
 database is upgraded on start, that a backup runs inside the container, and that a stop signal ends
 it cleanly. Nothing outside a scratch folder, a scratch compose project and its images is touched.
 
@@ -212,18 +212,33 @@ def main() -> int:
 
         published()
 
-        @check("sign-in through the published port: forwarded HTTPS is believed (the compose network is trusted) and each visitor has their own lockout")
-        def sign_in():
+        @check("by default nothing is believed: forwarded HTTPS from the host side is ignored (cookie not Secure, one shared lockout)")
+        def untrusted_by_default():
             done = stack.exec("python", "-m", "app.auth.cli", "set-passphrase", "--stdin", stdin=PASSPHRASE + "\n")
             assert done.returncode == 0, done.stdout + done.stderr
             first = stack.visitor("198.51.100.1", PASSPHRASE)
+            assert first.status_code == 200 and "Secure" not in first.headers["set-cookie"], (first.status_code, first.headers.get("set-cookie"))
+            for claim in ("198.51.100.2", "198.51.100.3", "198.51.100.4", "198.51.100.5", "198.51.100.6"):
+                assert stack.visitor(claim, "wrong passphrase").status_code == 401
+            assert stack.visitor("198.51.100.7", PASSPHRASE).status_code == 429  # one socket, one bucket, whatever it claims
+
+        untrusted_by_default()
+
+        @check("naming the gateway address in OPEN_DOTS_TRUSTED_PROXIES makes a host-side proxy believed, with a lockout per visitor")
+        def gateway_opt_in():
+            gateway = json.loads(run(["docker", "network", "inspect", f"{PROJECT}_default"]).stdout)[0]["IPAM"]["Config"][0]["Gateway"]
+            assert gateway == "172.31.250.1", gateway  # the address compose.yaml documents
+            stack.environment["OPEN_DOTS_TRUSTED_PROXIES"] = gateway
+            stack.compose("up", "-d", "--no-build")
+            stack.wait_healthy()
+            first = stack.visitor("198.51.100.11", PASSPHRASE)
             assert first.status_code == 200 and "Secure" in first.headers["set-cookie"], (first.status_code, first.headers.get("set-cookie"))
             for _ in range(5):
-                assert stack.visitor("198.51.100.2", "wrong passphrase").status_code == 401
-            assert stack.visitor("198.51.100.2", PASSPHRASE).status_code == 429
-            assert stack.visitor("198.51.100.3", PASSPHRASE).status_code == 200  # another visitor of the same proxy
+                assert stack.visitor("198.51.100.12", "wrong passphrase").status_code == 401
+            assert stack.visitor("198.51.100.12", PASSPHRASE).status_code == 429
+            assert stack.visitor("198.51.100.13", PASSPHRASE).status_code == 200  # another visitor of the same proxy
 
-        sign_in()
+        gateway_opt_in()
 
         @check("doctor inside the container finds everything ready except an engine, which the image does not carry")
         def doctor():

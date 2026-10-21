@@ -1,15 +1,18 @@
-"""Guards on the Docker files (Dockerfile, compose.yaml, .dockerignore) that need no Docker.
+"""Guards on the Docker and proxy files that need no Docker.
 
-scripts/smoke-docker.py builds and runs the image for real; these checks only keep the properties
-that must not drift quietly: no secrets in the build context, an image that carries no engine and
-no setting by default, a published port that stays on the loopback, and versions that agree with
-the rest of the repository.
+scripts/smoke-docker.py and scripts/smoke-proxy.py build and run the image and the proxy overlays
+for real; these checks only keep the properties that must not drift quietly: no secrets in the
+build context, an image that carries no engine and no setting by default, a published port that
+stays on the loopback, no network ever named as a trusted proxy, and versions that agree with the
+rest of the repository.
 """
 
+import ipaddress
 import re
 
 import pytest
 
+from app.server import proxies
 from tests.conftest import BACKEND_DIR
 
 REPO = BACKEND_DIR.parent
@@ -20,11 +23,21 @@ def text(name: str) -> str:
     return (REPO / name).read_text(encoding="utf-8")
 
 
+def uncommented(name: str) -> str:
+    return "\n".join(line for line in text(name).splitlines() if not line.strip().startswith("#"))
+
+
 def instructions(dockerfile: str) -> list[str]:
     """Dockerfile instructions with continuation lines joined and comments dropped."""
     joined = re.sub(r"\\\n\s*", " ", dockerfile)
     return [line.strip() for line in joined.splitlines() if line.strip() and not line.strip().startswith("#")]
 
+
+def compose_default(name: str, variable: str) -> str:
+    return re.search(variable + r":-([0-9./]+)\}", uncommented(name)).group(1)
+
+
+# -- the image ------------------------------------------------------------------------------------
 
 def test_the_build_context_never_includes_settings_or_private_notes():
     ignored = text(".dockerignore").splitlines()
@@ -59,27 +72,6 @@ def test_the_image_listens_on_the_container_address_only_with_the_explicit_opt_i
     assert "OPEN_DOTS_HOST=0.0.0.0" in steps and "OPEN_DOTS_ALLOW_PUBLIC_BIND=1" in steps
 
 
-def test_compose_publishes_on_the_loopback_and_trusts_only_its_own_network():
-    compose = "\n".join(line for line in text("compose.yaml").splitlines() if not line.strip().startswith("#"))
-    assert re.search(r'"\$\{OPEN_DOTS_BIND:-127\.0\.0\.1\}:\$\{OPEN_DOTS_PORT:-8000\}:8000"', compose)
-    assert "TRUSTED_PROXIES: ${OPEN_DOTS_SUBNET:-172.31.250.0/24}" in compose
-    assert "subnet: ${OPEN_DOTS_SUBNET:-172.31.250.0/24}" in compose
-    for forbidden in ("network_mode", "docker.sock", "privileged", "TOKEN_ENCRYPTION_KEYS", "LOCAL_EXECUTION_ENABLED", "TRUSTED_PROXIES: '*'", 'TRUSTED_PROXIES: "*"'):
-        assert forbidden not in compose, forbidden
-    assert "env_file:" in compose and "OPEN_DOTS_ENV_FILE" in compose
-    assert "ENGINES: ${OPEN_DOTS_ENGINES:-}" in compose  # empty by default
-
-
-def test_the_compose_default_range_is_a_valid_private_network_that_the_server_accepts():
-    import ipaddress
-
-    from app.server import proxies
-
-    network = ipaddress.ip_network(re.search(r"OPEN_DOTS_SUBNET:-([\d./]+)\}", text("compose.yaml")).group(1))
-    assert network.is_private and network.prefixlen >= 16
-    assert str(network) in proxies.parse(str(network))
-
-
 def test_the_image_versions_agree_with_the_rest_of_the_repository():
     dockerfile = text("Dockerfile")
     python = re.search(r"ARG PYTHON_IMAGE=python:(\d+\.\d+)", dockerfile).group(1)
@@ -87,3 +79,64 @@ def test_the_image_versions_agree_with_the_rest_of_the_repository():
     assert text("backend/.python-version").strip() == python
     node = re.search(r"ARG NODE_IMAGE=node:(\d+)", dockerfile).group(1)
     assert f"node-version: {node}" in text(".github/workflows/ci.yml")  # the Node that CI builds the pages with
+
+
+# -- compose: nothing is believed unless it is named ------------------------------------------------
+
+def test_compose_publishes_on_the_loopback_and_believes_no_proxy_unless_one_is_named():
+    compose = uncommented("compose.yaml")
+    assert re.search(r'"\$\{OPEN_DOTS_BIND:-127\.0\.0\.1\}:\$\{OPEN_DOTS_PORT:-8000\}:8000"', compose)
+    assert "TRUSTED_PROXIES: ${OPEN_DOTS_TRUSTED_PROXIES:-}" in compose  # empty by default: loopback only, no network named
+    for forbidden in ("network_mode", "docker.sock", "privileged", "TOKEN_ENCRYPTION_KEYS", "LOCAL_EXECUTION_ENABLED", "TRUSTED_PROXIES: '*'", 'TRUSTED_PROXIES: "*"'):
+        assert forbidden not in compose, forbidden
+    assert "env_file:" in compose and "OPEN_DOTS_ENV_FILE" in compose
+    assert "ENGINES: ${OPEN_DOTS_ENGINES:-}" in compose  # empty by default
+
+
+def test_the_network_reserves_the_proxy_address_so_a_stray_container_cannot_land_on_it():
+    subnet = ipaddress.ip_network(compose_default("compose.yaml", "OPEN_DOTS_SUBNET"))
+    gateway = ipaddress.ip_address(compose_default("compose.yaml", "OPEN_DOTS_GATEWAY"))
+    dynamic = ipaddress.ip_network(compose_default("compose.yaml", "OPEN_DOTS_DYNAMIC_RANGE"))
+    proxy = ipaddress.ip_address(compose_default("deploy/proxy/compose.nginx.yaml", "OPEN_DOTS_PROXY_IP"))
+    assert subnet.is_private and gateway in subnet and dynamic.subnet_of(subnet)
+    assert proxy in subnet and proxy != gateway
+    assert proxy not in dynamic and gateway not in dynamic  # unassigned containers get addresses from the dynamic range only
+
+
+@pytest.mark.parametrize("overlay", ["compose.nginx.yaml", "compose.caddy.yaml"])
+def test_a_proxy_overlay_trusts_exactly_the_proxy_address_and_never_a_network(overlay):
+    body = uncommented(f"deploy/proxy/{overlay}")
+    default = "172.31.250.10"
+    assert "TRUSTED_PROXIES: ${OPEN_DOTS_TRUSTED_PROXIES:-${OPEN_DOTS_PROXY_IP:-" + default + "}}" in body
+    assert "ipv4_address: ${OPEN_DOTS_PROXY_IP:-" + default + "}" in body  # the proxy keeps the address the app trusts
+    assert compose_default(f"deploy/proxy/{overlay}", "OPEN_DOTS_PROXY_IP") == default
+    assert proxies.parse(default) == (*proxies.LOOPBACK, default)  # one address, not a range
+    for forbidden in ("network_mode", "docker.sock", "privileged", "TOKEN_ENCRYPTION_KEYS"):
+        assert forbidden not in body, forbidden
+    assert "${OPEN_DOTS_DOMAIN:?" in body  # no default name: the owner must say which one
+
+
+# -- the proxy configurations -------------------------------------------------------------------------
+
+def test_the_nginx_config_provides_what_the_server_relies_on():
+    conf = uncommented("deploy/proxy/nginx.conf")
+    assert re.search(r"proxy_set_header X-Forwarded-For\s+\$remote_addr;", conf)  # set, never appended to
+    assert "proxy_add_x_forwarded_for" not in conf
+    assert re.search(r"proxy_set_header X-Forwarded-Proto\s+\$scheme;", conf)
+    assert re.search(r"proxy_set_header Host\s+\$host;", conf)
+    stream = re.search(r"location ~ \^/api/v1/threads/\[0-9\]\+/events/stream\$ \{(.*?)\n    \}", conf, re.S).group(1)
+    assert "proxy_buffering off;" in stream
+    assert "gzip" not in conf and "proxy_ignore_headers" not in conf  # a compressed or buffered stream is held back
+    assert int(re.search(r"client_max_body_size (\d+)m;", conf).group(1)) >= 12  # the server's 10 MB image limit plus form overhead
+    assert "return 301 https://$host$request_uri;" in conf
+    assert "resolver 127.0.0.11" in conf  # the app is found by name at request time, so recreating it needs no reload
+
+
+def test_the_caddy_config_provides_what_the_server_relies_on():
+    conf = uncommented("deploy/proxy/Caddyfile")
+    assert "flush_interval -1" in conf
+    assert int(re.search(r"max_size (\d+)MB", conf).group(1)) >= 12
+    assert "reverse_proxy open-dots:8000" in conf
+    assert "{$OPEN_DOTS_DOMAIN}" in conf and "{$OPEN_DOTS_CADDY_TLS}" in conf
+    # Caddy replaces a client-supplied X-Forwarded-For unless told to trust upstream proxies: never tell it to.
+    assert "trusted_proxies" not in conf and "encode" not in conf

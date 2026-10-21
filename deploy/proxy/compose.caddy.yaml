@@ -1,0 +1,41 @@
+# Caddy in front of Open Dots, as a container on the app's network. Use it with the base file:
+#
+#   docker compose -f compose.yaml -f deploy/proxy/compose.caddy.yaml up -d --build
+#
+# Set OPEN_DOTS_DOMAIN to a name that points at this machine; Caddy then gets and renews its
+# certificate by itself (ports 80 and 443 must be reachable from the internet). For a private name
+# or a test, set OPEN_DOTS_CADDY_TLS="tls internal" to use Caddy's own local certificate authority.
+#
+# The proxy gets a fixed address and the app trusts exactly that address, so only this container's
+# X-Forwarded-For and X-Forwarded-Proto are believed; see compose.yaml for why a whole network is
+# never named. Do not attach other containers to this network.
+services:
+  open-dots:
+    environment:
+      TRUSTED_PROXIES: ${OPEN_DOTS_TRUSTED_PROXIES:-${OPEN_DOTS_PROXY_IP:-172.31.250.10}}
+
+  proxy:
+    image: ${OPEN_DOTS_CADDY_IMAGE:-caddy:2.10}
+    restart: unless-stopped
+    depends_on:
+      open-dots:
+        condition: service_healthy
+    environment:
+      OPEN_DOTS_DOMAIN: ${OPEN_DOTS_DOMAIN:?set OPEN_DOTS_DOMAIN to the name people use, for example dots.example.com}
+      OPEN_DOTS_CADDY_TLS: ${OPEN_DOTS_CADDY_TLS:-}
+    ports:
+      - "${OPEN_DOTS_HTTP_BIND:-0.0.0.0}:${OPEN_DOTS_HTTP_PORT:-80}:80"
+      - "${OPEN_DOTS_HTTP_BIND:-0.0.0.0}:${OPEN_DOTS_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        ipv4_address: ${OPEN_DOTS_PROXY_IP:-172.31.250.10}
+        aliases:
+          - ${OPEN_DOTS_DOMAIN}
+
+volumes:
+  caddy_data:
+  caddy_config:

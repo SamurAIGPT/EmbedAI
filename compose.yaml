@@ -7,10 +7,21 @@
 # or the path in OPEN_DOTS_ENV_FILE). It must hold at least TOKEN_ENCRYPTION_KEYS (a Fernet key),
 # and LOCAL_EXECUTION_ENABLED=true if agents should run. Nothing here turns execution on.
 #
-# Network: the app sits on its own network with a fixed address range, and that range is the only
-# thing in TRUSTED_PROXIES. A proxy on the host reaches the published port from this network's
-# gateway address, and a proxy container joins the network, so both are believed; nothing else is.
-# Change OPEN_DOTS_SUBNET if the range clashes with one you already use.
+# Proxies and trust: the server believes X-Forwarded-For and X-Forwarded-Proto only from the peers
+# named in TRUSTED_PROXIES, and by default that is nothing beyond loopback. Naming a whole network
+# would believe EVERY container ever attached to it, so name exactly the proxy:
+#   - a proxy container: use an overlay in deploy/proxy/ (compose.nginx.yaml or compose.caddy.yaml).
+#     It gives the proxy a fixed address and trusts that one address and nothing else. Containers
+#     that join the network without a fixed address are given addresses from the upper half of the
+#     range, never the proxy's.
+#   - a proxy on the host (it reaches the published port): set OPEN_DOTS_TRUSTED_PROXIES to the
+#     network's gateway address (172.31.250.1 by default). That address is what every connection
+#     from the host side arrives as. On a native Linux engine other networks cannot reach the app, so
+#     it stands for the host only; on Docker Desktop other containers can reach it and arrive as the
+#     same address, so do not use it there for anything but your own machine. Run
+#     scripts/probe-docker-trust.sh to see what your Docker host does.
+# The four network variables (OPEN_DOTS_SUBNET, _GATEWAY, _DYNAMIC_RANGE and the overlays'
+# OPEN_DOTS_PROXY_IP) go together: change all of them or none.
 #
 # The published port is on the host's loopback (127.0.0.1) unless you set OPEN_DOTS_BIND. Do not
 # bind it to a public address without a proxy that terminates HTTPS in front.
@@ -28,7 +39,7 @@ services:
     env_file:
       - ${OPEN_DOTS_ENV_FILE:-open-dots.env}
     environment:
-      TRUSTED_PROXIES: ${OPEN_DOTS_SUBNET:-172.31.250.0/24}
+      TRUSTED_PROXIES: ${OPEN_DOTS_TRUSTED_PROXIES:-}
     ports:
       - "${OPEN_DOTS_BIND:-127.0.0.1}:${OPEN_DOTS_PORT:-8000}:8000"
     volumes:
@@ -41,6 +52,8 @@ networks:
     ipam:
       config:
         - subnet: ${OPEN_DOTS_SUBNET:-172.31.250.0/24}
+          gateway: ${OPEN_DOTS_GATEWAY:-172.31.250.1}
+          ip_range: ${OPEN_DOTS_DYNAMIC_RANGE:-172.31.250.128/25}
 
 volumes:
   data:

@@ -147,3 +147,36 @@ def test_latest_due_collapses_a_backlog():
 )
 def test_cron_summaries(expression, text):
     assert s.summary("cron", {"expression": expression}, "UTC") == text
+
+
+@pytest.mark.parametrize("zone,expression,after,expected", [
+    ("Australia/Lord_Howe", "15 2 * * *", "2026-10-03T15:30:00+00:00", "2026-10-03T15:45:00+00:00"),
+    ("Australia/Lord_Howe", "15 2 * * *", "2026-10-03T15:44:59+00:00", "2026-10-03T15:45:00+00:00"),
+    ("Australia/Lord_Howe", "15 2 * * *", "2026-10-03T15:45:00+00:00", "2026-10-04T15:15:00+00:00"),
+    ("Pacific/Apia", "0 12 * * 5", "2011-12-30T10:00:00+00:00", "2011-12-30T22:00:00+00:00"),
+    ("Pacific/Apia", "0 12 * * 5", "2011-12-30T22:00:00+00:00", "2012-01-05T22:00:00+00:00"),
+    ("Europe/Berlin", "30 2 * * 1", "2026-03-29T01:00:00+00:00", "2026-03-30T00:30:00+00:00"),
+    ("Europe/Berlin", "30 2 * * 0", "2026-03-29T01:00:00+00:00", "2026-03-29T01:30:00+00:00"),
+    ("Europe/Berlin", "*/15 1,2 * * *", "2026-03-29T01:05:00+00:00", "2026-03-29T01:15:00+00:00"),
+    ("Europe/Berlin", "* * * * *", "2026-03-29T01:05:00+00:00", "2026-03-29T01:06:00+00:00"),
+], ids=["lord-howe-transition", "lord-howe-before-carried", "lord-howe-strict", "apia-skipped-friday", "apia-strict", "nonselected-monday", "selected-sunday", "multi-hour-cron", "dense-cron"])
+def test_next_after_retains_carried_gap_occurrences(zone, expression, after, expected):
+    now = datetime.fromisoformat(after)
+    spec = s.normalize("cron", {"expression": expression}, zone, now=now)
+    assert s.next_after("cron", spec, zone, now) == datetime.fromisoformat(expected)
+
+
+@pytest.mark.parametrize("zone,expiry", [
+    ("Europe/Berlin", "2026-03-29T02:00:00+00:00"),
+    ("Australia/Lord_Howe", "2026-10-03T16:00:00+00:00"),
+    ("Pacific/Apia", "2011-12-31T10:00:00+00:00"),
+], ids=["berlin", "lord-howe", "apia"])
+@pytest.mark.parametrize("side", [-1, 0, 1], ids=["before-expiry", "at-expiry", "after-expiry"])
+def test_next_after_dense_gap_expiry_boundaries(zone, expiry, side):
+    from datetime import timedelta
+
+    end = datetime.fromisoformat(expiry)
+    after = end + timedelta(microseconds=side)
+    expected = end if side < 0 else end + timedelta(minutes=1)
+    spec = s.normalize("cron", {"expression": "* * * * *"}, zone, now=after)
+    assert s.next_after("cron", spec, zone, after) == expected

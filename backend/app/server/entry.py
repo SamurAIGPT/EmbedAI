@@ -13,9 +13,10 @@ Settings (bootstrap class, D-008: needed before the database is opened):
     OPEN_DOTS_PORT   port, default 8000
     OPEN_DOTS_UI_DIR folder holding the exported pages (a build with a relative API path)
     OPEN_DOTS_ALLOW_PUBLIC_BIND=1   needed to listen on anything but this machine's own address
-    TRUSTED_PROXIES  addresses or networks, besides loopback, whose X-Forwarded-For and
-                     X-Forwarded-Proto are believed (a proxy in another container or machine);
-                     for example 172.18.0.0/16. Not *, not /0. FORWARDED_ALLOW_IPS is ignored.
+    TRUSTED_PROXIES  addresses, besides loopback, whose X-Forwarded-For and X-Forwarded-Proto are
+                     believed (a proxy in another container or machine). Name the proxy's own address,
+                     for example 172.31.250.10: a network is every container on it. Not *, not /0.
+                     FORWARDED_ALLOW_IPS is ignored.
 
 The server is meant to sit behind a reverse proxy on the same machine (any proxy;
 it only reads standard forwarded headers) and to listen on loopback. Listening
@@ -163,6 +164,10 @@ def check_schema() -> str | None:
 def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["migrate"]:
+        if len(arguments) > 1:  # `migrate --help` must not migrate anything
+            print("usage: python -m app.server migrate")
+            print("Create the database or update it to this version. A SQLite file is copied aside first.")
+            return 0 if arguments[1:] in (["-h"], ["--help"]) else EXIT_USAGE
         return migrate()
     if arguments[:1] in (["backup"], ["restore"]):
         from app.server import backup_cli

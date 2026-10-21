@@ -37,6 +37,7 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 - Ask for approval before risky actions such as file writes, shell commands, and Git pushes.
 - Continue completed tasks in the same Claude conversation from the web UI.
 - Schedule recurring prompts and receive run results in Telegram (Boat sandboxes).
+- Run it on a server you own, behind HTTPS, and reach it from a browser or a phone (single owner; experimental): `python -m app.server`, a Docker image and compose file, nginx and Caddy overlays, `doctor`, `backup` and `restore`. See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
 - Run routines on your local agents (no Boat): cron, weekday, interval or one-off schedules with timezones, webhook triggers, run history, missed-run tracking, restart recovery and an in-app notification feed (see [docs/ROUTINES.md](docs/ROUTINES.md)).
 - Keep durable local conversations (threads) with streaming answers, a tool-call timeline, inline approvals, Stop, and rename/archive/delete, using your own signed-in `claude` CLI (opt-in; see [Local Claude](#local-claude-experimental)).
 - Run as a desktop app from a source checkout, or from unsigned installers built by the release workflow (experimental; see [Desktop app](#desktop-app-from-source-experimental)).

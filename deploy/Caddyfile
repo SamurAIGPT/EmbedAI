@@ -1,0 +1,34 @@
+# Caddy on the host, in front of Open Dots on the same machine (docs/SELF-HOSTING.md, route 2).
+#
+# This is deploy/proxy/Caddyfile, the one that was tested (in a container, with Caddy's own local
+# certificate authority), with the address of the app changed to the loopback port. It has not
+# been run on a real host with a real domain.
+#
+# Caddy connects from loopback, which the server believes by default: set no TRUSTED_PROXIES.
+# With a real domain Caddy gets and renews the certificate by itself (ports 80 and 443 reachable).
+#
+#   OPEN_DOTS_DOMAIN=dots.example.com caddy run --config deploy/Caddyfile
+#
+# Also set OPEN_DOTS_PUBLIC_URL=https://dots.example.com in the server's settings.
+#
+# What the server relies on, and this file provides:
+#   - X-Forwarded-For is set to the connecting address: Caddy does not believe a header the client
+#     sent (do not add `trusted_proxies` here), so a client cannot choose which address its failed
+#     sign-ins are counted against.
+#   - X-Forwarded-Proto says the visit was HTTPS, so the sign-in cookie is marked Secure.
+#   - Host is passed through unchanged.
+#   - The event stream is not buffered (flush_interval -1). Do not add `encode`: it was not tested
+#     with the stream.
+#   - Uploads up to the server's own 10 MB image limit (plus form overhead) pass.
+#   - /hooks/ goes to the app like everything else: webhooks carry their own per-routine secret.
+#     To send them to a separate hooks-only process instead (docs/ROUTINES.md "Ingress"), add
+#     above reverse_proxy:   handle /hooks/* { reverse_proxy 127.0.0.1:8788 }
+{$OPEN_DOTS_DOMAIN} {
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		flush_interval -1
+	}
+}

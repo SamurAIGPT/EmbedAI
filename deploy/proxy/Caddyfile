@@ -1,0 +1,22 @@
+# Caddy for Open Dots. With a real domain Caddy gets and renews the certificate by itself.
+#
+# What the server relies on, and this file provides (Caddy does the first three by default):
+#   - X-Forwarded-For is set to the connecting address: Caddy does not believe a header the client
+#     sent, so a client cannot choose which address its failed sign-ins are counted against.
+#   - X-Forwarded-Proto says the visit was HTTPS, so the sign-in cookie is marked Secure.
+#   - Host is passed through unchanged (the server answers only to names it knows).
+#   - The event stream is not buffered (flush_interval -1).
+#   - Uploads up to the server's own 10 MB image limit (plus form overhead) pass.
+#   - /hooks/ goes to the app like everything else: webhooks carry their own per-routine secret.
+# OPEN_DOTS_CADDY_TLS is empty for automatic HTTPS, or `tls internal` for a private name or a test.
+{$OPEN_DOTS_DOMAIN} {
+	{$OPEN_DOTS_CADDY_TLS}
+
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy open-dots:8000 {
+		flush_interval -1
+	}
+}

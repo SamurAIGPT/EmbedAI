@@ -27,19 +27,19 @@ class ProxyListError(ValueError):
 def _entry(raw: str) -> str:
     text = raw.strip()
     if not text:
-        raise ProxyListError(f"{ENV_NAME} has an empty entry. Separate addresses with single commas, for example 172.18.0.0/16,10.0.0.5.")
+        raise ProxyListError(f"{ENV_NAME} has an empty entry. Separate addresses with single commas, for example 172.31.250.10,10.0.0.5.")
     if text == "*":
         raise ProxyListError(f"{ENV_NAME} cannot be *: that would believe forwarded headers from anyone who reaches the port. "
-                             "List the proxy's address or its network, for example 172.18.0.0/16.")
+                             "List the proxy's own address, for example 172.31.250.10.")
     if "/" in text:
         try:
             network = ipaddress.ip_network(text, strict=True)
         except ValueError as exc:
-            reason = "write the network address, for example 172.18.0.0/16" if "host bits" in str(exc) else "it is not an address range"
+            reason = "write the network address, for example 172.31.250.0/24" if "host bits" in str(exc) else "it is not an address range"
             raise ProxyListError(f"{ENV_NAME} entry {text!r} is not usable: {reason}.") from None
         if network.prefixlen == 0:
             raise ProxyListError(f"{ENV_NAME} entry {text!r} covers every address, which is the same as trusting everyone. "
-                                 "Use the proxy's own network, for example 172.18.0.0/16.")
+                                 "Name the proxy's own address, for example 172.31.250.10.")
         return str(network)
     try:
         return str(ipaddress.ip_address(text))

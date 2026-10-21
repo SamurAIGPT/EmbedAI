@@ -65,7 +65,7 @@ expiry, revoked. Only the SHA-256 digest of the 256-bit token is stored.
   minute.
 - The cookie is `od_session`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and
   `Secure` when the request is HTTPS (directly, or `X-Forwarded-Proto: https`
-  from a proxy on this machine).
+  from a proxy the server believes: loopback, or an address in `TRUSTED_PROXIES`).
 - Signing in again in the same browser revokes that browser's previous
   session. Signing out revokes the current one.
 
@@ -211,6 +211,12 @@ acts on: `auth_required`, `session_invalid` (sign in or pair again),
 `locked_out` and `rate_limited` (with `Retry-After`).
 
 ## Self-hosting checklist
+
+For one server that serves its own pages (`python -m app.server`), follow [SELF-HOSTING.md](SELF-HOSTING.md): set
+`OPEN_DOTS_PUBLIC_URL=https://dots.example.com` and that name is trusted, with no `FRONTEND_ORIGINS` needed because the
+pages and the API share one origin. Forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`) are believed only from the
+addresses in `TRUSTED_PROXIES`, which is loopback unless you name more (see "Who is believed to be the proxy" there). The list below is for the older layout where the web UI and the API are
+served separately.
 
 1. Put a TLS proxy in front (Caddy, nginx, a tunnel) so the cookie is
    `Secure`; over plain HTTP on a LAN it travels in clear.

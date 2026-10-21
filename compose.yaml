@@ -1,0 +1,59 @@
+# Open Dots on one machine, with Docker Compose. The app only: any reverse proxy goes in front
+# (nginx, Caddy, Traefik, a tunnel), on the host or as another container on this network.
+#
+#   docker compose up -d --build
+#
+# The settings come from a file you keep outside the image and outside Git (default ./open-dots.env,
+# or the path in OPEN_DOTS_ENV_FILE). It must hold at least TOKEN_ENCRYPTION_KEYS (a Fernet key),
+# and LOCAL_EXECUTION_ENABLED=true if agents should run. Nothing here turns execution on.
+#
+# Proxies and trust: the server believes X-Forwarded-For and X-Forwarded-Proto only from the peers
+# named in TRUSTED_PROXIES, and by default that is nothing beyond loopback. Naming a whole network
+# would believe EVERY container ever attached to it, so name exactly the proxy:
+#   - a proxy container: use an overlay in deploy/proxy/ (compose.nginx.yaml or compose.caddy.yaml).
+#     It gives the proxy a fixed address and trusts that one address and nothing else. Containers
+#     that join the network without a fixed address are given addresses from the upper half of the
+#     range, never the proxy's.
+#   - a proxy on the host (it reaches the published port): set OPEN_DOTS_TRUSTED_PROXIES to the
+#     network's gateway address (172.31.250.1 by default). That address is what every connection
+#     from the host side arrives as. On a native Linux engine other networks cannot reach the app, so
+#     it stands for the host only; on Docker Desktop other containers can reach it and arrive as the
+#     same address, so do not use it there for anything but your own machine. Run
+#     scripts/probe-docker-trust.sh to see what your Docker host does.
+# The four network variables (OPEN_DOTS_SUBNET, _GATEWAY, _DYNAMIC_RANGE and the overlays'
+# OPEN_DOTS_PROXY_IP) go together: change all of them or none.
+#
+# The published port is on the host's loopback (127.0.0.1) unless you set OPEN_DOTS_BIND. Do not
+# bind it to a public address without a proxy that terminates HTTPS in front.
+name: open-dots
+
+services:
+  open-dots:
+    build:
+      context: .
+      args:
+        # Engine CLIs to install at build time (space-separated npm packages); empty installs none.
+        ENGINES: ${OPEN_DOTS_ENGINES:-}
+    image: ${OPEN_DOTS_IMAGE:-open-dots:local}
+    restart: unless-stopped
+    env_file:
+      - ${OPEN_DOTS_ENV_FILE:-open-dots.env}
+    environment:
+      TRUSTED_PROXIES: ${OPEN_DOTS_TRUSTED_PROXIES:-}
+    ports:
+      - "${OPEN_DOTS_BIND:-127.0.0.1}:${OPEN_DOTS_PORT:-8000}:8000"
+    volumes:
+      - data:/data
+    # A stop ends running conversations cleanly; give it the time the systemd unit gives.
+    stop_grace_period: 30s
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${OPEN_DOTS_SUBNET:-172.31.250.0/24}
+          gateway: ${OPEN_DOTS_GATEWAY:-172.31.250.1}
+          ip_range: ${OPEN_DOTS_DYNAMIC_RANGE:-172.31.250.128/25}
+
+volumes:
+  data:

@@ -10,6 +10,8 @@ Component-specific details: [backend/README.md](../backend/README.md), [frontend
 
 ## Signing in and pairing devices
 
+Running on a server of your own: [SELF-HOSTING.md](SELF-HOSTING.md).
+
 Outside the desktop app every request needs a sign-in. Full design and tradeoffs: [AUTH.md](AUTH.md).
 
 1. Run `alembic upgrade head` (`scripts/dev.sh` does).

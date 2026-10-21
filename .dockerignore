@@ -1,0 +1,44 @@
+# What never goes into a build context, so never into an image layer.
+# Secrets and private notes first: a settings file holds the encryption key.
+.env
+.env.*
+**/.env
+**/.env.*
+.internal
+**/*.pem
+**/*.key
+**/open-dots.env
+
+# Git and editors
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+# Built or installed on the other side, never copied in
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+frontend/.next
+frontend/out
+backend/build
+backend/dist
+desktop
+electron
+
+# Not needed to run the server
+backend/tests
+backend/build.py
+backend/desktop_main.py
+backend/docker-compose.yml
+docs
+deploy
+scripts/*.py
+scripts/*.sh
+scripts/*.test.js
+**/*.md

@@ -55,12 +55,15 @@ type Draft = {
   approvalMode: ApprovalMode;
   approvalWait: string;
   catchUp: string;
+  retryLimit: string;
+  retryDelay: string;
 };
 
 function newDraft(agents: Agent[]): Draft {
   return {
     id: null, name: "", agentId: agents[0]?.id ?? null, prompt: "", schedule: emptySchedule(),
     runLimit: "30", approvalMode: "ask", approvalWait: "30", catchUp: "60",
+    retryLimit: "0", retryDelay: "5",
   };
 }
 
@@ -69,7 +72,8 @@ function draftOf(routine: Routine): Draft {
     id: routine.id, name: routine.name, agentId: routine.agent_id, prompt: routine.prompt,
     schedule: scheduleDraftOf(routine), runLimit: String(routine.run_limit_minutes),
     approvalMode: routine.approval_mode, approvalWait: String(routine.approval_timeout_minutes),
-    catchUp: String(routine.catch_up_minutes),
+    catchUp: String(routine.catch_up_minutes), retryLimit: String(routine.retry_limit),
+    retryDelay: String(routine.retry_delay_minutes),
   };
 }
 
@@ -85,6 +89,8 @@ function inputOf(draft: Draft): RoutineInput {
     approval_mode: draft.approvalMode,
     approval_timeout_minutes: Number(draft.approvalWait),
     catch_up_minutes: Number(draft.catchUp),
+    retry_limit: Number(draft.retryLimit),
+    retry_delay_minutes: Number(draft.retryDelay),
   };
 }
 
@@ -209,7 +215,7 @@ function RunHistory({ routine, onClose, onOpen }: { routine: Routine; onClose: (
             <li key={run.id} className="rounded-md border border-zinc-200 p-2 text-sm dark:border-zinc-800">
               <div className="flex flex-wrap items-center gap-2">
                 <State state={run.state} />
-                <span className="text-xs text-zinc-500">{triggerLabel(run.trigger)} · {formatWhen(run.scheduled_for ?? run.created_at, routine.timezone)}</span>
+                <span className="text-xs text-zinc-500">{triggerLabel(run.trigger)}{run.attempt > 1 ? ` (attempt ${run.attempt})` : ""} · {formatWhen(run.scheduled_for ?? run.created_at, routine.timezone)}</span>
                 {run.thread_id !== null && (
                   <Link href={`/chat?thread=${run.thread_id}`} onClick={onOpen} className="ml-auto text-xs underline">Open conversation</Link>
                 )}
@@ -318,6 +324,8 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                   <label>Run limit (minutes)<input type="number" min={1} max={240} value={draft.runLimit} onChange={(e) => setDraft({ ...draft, runLimit: e.target.value })} className={input} /></label>
                   <label>Approval wait (minutes)<input type="number" min={1} max={1440} value={draft.approvalWait} onChange={(e) => setDraft({ ...draft, approvalWait: e.target.value })} className={input} /></label>
                   <label>May start late by (minutes)<input type="number" min={0} max={1440} value={draft.catchUp} onChange={(e) => setDraft({ ...draft, catchUp: e.target.value })} className={input} /></label>
+                  <label>Retries after a failure<input type="number" min={0} max={3} value={draft.retryLimit} onChange={(e) => setDraft({ ...draft, retryLimit: e.target.value })} className={input} /></label>
+                  <label>Retry after (minutes)<input type="number" min={1} max={1440} value={draft.retryDelay} onChange={(e) => setDraft({ ...draft, retryDelay: e.target.value })} className={input} /></label>
                   <label>Approval mode
                     <select value={draft.approvalMode} onChange={(e) => setDraft({ ...draft, approvalMode: e.target.value as ApprovalMode })} className={input}>
                       {APPROVAL_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
@@ -327,6 +335,8 @@ export function RoutinesPanel({ agents, onClose }: { agents: Agent[]; onClose: (
                 <p className="mt-2 text-zinc-500">
                   A run uses the stricter of this mode and the agent&apos;s own. When it needs your approval it waits, tells you,
                   and is denied if nobody answers within the approval wait. Time spent waiting does not count toward the run limit.
+                  A failed run is started again up to the number of retries (0 turns it off); a run you stopped, one that reached
+                  its run limit and one cut short by the app stopping are never retried.
                 </p>
               </details>
               <div className="flex gap-2">

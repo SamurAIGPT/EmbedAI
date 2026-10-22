@@ -23,7 +23,7 @@ cd desktop && npm test
 
 Changing the server, the Docker files or [SELF-HOSTING.md](SELF-HOSTING.md): `scripts/smoke-server.py`, `scripts/smoke-server-chat.py`, `scripts/smoke-docker.py` and `scripts/smoke-proxy.py` run the real thing (the last two need Docker), and `python scripts/verify-guide.py` runs every marked command in the guide in a clean container. Keep the guide's "What has been checked" table true.
 
-CI runs those on pushes to `main` and on pull requests; docs-only changes skip the heavy jobs. The `ci-gate` job is the single check to require in branch protection. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds unsigned Windows and macOS installers and attaches them to a GitHub release. The workflows have not run on GitHub yet, so expect to fix small things on their first run.
+CI runs those on pushes to `main` and on pull requests; docs-only changes skip the heavy jobs. The `ci-gate` job is the single check to require in branch protection. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds unsigned Windows and macOS installers and attaches them to a GitHub release. The release workflow has not run on GitHub yet, so expect to fix small things on its first run.
 
 ## Database rules (PostgreSQL and SQLite)
 

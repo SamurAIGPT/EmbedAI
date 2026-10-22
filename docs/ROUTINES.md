@@ -21,6 +21,8 @@ and keep running Boat sandboxes. Routines are the local counterpart.
 | `approval_mode` | `ask` (default), `plan` or `accept_edits`. A routine run uses the **stricter** of this and the agent's own mode, so a routine can never loosen what its agent may do. |
 | `approval_timeout_minutes` | 1 to 1440 (default 30). How long a run waits for your answer before the request is denied. |
 | `catch_up_minutes` | 0 to 1440 (default 60). How late a missed occurrence may still run, on top of two minutes that always count as on time (below). |
+| `retry_limit` | 0 to 3 (default 0, off). How many times a failed run is started again (see [Retries](#retries)). |
+| `retry_delay_minutes` | 1 to 1440 (default 5). How long after a failure the next attempt starts. |
 | webhook | Off until you enable it. The secret is shown once; only its SHA-256 hash is stored. |
 
 ## Schedule kinds
@@ -70,6 +72,37 @@ schedule poller), checking every `ROUTINE_POLL_SECONDS` (default 5).
 
 Run states: `queued`, `running`, `needs_input`, `completed`, `failed`,
 `missed`, `skipped`, `interrupted`.
+
+### Retries
+
+Off by default. With `retry_limit` above 0, a run that **failed** is queued
+again as a new run (trigger `retry`, `attempt` one higher, `retry_of` naming
+the failed run) that starts `retry_delay_minutes` after the failure, in a new
+conversation, with the same prompt (webhook payload included) and a first
+line telling the agent that an earlier attempt failed and may have done part
+of the work. A routine with `retry_limit` 2 makes at most three attempts.
+
+- Retried: the engine reported a failure; or the run could not start because
+  the engine was not available, the agent's workspace was not usable, or an
+  unexpected error happened while starting (possibly transient).
+- Never retried: a completed run; a run stopped by a person or by its run
+  limit; an `interrupted` run (see below: it may already have had side
+  effects); a run that could not start for a reason that does not fix itself:
+  its agent is gone, archived or unavailable (the routine may be paused), its
+  engine is unknown, its model is not valid for the engine, or local
+  execution is off.
+- A waiting retry counts as the routine's active run: Run now answers 409
+  until it starts. A scheduled occurrence that falls due meanwhile replaces it
+  (the retry is recorded as `skipped`, the occurrence runs). Pausing the
+  routine records a waiting retry as `skipped`.
+- One retry per failed run: a unique index on `retry_of` refuses a second
+  one, and starting a retry uses the same conditional `queued` → `running`
+  claim as any run, so two schedulers cannot both queue or both start it.
+- The failure notification says when the next attempt starts. A retry still
+  queued at a restart follows the catch-up rule of an occurrence: if its start
+  time is more than `catch_up_minutes` (plus two minutes) ago it is recorded
+  as `missed` and never run; otherwise it starts normally. A retry that was
+  running is `interrupted` like any run.
 
 ### Unattended approvals
 
@@ -194,6 +227,7 @@ And outside `/api/v1`: `POST /hooks/{id}` (bearer secret).
   nothing, and occurrences missed while it is off follow the catch-up rule.
 - One backend process schedules and runs routines (the single-process limit
   of the thread runtime). The ingress may be a second process; it only queues.
-- A run that was interrupted is not retried automatically.
+- A run that was interrupted is not retried automatically; only `failed`
+  runs are, and only when the routine has `retry_limit` above 0.
 - Webhook deliveries are not de-duplicated: a sender that retries a delivery
   starts another run.

@@ -42,7 +42,7 @@ async def test_a_stale_save_is_409_and_bad_names_are_422(api):
     stale = await api.put(topic_url(agent), json={"text": "- mine\n", "expected_hash": first["hash"]})
     assert stale.status_code == 409 and code_of(stale) == "memory_changed"
     assert stale.json()["detail"]["current"] == "- the agent wrote this\n"
-    for bad in ("MEMORY.md", ".hidden.md", "x.txt", "a.b.md"):
+    for bad in ("MEMORY.md", ".hidden.md", "x.txt", "a.b.md", "travel.md%0A"):
         response = await api.put(topic_url(agent, bad), json={"text": "x"})
         assert response.status_code == 422, bad
     assert (await api.put(topic_url(agent, "big.md"), json={"text": "x" * 70_000})).status_code == 413

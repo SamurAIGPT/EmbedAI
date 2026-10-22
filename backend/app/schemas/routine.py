@@ -19,6 +19,8 @@ class RoutineCreateRequest(BaseModel):
     approval_mode: ApprovalMode = "ask"
     approval_timeout_minutes: int = 30
     catch_up_minutes: int = 60
+    retry_limit: int = 0
+    retry_delay_minutes: int = 5
 
 
 class RoutineUpdateRequest(BaseModel):
@@ -32,6 +34,8 @@ class RoutineUpdateRequest(BaseModel):
     approval_mode: ApprovalMode | None = None
     approval_timeout_minutes: int | None = None
     catch_up_minutes: int | None = None
+    retry_limit: int | None = None
+    retry_delay_minutes: int | None = None
 
 
 class SchedulePreviewRequest(BaseModel):
@@ -59,6 +63,8 @@ class RoutineRunResponse(BaseModel):
     error: str | None
     waiting_since: datetime | None
     waited_seconds: int
+    attempt: int = 1
+    retry_of: int | None = None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
@@ -81,6 +87,8 @@ class RoutineResponse(BaseModel):
     approval_mode: str
     approval_timeout_minutes: int
     catch_up_minutes: int
+    retry_limit: int = 0
+    retry_delay_minutes: int = 5
     last_run_at: datetime | None
     created_at: datetime
     updated_at: datetime

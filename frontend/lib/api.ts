@@ -698,7 +698,7 @@ export type RoutineRunState =
 export type RoutineRun = {
   id: number;
   routine_id: number;
-  trigger: "schedule" | "manual" | "webhook";
+  trigger: "schedule" | "manual" | "webhook" | "retry";
   state: RoutineRunState;
   scheduled_for: string | null;
   thread_id: number | null;
@@ -707,6 +707,8 @@ export type RoutineRun = {
   error: string | null;
   waiting_since: string | null;
   waited_seconds: number;
+  attempt: number;
+  retry_of: number | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -727,6 +729,8 @@ export type Routine = {
   approval_mode: ApprovalMode;
   approval_timeout_minutes: number;
   catch_up_minutes: number;
+  retry_limit: number;
+  retry_delay_minutes: number;
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
@@ -747,6 +751,8 @@ export type RoutineInput = {
   approval_mode: ApprovalMode;
   approval_timeout_minutes: number;
   catch_up_minutes: number;
+  retry_limit: number;
+  retry_delay_minutes: number;
 };
 
 export type SchedulePreview = { summary: string; next_dates: string[] };

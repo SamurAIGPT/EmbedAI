@@ -16,6 +16,9 @@ from app.db.models import Agent, Thread
 from app.db.models.agent import APPROVAL_MODES
 from app.db.transactions import begin_write
 
+# The longest name the API and an agent file accept.
+NAME_MAX_CHARS = 80
+
 # Fields `update_agent` may change. `archived` is handled separately.
 _EDITABLE = (
     "name",
@@ -154,8 +157,9 @@ async def update_agent(
     return agent
 
 
-async def free_name(db: AsyncSession, owner_id: str, base: str) -> str:
-    """`base` when no live agent of the owner has it, else "<base> 2", "<base> 3"...
+async def free_name(db: AsyncSession, owner_id: str, base: str, tag: str = "") -> str:
+    """`base` + `tag` when no live agent of the owner has it, else "<base><tag> 2",
+    "<base><tag> 3"... `base` is shortened so the name stays within NAME_MAX_CHARS.
     A concurrent writer can still take it; that surfaces as AgentNameTaken."""
     live = set(
         (
@@ -164,10 +168,14 @@ async def free_name(db: AsyncSession, owner_id: str, base: str) -> str:
             )
         ).scalars()
     )
-    name, number = base, 1
+
+    def fitted(suffix: str) -> str:
+        return base[: NAME_MAX_CHARS - len(suffix)].rstrip() + suffix
+
+    name, number = fitted(tag), 1
     while name in live:
         number += 1
-        name = f"{base} {number}"
+        name = fitted(f"{tag} {number}")
     return name
 
 
@@ -178,7 +186,7 @@ async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
     source = await db.get(Agent, agent_id)
     if source is None:
         raise AgentNotFound(agent_id)
-    name = await free_name(db, source.owner_id, f"{source.name} copy")
+    name = await free_name(db, source.owner_id, source.name, " copy")
     return await create_agent(
         db,
         owner_id=source.owner_id,

@@ -2,7 +2,7 @@
   "name": "open-dots-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Open Dots desktop app: an Electron window around the local backend. Runs from a source checkout or installed.",
+  "description": "Open Duet desktop app: an Electron window around the local backend. Runs from a source checkout or installed.",
   "main": "main.js",
   "engines": {
     "node": ">=22"
@@ -23,7 +23,7 @@
     "electron": "^43.0.0",
     "electron-builder": "^26.15.3"
   },
-  "author": "Open Dots",
+  "author": "Open Duet",
   "build": {
     "appId": "app.opendots.desktop",
     "productName": "Open Dots",
@@ -58,7 +58,7 @@
           ]
         }
       ],
-      "artifactName": "Open-Dots-Setup-${version}.${ext}"
+      "artifactName": "Open-Duet-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -77,7 +77,7 @@
       ],
       "category": "public.app-category.productivity",
       "identity": null,
-      "artifactName": "Open-Dots-${version}-arm64.${ext}"
+      "artifactName": "Open-Duet-${version}-arm64.${ext}"
     }
   }
 }

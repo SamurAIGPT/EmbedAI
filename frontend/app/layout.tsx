@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Open Dots",
+  title: "Open Duet",
   description: "Connect Telegram and Claude, then submit a task.",
 };
 

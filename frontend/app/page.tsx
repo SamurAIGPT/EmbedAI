@@ -90,7 +90,7 @@ function Home() {
     <div className="flex min-h-screen flex-col items-center bg-zinc-50 px-4 py-12 dark:bg-black">
       <main className="w-full max-w-lg space-y-4">
         <div className="mb-6 text-center">
-          <h1 className="text-xl font-semibold">Open Dots</h1>
+          <h1 className="text-xl font-semibold">Open Duet</h1>
           <p className="text-sm text-zinc-500">
             Connect your accounts, then submit a task.
           </p>

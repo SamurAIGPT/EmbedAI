@@ -1,4 +1,4 @@
-# Open Dots on one machine, with Docker Compose. The app only: any reverse proxy goes in front
+# Open Duet on one machine, with Docker Compose. The app only: any reverse proxy goes in front
 # (nginx, Caddy, Traefik, a tunnel), on the host or as another container on this network.
 #
 #   docker compose up -d --build

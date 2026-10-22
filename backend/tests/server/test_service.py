@@ -101,7 +101,7 @@ def test_write_makes_the_file_and_never_replaces_one(tmp_path, capsys):
     target = tmp_path / "open-dots.service"
     assert main(["--user", "opendots", "--write", str(target)]) == 0
     out = capsys.readouterr().out
-    assert target.read_text().startswith("# Open Dots") and "systemctl enable --now open-dots" in out
+    assert target.read_text().startswith("# Open Duet") and "systemctl enable --now open-dots" in out
     assert (target.stat().st_mode & 0o777) == 0o644
     before = target.read_text()
     assert main(["--user", "opendots", "--write", str(target)]) == 4

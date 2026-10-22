@@ -1,6 +1,6 @@
 # Self-hosting on a server (one owner)
 
-Run Open Dots on a Linux machine you rent or own, so your agents and routines keep working with your laptop closed, and reach it from a browser or a phone over HTTPS. One person owns the server: you sign in with a passphrase and pair other devices with one-time codes. It is not a multi-user or hosted service (see [AUTH.md](AUTH.md) "Limits").
+Run Open Duet on a Linux machine you rent or own, so your agents and routines keep working with your laptop closed, and reach it from a browser or a phone over HTTPS. One person owns the server: you sign in with a passphrase and pair other devices with one-time codes. It is not a multi-user or hosted service (see [AUTH.md](AUTH.md) "Limits").
 
 There are two ways to run it. Both use the same server, the same settings and the same commands.
 
@@ -16,7 +16,7 @@ There are two ways to run it. Both use the same server, the same settings and th
 ## Before you start
 
 - A Linux server with `sudo`, a domain name whose address points at it, and ports 80 and 443 open.
-- At least one engine (Claude Code or Codex) installed and signed in **on the server**, as the same account that runs Open Dots: see [ENGINES.md](ENGINES.md) and [Engines](#engines). Agents run there, with that account's files.
+- At least one engine (Claude Code or Codex) installed and signed in **on the server**, as the same account that runs Open Duet: see [ENGINES.md](ENGINES.md) and [Engines](#engines). Agents run there, with that account's files.
 - Two secrets you must keep: your **passphrase**, and the **encryption key** (`TOKEN_ENCRYPTION_KEYS`). The key encrypts the credentials the server stores. Back it up somewhere else: without it those credentials cannot be read, and a backup archive does not contain it.
 
 Agents only run when the settings say `LOCAL_EXECUTION_ENABLED=true` (both routes below set it). Tools (file edits and commands) stay off until you also set `LOCAL_TOOLS_ENABLED=true`; every command still asks for your approval.
@@ -194,7 +194,7 @@ It prints a full link when `OPEN_DOTS_PUBLIC_URL` is set. A code works once and 
 
 ## Engines
 
-Agents use an engine CLI that is signed in as the account running Open Dots. Sign in from a terminal on the server; signing in from the web app does not exist yet.
+Agents use an engine CLI that is signed in as the account running Open Duet. Sign in from a terminal on the server; signing in from the web app does not exist yet.
 
 - **Direct install:** install the CLI as `opendots` (see [ENGINES.md](ENGINES.md)), then `claude auth login` or `codex login --device-auth`. A service has a short `PATH`; the server also looks in `~/.local/bin`, `~/.npm-global/bin` and `/usr/local/bin`, and `OPEN_DOTS_EXTRA_PATH` adds more folders.
 - **Docker:** the image carries no engine and no credentials. To add one, name its package when you build, for example `OPEN_DOTS_ENGINES="@anthropic-ai/claude-code" docker compose build`, then sign in inside the container: `docker compose exec -it open-dots claude auth login`. The sign-in is kept in the data volume. Installing a CLI into a running container is lost when it is recreated; rebuild with `OPEN_DOTS_ENGINES` instead.

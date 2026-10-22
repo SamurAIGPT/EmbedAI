@@ -1,6 +1,6 @@
 # Roadmap
 
-Open Dots is a self-hosted workspace for personal and business agents. It runs Claude Code tasks in Boat sandboxes from Telegram or a web UI, and durable local conversations through Claude, Codex, a generic ACP command or an OpenAI-compatible endpoint.
+Open Duet is a self-hosted workspace for personal and business agents. It runs Claude Code tasks in Boat sandboxes from Telegram or a web UI, and durable local conversations through Claude, Codex, a generic ACP command or an OpenAI-compatible endpoint.
 
 This page separates **shipped** from **planned**. Planned items are not promises or dates. For shipped behavior see [FEATURES.md](FEATURES.md).
 

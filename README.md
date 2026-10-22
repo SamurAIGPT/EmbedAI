@@ -1,6 +1,6 @@
-# Open Dots: Open-Source AI Coworkers You Run Yourself
+# Open Duet: Open-Source AI Coworkers You Run Yourself
 
-**Open Dots is an open-source, self-hosted workspace for AI coworkers: named
+**Open Duet is an open-source, self-hosted workspace for AI coworkers: named
 agents that each have a job, instructions, memory, their own workspace and
 isolated computer, a schedule, and a human approval step before they do anything
 risky.** You chat with them in a browser, a desktop app or Telegram, hand them
@@ -11,22 +11,22 @@ is not yet a feature-for-feature replacement for them.
 
 An agent can be anything you would hand work to: a researcher, a support
 triager, a reporting assistant, a developer. Coding is one thing agents do, not
-what Open Dots is. Agents run on an engine you already have signed in (Claude,
+what Open Duet is. Agents run on an engine you already have signed in (Claude,
 Codex, any Agent Client Protocol CLI, or an OpenAI-compatible endpoint). Teams of
 agents that delegate to each other, rooms, and connectors to other apps are
 planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Dots demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Dots demo video thumbnail — click to watch on YouTube" width="720"></a></p>
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Dots demo on YouTube</b></a></p>
+<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Duet demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Duet demo video thumbnail — click to watch on YouTube" width="720"></a></p>
+<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Duet demo on YouTube</b></a></p>
 
 > **Status:** Active development. See [Known limitations](#known-limitations) before running it for others.
 
 ## Contents
 
 - [What it does](#what-it-does)
-- [Why Open Dots](#why-open-dots)
+- [Why Open Duet](#why-open-duet)
 - [Quick start](#quick-start)
-- [Using Open Dots](#using-open-dots)
+- [Using Open Duet](#using-open-duet)
 - [Telegram and Boat sandboxes (optional)](#telegram-and-boat-sandboxes-optional)
 - [Architecture](#architecture)
 - [Project layout](#project-layout)
@@ -47,10 +47,10 @@ planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 - **Your data stays yours:** credentials are stored encrypted, in PostgreSQL (default) or SQLite (experimental, no Docker).
 - **Boat sandboxes (optional):** the original Telegram and web task flow in hosted sandboxes, with scheduled prompts and GitHub push.
 
-## Why Open Dots
+## Why Open Duet
 
 Paid AI coworker products keep your agents, memory and credentials on someone
-else's servers. Open Dots gives individuals and small teams the same idea in a
+else's servers. Open Duet gives individuals and small teams the same idea in a
 form they can inspect and run themselves, with visible approval steps, local
 control over the app and its data, and no lock-in to one model provider. Read
 [Known limitations](#known-limitations) before running it for others.
@@ -61,7 +61,7 @@ Pick how you want to run it:
 
 | | Desktop app | Server you own | Development checkout |
 |---|---|---|---|
-| For | one person on a laptop or desktop | agents and routines that keep working with your laptop closed, reachable from a phone | working on Open Dots itself |
+| For | one person on a laptop or desktop | agents and routines that keep working with your laptop closed, reachable from a phone | working on Open Duet itself |
 | Needs | Node.js 22+, [uv](https://docs.astral.sh/uv/), one signed-in engine | Linux, a domain, Docker or Node.js and uv, one signed-in engine | the same, plus Docker for PostgreSQL (or SQLite) |
 | Status | experimental, from a source checkout or unsigned installers | experimental | |
 | Guide | below | [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md) | [Development setup](#development-setup-telegram-and-boat-optional) |
@@ -76,13 +76,13 @@ cd open-duet/desktop
 npm run app
 ```
 
-`npm run app` sets up the first time, builds the page when needed, and opens Open Dots. It needs no `.env`, keeps its own encryption key in the operating system's secret storage, and uses a local SQLite database. On first start a setup flow in Settings detects your engines, asks you to pick a workspace folder, explains the approval modes and can create a starter agent. Details and troubleshooting: [docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental). Tagged releases also build unsigned installers; they are unverified on a clean machine apart from a Windows smoke test, and there is no auto-update.
+`npm run app` sets up the first time, builds the page when needed, and opens Open Duet. It needs no `.env`, keeps its own encryption key in the operating system's secret storage, and uses a local SQLite database. On first start a setup flow in Settings detects your engines, asks you to pick a workspace folder, explains the approval modes and can create a starter agent. Details and troubleshooting: [docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental). Tagged releases also build unsigned installers; they are unverified on a clean machine apart from a Windows smoke test, and there is no auto-update.
 
 ### On a server
 
 One owner, one data folder, HTTPS through nginx or Caddy, and engines signed in on the server. `python -m app.server`, a Docker image and compose file, `doctor`, `backup` and `restore` are included. Follow [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md), and read what has and has not been checked there before relying on it.
 
-## Using Open Dots
+## Using Open Duet
 
 A first session in the web app or the desktop app (the Chat page):
 
@@ -99,7 +99,7 @@ Agents need `LOCAL_EXECUTION_ENABLED=true` on a server or development setup (the
 
 ## Telegram and Boat sandboxes (optional)
 
-Open Dots started as a Telegram bot and web page that run tasks in hosted [Boat](https://docs.boat.dev/api-keys) sandboxes. That flow still works, is independent of agents, and needs the Boat key and Telegram setup described in [Development setup](#development-setup-telegram-and-boat-optional).
+Open Duet started as a Telegram bot and web page that run tasks in hosted [Boat](https://docs.boat.dev/api-keys) sandboxes. That flow still works, is independent of agents, and needs the Boat key and Telegram setup described in [Development setup](#development-setup-telegram-and-boat-optional).
 
 ### Development setup, Telegram and Boat (optional)
 

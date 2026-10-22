@@ -306,7 +306,7 @@ def test_refusal_says_the_existing_file_is_an_open_dots_database_with_its_task_c
     lite.commit()
     lite.close()
     message = refusal(target)
-    assert "an Open Dots database that already holds 3 task(s)" in message
+    assert "an Open Duet database that already holds 3 task(s)" in message
     assert SECRET_PROMPT not in message
 
 
@@ -316,7 +316,7 @@ def test_refusal_says_the_existing_file_is_not_an_open_dots_database(tmp_path):
     lite.execute("CREATE TABLE other (id INTEGER)")
     lite.commit()
     lite.close()
-    assert "not an Open Dots database" in refusal(target)
+    assert "not an Open Duet database" in refusal(target)
 
 
 def test_refusal_says_the_existing_file_is_not_sqlite(tmp_path):

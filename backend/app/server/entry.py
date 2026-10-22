@@ -131,10 +131,10 @@ def migrate() -> int:
     try:
         report = prepare_database()
     except KeyMismatch as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return EXIT_KEY_MISMATCH
     except DatabaseRefused as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return EXIT_DATABASE
     if report.backup:
         print(f"Copied the database to {report.backup} before updating it.")
@@ -184,12 +184,12 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     try:
         options = read_options(arguments, os.environ if environ is None else environ)
     except ServerConfigError as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
     problem = check_schema()
     if problem:
-        print(f"Open Dots server: {problem}", file=sys.stderr)
+        print(f"Open Duet server: {problem}", file=sys.stderr)
         return EXIT_DATABASE
 
     import uvicorn

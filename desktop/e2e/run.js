@@ -160,7 +160,7 @@ async function lifecycle() {
     }
     const tab = await fetch(`${page.origin}/`, { headers: asPage });
     assert.equal(tab.status, 401);
-    assert.match(await tab.text(), /Open this from the Open Dots app/);
+    assert.match(await tab.text(), /Open this from the Open Duet app/);
   });
 
   await check("inside the window the page is authenticated, sees no Node, and cannot leave", async () => {

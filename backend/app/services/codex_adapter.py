@@ -387,7 +387,7 @@ class _CodexTurn:
 
     async def _start(self) -> TurnOutcome | None:
         try:
-            await self._call("initialize", {"clientInfo": {"name": "open-dots", "title": "Open Dots", "version": "0"}})
+            await self._call("initialize", {"clientInfo": {"name": "open-dots", "title": "Open Duet", "version": "0"}})
         except (RpcError, RpcClosed, asyncio.TimeoutError) as exc:
             return self._failed(self._why(exc, "Codex did not start its app-server."), "cli_error")
         self.rpc.notify("initialized", {})

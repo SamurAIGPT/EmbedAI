@@ -69,7 +69,7 @@ Copying and switching are two separate steps. The tool copies; you switch yourse
 
 **If something goes wrong**
 
-- *"... already exists" (the target).* The app creates its SQLite file as soon as it starts with `DATABASE_BACKEND=sqlite`, and the tool's default target is that same file. Either run the copy before the app has ever started on SQLite, or use `--target` with a new name. The message says what is in the existing file (empty, an Open Dots database with N tasks, or something else). The tool never overwrites it; move or rename it yourself.
+- *"... already exists" (the target).* The app creates its SQLite file as soon as it starts with `DATABASE_BACKEND=sqlite`, and the tool's default target is that same file. Either run the copy before the app has ever started on SQLite, or use `--target` with a new name. The message says what is in the existing file (empty, an Open Duet database with N tasks, or something else). The tool never overwrites it; move or rename it yourself.
 - *A `-wal` or `-shm` file is named.* SQLite keeps these next to a database while it is open. Move or rename them together with the `.db` file (same base name), and stop the backend first: they normally disappear when it stops cleanly. The tool refuses if only a side file remains, because it could be attached to a new database by mistake.
 - *The page is empty after switching.* The app opened a different database file than the one you copied to. If you used `--target`, set `SQLITE_PATH` to it in `backend/.env`. The backend logs `Database in use: ...` at startup, so you can see which file it opened. Also use the same browser and address as before: the page remembers your user id in that browser.
 - *Refused for active tasks or open connections.* Stop the backend, the bot and any database tool that is connected, then run it again.
@@ -157,7 +157,7 @@ Open `/chat` (the "Open chat" link on the home page). Set `LOCAL_EXECUTION_ENABL
 
 An agent can run its commands and file edits in its own Docker container instead of on this machine. Full design: [COMPUTERS.md](COMPUTERS.md).
 
-1. **Docker.** Install Docker (Docker Desktop, Colima or Docker Engine) and start it. `docker info` must answer; the Computer panel and `GET /api/v1/computers/health` say why when it does not. Open Dots finds `docker` on `PATH` and in the usual install folders; set `OPEN_DOTS_DOCKER` to its full path otherwise.
+1. **Docker.** Install Docker (Docker Desktop, Colima or Docker Engine) and start it. `docker info` must answer; the Computer panel and `GET /api/v1/computers/health` say why when it does not. Open Duet finds `docker` on `PATH` and in the usual install folders; set `OPEN_DOTS_DOCKER` to its full path otherwise.
 2. **Give the agent a computer.** Agents panel → **Computer** → choose **No network** (the default) or **Internet**, then **Give it a computer**. This only records the choice.
 3. **Get the image.** **Download image** pulls the pinned default (`python:3.12-slim-bookworm`, about 45 MB). Nothing is ever downloaded without this step. To use an image you already have, put its reference in **Image** first (a `name@sha256:…` digest pins it); see [choosing another image](COMPUTERS.md#the-default-image-and-choosing-another).
 4. **Start** (or just send a message: a turn starts a stopped computer and makes a missing one from a local image, unless **Start when a turn needs it** is off).
@@ -242,13 +242,13 @@ An Electron window around the local backend: you open one app instead of startin
 
 **You need:** Node.js 22 or newer, [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (it downloads the Python the backend needs, so you do not install Python yourself), and at least one ready engine. For Claude, install and sign in to the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code); alternatively use Codex or configure ACP/an endpoint in Settings. Run the commands below in the `desktop/` folder.
 
-**The short way:** `npm run app` does whatever is missing, then opens Open Dots: it sets up the first time, rebuilds the page when it is missing or older than its source, and otherwise just starts. (`npm run app -- dev` is the same in dev mode.) The four commands below are what it runs, and what to use when you want one step on its own.
+**The short way:** `npm run app` does whatever is missing, then opens Open Duet: it sets up the first time, rebuilds the page when it is missing or older than its source, and otherwise just starts. (`npm run app -- dev` is the same in dev mode.) The four commands below are what it runs, and what to use when you want one step on its own.
 
 | Command | What it does |
 |---|---|
 | `npm run setup` | Installs everything: the backend's Python environment (`uv sync --locked`), the page's dependencies and Electron, including its program file. Run it once, and again after the dependencies change. |
 | `npm run build` | Builds the page the app shows, as plain files. Run it once, and again after the page's code changes. |
-| `npm run start` | Opens Open Dots. |
+| `npm run start` | Opens Open Duet. |
 | `npm run dev` | The same, with its own data folder and window title, so developing never touches the data you use. |
 | `npm run doctor` | Checks source prerequisites and finds Claude/Codex executables without starting the app or modifying data. |
 
@@ -256,7 +256,7 @@ An Electron window around the local backend: you open one app instead of startin
 
 **Diagnostics.** From `desktop/`, run `npm run doctor` before a first launch or when setup fails. It reports the Node requirement, missing Electron/Python/UI files, a stale UI build and CLI executables on `PATH`, with the command to fix each problem. Exit 0 means source prerequisites are present; exit 1 means setup is incomplete; unknown options exit 2. For machine-readable output, use `npm run --silent doctor -- --json`. Finding a CLI does not prove sign-in or model access: check **Settings → Engines** for authenticated readiness and configured ACP/API endpoints. Doctor reads files only; it does not start CLIs, inspect credentials, install anything or change app data.
 
-**Windows installer (experimental, unsigned).** `npm run package` (in `desktop/`, after `npm run setup`) builds the page, freezes the backend with PyInstaller (`backend/build.py`, needs `uv`) and makes `desktop/release/Open-Dots-Setup-<version>.exe` with electron-builder. The installed app carries its own backend, so it needs no Python; it still needs the Claude Code CLI. `npm run smoke:packaged` starts `release/win-unpacked` with no Python on `PATH` and a fresh data folder and checks that the backend serves. The installer is unsigned, so Windows SmartScreen will warn; PyInstaller does not cross-compile, so each OS needs its own build.
+**Windows installer (experimental, unsigned).** `npm run package` (in `desktop/`, after `npm run setup`) builds the page, freezes the backend with PyInstaller (`backend/build.py`, needs `uv`) and makes `desktop/release/Open-Duet-Setup-<version>.exe` with electron-builder. The installed app carries its own backend, so it needs no Python; it still needs the Claude Code CLI. `npm run smoke:packaged` starts `release/win-unpacked` with no Python on `PATH` and a fresh data folder and checks that the backend serves. The installer is unsigned, so Windows SmartScreen will warn; PyInstaller does not cross-compile, so each OS needs its own build.
 
 **First start.** The app creates its database and encryption key, then opens a setup flow in Settings. Choose an installed, signed-in engine (or configure ACP/API access), a default workspace root and whether tools are enabled. The flow explains Ask first, Accept edits and Plan only, and can create a starter agent with your engine/model and approval mode. Finishing selects that agent in Chat; without a new agent, Chat uses the selected engine/model. Completion is stored in the app database and survives a reload or restart. **Set up later** enters Chat without changing your preferences or creating an agent. Use **Run setup again** in Settings to revisit the choices. Existing agents are kept, and replay does not create another agent by default. Native folder selection is available from the workspace step.
 

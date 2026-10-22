@@ -1,6 +1,6 @@
 # Engines
 
-Open Dots runs a conversation's turns on an **engine**: the program or service
+Open Duet runs a conversation's turns on an **engine**: the program or service
 that writes the answer and, for some engines, runs tools. Every engine sits
 behind one adapter contract, so the thread runtime, approvals, events and the
 UI do not know which engine they are talking to.

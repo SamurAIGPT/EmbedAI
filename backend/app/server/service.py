@@ -45,14 +45,14 @@ def _check_path(label: str, path: str) -> str:
 
 
 def render(*, user: str, env_file: str = DEFAULT_ENV_FILE, python: str | None = None, backend: Path | None = None,
-           description: str = "Open Dots") -> str:
+           description: str = "Open Duet") -> str:
     """The unit text."""
     if not ACCOUNT.match(user):
         raise ServiceError(f"{user!r} is not a usable account name. Give the Linux account that runs the server with --user.")
     python_path = _check_path("The Python path", python or sys.executable)
     work = _check_path("The backend folder", (backend or backend_dir()).as_posix())
     env = _check_path("The settings file", env_file)
-    return f"""# Open Dots, made by `python -m app.server service`.
+    return f"""# Open Duet, made by `python -m app.server service`.
 # The settings are in {env} (mode 0600, owned by {user}); see the self-hosting notes for what to put there.
 
 [Unit]
@@ -107,29 +107,29 @@ def main(argv: Sequence[str]) -> int:
     except SystemExit as exc:
         return 2 if exc.code else 0
     if not UNIT_NAME.match(args.name):
-        print(f"Open Dots server: {args.name!r} is not a usable service name.", file=sys.stderr)
+        print(f"Open Duet server: {args.name!r} is not a usable service name.", file=sys.stderr)
         return 2
     user = args.user or getpass.getuser()
     try:
         text = render(user=user, env_file=args.env_file)
     except ServiceError as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return 2
     if args.write is None:
         print(text)
         return 0
     if not sys.platform.startswith("linux"):
-        print("Open Dots server: systemd is Linux only. The unit text can be printed here (leave out --write) and copied to the server.", file=sys.stderr)
+        print("Open Duet server: systemd is Linux only. The unit text can be printed here (leave out --write) and copied to the server.", file=sys.stderr)
         return 2
     target = Path(args.write or DEFAULT_UNIT_PATH.format(name=args.name))
     if target.exists():
-        print(f"Open Dots server: {target} already exists and was not replaced. Remove it or choose another --write PATH.", file=sys.stderr)
+        print(f"Open Duet server: {target} already exists and was not replaced. Remove it or choose another --write PATH.", file=sys.stderr)
         return 4
     try:
         target.write_text(text, encoding="utf-8")
         target.chmod(0o644)
     except OSError as exc:
-        print(f"Open Dots server: could not write {target} ({exc.strerror or exc}). Run it as root, or print the unit and copy it.", file=sys.stderr)
+        print(f"Open Duet server: could not write {target} ({exc.strerror or exc}). Run it as root, or print the unit and copy it.", file=sys.stderr)
         return 4
     print(f"Wrote {target}.\n")
     print(instructions(args.name, str(target), args.env_file, user))

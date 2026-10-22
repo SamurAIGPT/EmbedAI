@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end smoke test of the server run mode (`python -m app.server`).
 
-Walks through what a person does when they put Open Dots on a server behind a
+Walks through what a person does when they put Open Duet on a server behind a
 reverse proxy, against a real process and a scratch SQLite database: migrate, set
 the owner passphrase, start the server, load the pages, sign in as a visitor
 arriving through a proxy (by hand-written forwarded headers), pair a phone, and

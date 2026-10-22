@@ -24,7 +24,7 @@ if (!nodeIsNewEnough()) {
 const { problems, warnings, electronBinary } = checkLaunch({ layout: layout() });
 for (const warning of warnings) console.warn(`Note: ${warning.what} Run: ${warning.fix}`);
 if (problems.length) {
-  console.error("Open Dots cannot start yet:");
+  console.error("Open Duet cannot start yet:");
   for (const problem of problems) console.error(`  - ${problem.what} Run: ${problem.fix}`);
   process.exit(1);
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Open Dots behind a real reverse proxy: nginx and Caddy, in containers, with TLS.
+"""Open Duet behind a real reverse proxy: nginx and Caddy, in containers, with TLS.
 
 The server relies on its proxy for a few things: HTTPS (so the sign-in cookie is Secure), the
 visitor's address (so a lockout is per visitor), the Host name, streams that are not buffered,

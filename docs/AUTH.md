@@ -1,6 +1,6 @@
 # Authentication: owner, sessions and paired devices
 
-Open Dots runs agents with access to your machine, so the server must know who
+Open Duet runs agents with access to your machine, so the server must know who
 is asking. This document is the design and the operating guide for a
 self-hosted, single-owner install. The desktop app keeps its own launch-token
 model (below) and is not changed by any of this.

@@ -178,7 +178,7 @@ def account(step: Block) -> bool:
     result = container_exec(body, user="opendots", env=env, stdin=stdin)
     if "doctor" in step.extra.split():
         # `doctor` exits 1 when it found a problem; a clean container has no engine. Anything else is a failure.
-        if result.returncode == 1 and "Open Dots server check" in result.stdout:
+        if result.returncode == 1 and "Open Duet server check" in result.stdout:
             result.returncode = 0
     return show("run", step, result)
 
@@ -238,7 +238,7 @@ def docker_route(steps: list[Block], keep: bool) -> bool:
                 good &= up.returncode == 0
                 time.sleep(8)
             result = run([BASH, "-ec", body], cwd=scratch, env=env, input=stdin)
-            if "doctor" in step.extra.split() and result.returncode == 1 and "Open Dots server check" in result.stdout:
+            if "doctor" in step.extra.split() and result.returncode == 1 and "Open Duet server check" in result.stdout:
                 result.returncode = 0  # `doctor` found a problem (no engine); see the account route
             good &= show("run", step, result)
     finally:

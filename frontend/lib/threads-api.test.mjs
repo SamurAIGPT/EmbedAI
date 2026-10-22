@@ -187,7 +187,7 @@ test('delete sends DELETE and a 204 with no body is a success', async () => {
 
 
 test('a refusal for a missing launch token is recognised, and nothing else is', async () => {
-  respondJson(401, { detail: { error_code: 'launch_token_required', message: 'This address only works from inside the Open Dots app.' } });
+  respondJson(401, { detail: { error_code: 'launch_token_required', message: 'This address only works from inside the Open Duet app.' } });
   await assert.rejects(api.getLocalStatus(), (err) => isLaunchTokenMissing(err) === true);
 
   respondJson(401, { detail: 'Not authenticated' });

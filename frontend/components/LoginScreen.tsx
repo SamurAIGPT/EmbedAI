@@ -62,7 +62,7 @@ export function LoginScreen() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-zinc-50 px-4 dark:bg-black">
       <main className="w-full max-w-sm space-y-5 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-lg font-semibold">{settingUp ? "Set the owner passphrase" : "Sign in to Open Dots"}</h1>
+        <h1 className="text-lg font-semibold">{settingUp ? "Set the owner passphrase" : "Sign in to Open Duet"}</h1>
         {problem && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{problem}</p>}
         {!status && !problem && <p className="text-sm text-zinc-500">Loading…</p>}
         {settingUp && !status.setup_allowed && (

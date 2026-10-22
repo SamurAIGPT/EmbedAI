@@ -1,4 +1,4 @@
-# Caddy for Open Dots. With a real domain Caddy gets and renews the certificate by itself.
+# Caddy for Open Duet. With a real domain Caddy gets and renews the certificate by itself.
 #
 # What the server relies on, and this file provides (Caddy does the first three by default):
 #   - X-Forwarded-For is set to the connecting address: Caddy does not believe a header the client

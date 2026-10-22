@@ -72,8 +72,8 @@ def main(argv: Sequence[str]) -> int:
               "Where it is missing, sending a message says so and offers to start a new session; the history stays.")
         return 0
     except backup.KeyProblem as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return EXIT_KEY_MISMATCH
     except backup.BackupError as exc:
-        print(f"Open Dots server: {exc}", file=sys.stderr)
+        print(f"Open Duet server: {exc}", file=sys.stderr)
         return EXIT_DATA

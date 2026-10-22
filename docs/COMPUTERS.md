@@ -1,7 +1,7 @@
 # Agent computers
 
 An agent can have its own computer: an isolated machine where its turns run
-their commands and file edits instead of on the machine running Open Dots.
+their commands and file edits instead of on the machine running Open Duet.
 Today a computer is a Docker container on this machine. The design leaves room
 for two more kinds: a server you own reached over SSH, and a desktop computer
 with a screen.

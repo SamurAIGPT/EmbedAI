@@ -6,7 +6,7 @@
 // built on an ordinary launch. `npm run start` and `npm run dev` remain the
 // commands that never install or build.
 //
-//   npm run app            open Open Dots
+//   npm run app            open Open Duet
 //   npm run app -- dev     the same, in dev mode (its own data folder)
 
 const { spawnSync } = require("node:child_process");

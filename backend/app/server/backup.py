@@ -143,7 +143,7 @@ def _check_database(path: Path) -> str | None:
         try:
             row = connection.execute("SELECT version_num FROM alembic_version").fetchone()
         except sqlite3.Error:
-            raise BackupError("This is not an Open Dots database (it has no schema version).") from None
+            raise BackupError("This is not an Open Duet database (it has no schema version).") from None
         return row[0] if row else None
     except sqlite3.DatabaseError as exc:
         raise BackupError(f"The database file cannot be read ({exc}).") from None
@@ -314,7 +314,7 @@ def _read_manifest(tar: tarfile.TarFile) -> dict:
     try:
         member = tar.getmember(MANIFEST)
     except KeyError:
-        raise BackupError("This is not an Open Dots backup (it has no manifest).") from None
+        raise BackupError("This is not an Open Duet backup (it has no manifest).") from None
     handle = tar.extractfile(member)
     try:
         manifest = json.loads(handle.read().decode("utf-8")) if handle else None
@@ -458,7 +458,7 @@ def restore_backup(archive: Path) -> RestoreReport:
         revision = _check_database(staged_db)
         known = {script.revision for script in ScriptDirectory.from_config(_config()).walk_revisions()}
         if revision is not None and revision not in known:
-            raise BackupError("The backup was made by a newer version of Open Dots (its database revision is unknown here). "
+            raise BackupError("The backup was made by a newer version of Open Duet (its database revision is unknown here). "
                               "Update the code first. Nothing was restored.")
         _check_key(staged_db)
 

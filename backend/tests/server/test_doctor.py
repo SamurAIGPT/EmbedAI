@@ -274,7 +274,7 @@ def test_without_pages_that_is_the_problem(target, tmp_path):
 def test_render_and_exit_codes(ui, target, capsys):
     assert doctor.main([], environment(ui)) == 1  # the database is new
     out = capsys.readouterr().out
-    assert "Open Dots server check" in out and "FAIL  Database" in out and "-> Run `python -m app.server migrate`" in out
+    assert "Open Duet server check" in out and "FAIL  Database" in out and "-> Run `python -m app.server migrate`" in out
     assert "1 problem(s)" in out and "Fix the problems above first." in out
 
 

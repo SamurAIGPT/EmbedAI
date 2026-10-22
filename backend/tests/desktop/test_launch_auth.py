@@ -135,7 +135,7 @@ def test_a_browser_tab_gets_a_readable_page_and_the_apps_own_requests_get_json(d
     tab = client.get("/", headers={"accept": PAGE_ACCEPT})
     assert tab.status_code == 401
     assert tab.headers["content-type"].startswith("text/html")
-    assert "Open this from the Open Dots app" in tab.text
+    assert "Open this from the Open Duet app" in tab.text
     assert TOKEN not in tab.text
 
     for accept in ("application/json", "*/*", "text/event-stream"):

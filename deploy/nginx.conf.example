@@ -1,4 +1,4 @@
-# nginx on the host, in front of Open Dots on the same machine (docs/SELF-HOSTING.md, route 2).
+# nginx on the host, in front of Open Duet on the same machine (docs/SELF-HOSTING.md, route 2).
 #
 # This is deploy/proxy/nginx.conf, the one that was tested (in a container, with a self-signed
 # certificate that the client verified), with the address of the app changed to the loopback port.

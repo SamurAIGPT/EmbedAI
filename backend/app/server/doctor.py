@@ -335,7 +335,7 @@ def run_checks(environ: Mapping[str, str] | None = None, url: str | None = None,
 
 def render(checks: Sequence[Check]) -> str:
     marks = {OK: "ok  ", WARN: "WARN", FAIL: "FAIL", INFO: "info"}
-    lines = ["Open Dots server check", ""]
+    lines = ["Open Duet server check", ""]
     for check in checks:
         lines.append(f"  {marks[check.status]}  {check.name}: {check.detail}")
         if check.advice:

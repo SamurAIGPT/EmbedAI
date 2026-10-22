@@ -68,7 +68,7 @@ async def test_parallel_search_task_launch(
         config = json.loads(argv[6])
         assert config == {"mcpServers": {"open-dots-parallel-search": {
             "type": "http", "url": "https://search.parallel.ai/mcp",
-            "headers": {"User-Agent": "OpenDots/0.1 (+https://github.com/Anil-matcha/open-duet)"},
+            "headers": {"User-Agent": "OpenDuet/0.1 (+https://github.com/Anil-matcha/open-duet)"},
         }}}
         assert len(argv) == 9
     else:

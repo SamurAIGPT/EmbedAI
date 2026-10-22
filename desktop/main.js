@@ -1,4 +1,4 @@
-// The Open Dots desktop shell, run from a source checkout (D-012) or installed.
+// The Open Duet desktop shell, run from a source checkout (D-012) or installed.
 //
 // Order of events: take the single-instance lock, show a window straight away,
 // get the encryption key from the operating system's secret storage, start the
@@ -34,6 +34,8 @@ function chooseUserData() {
     if (!path.isAbsolute(given)) throw new Error("OPEN_DOTS_DATA_DIR must be a full path.");
     return given;
   }
+  // The folder keeps the name from before the rename to Open Duet: it holds the
+  // database and the encrypted key, and the key store is tied to the app name.
   return path.join(app.getPath("appData"), mode === "dev" ? "Open Dots (dev)" : "Open Dots");
 }
 
@@ -85,7 +87,7 @@ function createWindow() {
     height: 800,
     minWidth: 480,
     minHeight: 480,
-    title: mode === "dev" ? "Open Dots (dev)" : "Open Dots",
+    title: mode === "dev" ? "Open Duet (dev)" : "Open Duet",
     backgroundColor: "#ffffff",
     webPreferences: {
       // The sandboxed preload exposes only the validated native path picker.
@@ -111,6 +113,7 @@ function claudePathFromEnvironment() {
 
 async function main() {
   const userData = chooseUserData();
+  // Same stored identity as the data folder above; the window title says Open Duet.
   app.setName(mode === "dev" ? "Open Dots (dev)" : "Open Dots");
   app.setPath("userData", userData);
 
@@ -139,7 +142,7 @@ async function main() {
     key = createKeyStore({ dir: path.join(userData, "secrets"), safeStorage }).ensure().key;
   } catch (error) {
     if (error instanceof KeyStoreError) {
-      return fatal({ title: "Open Dots cannot keep its encryption key", body: error.message });
+      return fatal({ title: "Open Duet cannot keep its encryption key", body: error.message });
     }
     throw error;
   }
@@ -148,7 +151,7 @@ async function main() {
   try {
     claudePath = claudePathFromEnvironment();
   } catch (error) {
-    return fatal({ title: "Open Dots cannot start", body: error.message });
+    return fatal({ title: "Open Duet cannot start", body: error.message });
   }
 
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -219,5 +222,5 @@ app.on("before-quit", (event) => {
 });
 
 main().catch((error) => {
-  if (!quitting) fatal({ title: "Open Dots could not start", body: String(error?.stack ?? error) });
+  if (!quitting) fatal({ title: "Open Duet could not start", body: String(error?.stack ?? error) });
 });

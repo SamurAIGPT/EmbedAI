@@ -12,7 +12,7 @@ if (args.includes("--help")) {
   if (args.includes("--json")) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`Open Dots source checkout: ${result.ok ? "prerequisites ready" : "needs setup"}`);
+    console.log(`Open Duet source checkout: ${result.ok ? "prerequisites ready" : "needs setup"}`);
     console.log(`Node: ${result.nodeVersion}`);
     for (const item of result.problems) console.log(`Problem: ${item.what}\n  Fix: ${item.fix}`);
     for (const item of result.warnings) console.log(`Warning: ${item.what}\n  Next: ${item.fix}`);

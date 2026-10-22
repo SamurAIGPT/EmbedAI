@@ -76,7 +76,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   };
 
   return <section aria-label="First-run setup" className="space-y-5 rounded-xl border border-zinc-300 p-5 dark:border-zinc-700">
-    <div><h2 className="text-xl font-semibold">Welcome to Open Dots</h2><p className="mt-2 text-sm text-zinc-500">Choose how your agents work on this computer. You can change these choices in Settings and Agents.</p></div>
+    <div><h2 className="text-xl font-semibold">Welcome to Open Duet</h2><p className="mt-2 text-sm text-zinc-500">Choose how your agents work on this computer. You can change these choices in Settings and Agents.</p></div>
     <ol className="flex flex-wrap gap-3 text-xs" aria-label="Setup progress">{STEPS.map((name, index) => <li key={name} aria-current={index === step ? "step" : undefined} className={index === step ? "font-semibold" : "text-zinc-500"}>{index + 1}. {name}</li>)}</ol>
     {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     {step === 0 && <div className="space-y-4">

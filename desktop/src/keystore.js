@@ -38,10 +38,10 @@ function looksLikeFernetKey(text) {
 // What the person is told, per failure. Written for the dialog, not for a log.
 const ADVICE = {
   unavailable:
-    "This computer's secret storage is not available, so Open Dots cannot keep its encryption key safely. " +
+    "This computer's secret storage is not available, so Open Duet cannot keep its encryption key safely. " +
     "Nothing was stored.",
   weak:
-    "This session's secret storage is only obfuscating what it keeps (no keyring is running), so Open Dots " +
+    "This session's secret storage is only obfuscating what it keeps (no keyring is running), so Open Duet " +
     "will not use it for its encryption key. Start a keyring such as GNOME Keyring or KWallet, then try again.",
 };
 
@@ -84,13 +84,13 @@ function createKeyStore({
       throw new KeyStoreError(
         "unreadable",
         "The stored encryption key could not be decrypted. It was probably made under a different " +
-          "user account or computer. Open Dots will not make a new one over it: that would lose " +
+          "user account or computer. Open Duet will not make a new one over it: that would lose " +
           "everything encrypted with the old key.",
         { cause: error },
       );
     }
     if (!looksLikeFernetKey(key)) {
-      throw new KeyStoreError("corrupt", "The stored encryption key is damaged. Open Dots will not replace it.");
+      throw new KeyStoreError("corrupt", "The stored encryption key is damaged. Open Duet will not replace it.");
     }
     return key;
   }

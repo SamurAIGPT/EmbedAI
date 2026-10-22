@@ -17,7 +17,7 @@ to the database file (`app/core/data_lease.py`) for as long as it runs. A
 second backend on the same file refuses to start and names the process that
 holds it:
 
-    Another Open Dots backend (process 4242 on mac.local) is already using the
+    Another Open Duet backend (process 4242 on mac.local) is already using the
     database /Users/me/.open-dots/open-dots.db. Stop it first, or point this one
     at a different database (SQLITE_PATH).
 

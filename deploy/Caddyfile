@@ -1,4 +1,4 @@
-# Caddy on the host, in front of Open Dots on the same machine (docs/SELF-HOSTING.md, route 2).
+# Caddy on the host, in front of Open Duet on the same machine (docs/SELF-HOSTING.md, route 2).
 #
 # This is deploy/proxy/Caddyfile, the one that was tested (in a container, with Caddy's own local
 # certificate authority), with the address of the app changed to the loopback port. It has not

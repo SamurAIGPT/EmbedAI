@@ -585,8 +585,8 @@ export function ChatApp() {
     return (
       <div className="flex h-dvh flex-col">
         {header}
-        <Notice title="Open this from the Open Dots app">
-          This address only works inside the Open Dots window, which keeps your conversations
+        <Notice title="Open this from the Open Duet app">
+          This address only works inside the Open Duet window, which keeps your conversations
           private to it. Use that window instead of a browser tab.
         </Notice>
       </div>

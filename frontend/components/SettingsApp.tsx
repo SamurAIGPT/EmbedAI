@@ -55,7 +55,7 @@ export function SettingsApp() {
     }).catch((err: unknown) => {
       if (cancelled) return;
       if (err instanceof ApiError && err.status === 404) { setHeadless(true); setError(null); }
-      else setError(isLaunchTokenMissing(err) ? "Open Settings inside the Open Dots app window." : err instanceof ApiError ? err.message : "Could not reach the backend. Check that the app is running.");
+      else setError(isLaunchTokenMissing(err) ? "Open Settings inside the Open Duet app window." : err instanceof ApiError ? err.message : "Could not reach the backend. Check that the app is running.");
     });
     return () => { cancelled = true; };
   }, [loadTick]);

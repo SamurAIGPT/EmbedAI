@@ -1,4 +1,4 @@
-# Caddy in front of Open Dots, as a container on the app's network. Use it with the base file:
+# Caddy in front of Open Duet, as a container on the app's network. Use it with the base file:
 #
 #   docker compose -f compose.yaml -f deploy/proxy/compose.caddy.yaml up -d --build
 #

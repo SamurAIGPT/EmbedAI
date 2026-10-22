@@ -1,4 +1,4 @@
-# Open Dots as a server: the backend and its web pages in one image.
+# Open Duet as a server: the backend and its web pages in one image.
 #
 #   docker build -t open-dots .
 #   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t open-dots .

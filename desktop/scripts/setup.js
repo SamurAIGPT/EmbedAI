@@ -51,6 +51,6 @@ step(
 console.log(
   "\nSetup is done. Next:\n" +
     "  npm run build    build the page the app shows (again after the page's code changes)\n" +
-    "  npm run start    open Open Dots\n" +
+    "  npm run start    open Open Duet\n" +
     "Claude Code must be installed and signed in for chat to work: https://docs.anthropic.com/en/docs/claude-code",
 );

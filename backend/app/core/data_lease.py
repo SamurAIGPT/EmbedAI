@@ -41,7 +41,7 @@ class DataDirInUse(Exception):
             host = self.holder.get("host")
             who = f" (process {pid}" + (f" on {host}" if isinstance(host, str) and host else "") + ")"
         super().__init__(
-            f"Another Open Dots backend{who} is already using the database {database}. "
+            f"Another Open Duet backend{who} is already using the database {database}. "
             "Stop it first, or point this one at a different database (SQLITE_PATH). "
             "Two backends on one database would run every routine twice."
         )

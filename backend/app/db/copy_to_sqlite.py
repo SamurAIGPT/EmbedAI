@@ -71,8 +71,8 @@ def describe_existing_file(path: Path) -> str:
             }
             if "task" in tables and "alembic_version" in tables:
                 tasks = connection.execute("SELECT count(*) FROM task").fetchone()[0]
-                return f"an Open Dots database that already holds {tasks} task(s)"
-            return f"a SQLite database with {len(tables)} table(s) that is not an Open Dots database"
+                return f"an Open Duet database that already holds {tasks} task(s)"
+            return f"a SQLite database with {len(tables)} table(s) that is not an Open Duet database"
         finally:
             connection.close()
     except (sqlite3.OperationalError, OSError):

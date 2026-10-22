@@ -1,26 +1,154 @@
 @import "tailwindcss";
 
+/* Colours are semantic tokens, declared once per theme. <html data-theme="light|dark"> is
+   always set before first paint (lib/theme.ts), so there is no media-query fallback to
+   keep in step. scripts/check-contrast.mjs reads these blocks and fails CI when a text
+   colour on a surface drops under 4.5:1, so edit values here and run `npm run check:contrast`. */
+:root,
+:root[data-theme="light"] {
+  --bg-app: #f7f6f3;
+  --bg-surface: #fbfaf8;
+  --bg-raised: #ffffff;
+  --bg-inset: #efede8;
+  --bg-hover: #e9e6df;
+  --line: #dcd8cf;
+  --ink: #1c1b19;
+  --ink-muted: #5b574f;
+  --ink-faint: #6b665d;
+  --accent: #3151c8;
+  --accent-fg: #ffffff;
+  --success: #17703f;
+  --warning: #8f5200;
+  --danger: #b92b27;
+  --focus: #3151c8;
+  --bubble-user: #ebe7dd;
+  --code-bg: #f0ede6;
+  --scrim: rgb(20 18 14 / 0.45);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg-app: #0e0e10;
+  --bg-surface: #151517;
+  --bg-raised: #1e1e21;
+  --bg-inset: #121214;
+  --bg-hover: #2a2a2e;
+  --line: #2f2f35;
+  --ink: #ececee;
+  --ink-muted: #a3a3ab;
+  --ink-faint: #9595a0;
+  --accent: #7b95ff;
+  --accent-fg: #0b0d14;
+  --success: #4cc38a;
+  --warning: #e5a03a;
+  --danger: #ff7b7b;
+  --focus: #93a8ff;
+  --bubble-user: #2a2a30;
+  --code-bg: #19191c;
+  --scrim: rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+/* Agent identity colours: white text sits on each at 4.5:1 or better. Same in both themes. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --identity-1: #0f766e;
+  --identity-2: #1d4ed8;
+  --identity-3: #7e22ce;
+  --identity-4: #be185d;
+  --identity-5: #b45309;
+  --identity-6: #15803d;
+  --identity-7: #c2410c;
+  --identity-8: #4338ca;
+  --identity-9: #9f1239;
+  --identity-10: #475569;
+
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-ui: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Older components still ask for these two. */
+  --background: var(--bg-app);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-app: var(--bg-app);
+  --color-surface: var(--bg-surface);
+  --color-raised: var(--bg-raised);
+  --color-inset: var(--bg-inset);
+  --color-hover: var(--bg-hover);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-focus: var(--focus);
+  --color-bubble: var(--bubble-user);
+  --color-code: var(--code-bg);
+  --color-scrim: var(--scrim);
+  --radius-field: 0.625rem;
+  --radius-card: 0.875rem;
+  --ease-ui: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --animate-pop-in: pop-in var(--dur-base) var(--ease-ui);
+  --animate-fade-in: fade-in var(--dur-base) var(--ease-ui);
+  --animate-sheet-in: sheet-in var(--dur-base) var(--ease-ui);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Existing `dark:` classes follow the chosen theme, not only the operating system. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Phones and tablets have no hover, and Tailwind only applies `hover:` under
+   `@media (hover: hover)`. A control revealed on hover must also carry `touch:` (for
+   example `opacity-0 group-hover:opacity-100 touch:opacity-100`) so it stays visible
+   there. lib/touch-actions.test.mjs enforces it for the new components. */
+@custom-variant touch {
+  @media (hover: none), (pointer: coarse) {
+    @slot;
   }
 }
 
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.97) translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-app);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Keep native fields at a size iOS does not zoom into. */
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

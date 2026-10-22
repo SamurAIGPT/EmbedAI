@@ -8,6 +8,7 @@ import { ApprovalsTabs } from "@/components/approvals/ApprovalsPanel";
 import { EngineSettings } from "@/components/EngineSettings";
 import { DesktopSetup } from "@/components/DesktopSetup";
 import { DevicesSection } from "@/components/DevicesSection";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 declare global {
   interface Window {
@@ -96,6 +97,10 @@ export function SettingsApp() {
     <header className="flex h-12 items-center gap-4 border-b border-zinc-200 px-4 dark:border-zinc-800"><Link href="/chat/" className="text-sm text-zinc-500 hover:underline">← Chat</Link><h1 className="text-sm font-semibold">Settings</h1></header>
     <main className="mx-auto max-w-2xl space-y-6 px-5 py-8">
       <div><h2 className="text-xl font-semibold">Settings</h2><p className="mt-2 text-sm text-zinc-500">Configure engines and approvals. Desktop preferences can be saved below when using the app.</p></div>
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-raised p-5">
+        <div><h3 className="font-semibold">Appearance</h3><p className="mt-1 text-xs text-muted">Follows your system by default. Saved in this browser only.</p></div>
+        <ThemeToggle />
+      </section>
       {error && <p role="alert" className="rounded-md border border-red-300 p-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-zinc-300 p-3 text-sm dark:border-zinc-700">{notice}</p>}
       {headless && <p className="text-sm text-zinc-500">Workspace, executable and timeout preferences use the backend environment configuration in this installation.</p>}

@@ -16,10 +16,13 @@
     "doctor": "node scripts/doctor.js",
     "test": "node --test \"test/*.test.js\"",
     "e2e": "node e2e/run.js",
+    "e2e:ui": "playwright test",
+    "e2e:ui:real": "node playwright/run-real.js",
     "package": "node scripts/package.js",
     "smoke:packaged": "node scripts/smoke-packaged.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "electron": "^43.0.0",
     "electron-builder": "^26.15.3"
   },

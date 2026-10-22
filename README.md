@@ -32,6 +32,7 @@ planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 - [Project layout](#project-layout)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
+- [License](#license)
 
 ## What it does
 
@@ -469,3 +470,7 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
 Issues and pull requests are welcome. Keep the README aligned with the
 backend and frontend behavior, and include focused tests when changing
 services or API behavior.
+
+## License
+
+Open Duet is licensed under the [Apache License 2.0](LICENSE).

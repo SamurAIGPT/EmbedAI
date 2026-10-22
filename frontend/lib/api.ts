@@ -1166,6 +1166,9 @@ export const api = {
     requestBlobUrl(`/threads/${threadId}/files/raw?path=${encodeURIComponent(path)}`),
   workspaceDownloadUrl: (threadId: number, path: string) =>
     requestBlobUrl(`/threads/${threadId}/files/download?path=${encodeURIComponent(path)}`),
+  // A folder (the whole workspace for "") as a zip; secrets and links out are left out.
+  workspaceZipUrl: (threadId: number, path: string) =>
+    requestBlobUrl(`/threads/${threadId}/files/zip?path=${encodeURIComponent(path)}`),
   getUsage: (month?: string) => request<UsageSummary>(`/usage${month ? `?month=${encodeURIComponent(month)}` : ""}`),
   usageCsv: (month: string) => requestText(`/usage.csv?month=${encodeURIComponent(month)}`),
 };

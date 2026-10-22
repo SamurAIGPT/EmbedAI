@@ -75,6 +75,9 @@ pinned workspace (for an agent's conversation, the agent's workspace).
 `GET .../files/content?path=` previews a text file (first 256 KB) or an image
 (up to 10 MB), whose bytes come from `GET .../files/raw?path=`.
 `GET .../files/download?path=` downloads a file (up to 50 MB).
+`GET .../files/zip?path=` downloads a folder, or the whole workspace when
+`path` is empty, as a zip (at most 2000 files and 200 MB in total before
+compression; over either is 413 `too_large`).
 Admin scope only: a paired chat-only device cannot browse files.
 
 Confinement, checked on every request:
@@ -95,9 +98,23 @@ Confinement, checked on every request:
 - Downloads are `Content-Disposition: attachment` with a safe file name,
   `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`.
   A listing returns at most 500 entries (`truncated` says so).
+- A zip applies the same rules to every file in it: it holds only what a
+  listing would show as a file (secret files, `.git/` and the other secret
+  folders, links out of the workspace and special files are left out, with no
+  error), each file is opened with the same `O_NOFOLLOW` and inode check
+  (which also refuses a file whose folder was swapped for a link to a secret
+  folder), and links to folders are not followed (a link loop cannot make it
+  grow). Files and folders whose names are unsafe inside a zip (a backslash, a
+  drive prefix, control or bidi/format characters, names that are not UTF-8)
+  are left out too; the `X-Skipped-Unsafe-Names` header counts them. The zip
+  is written to a temporary file that is deleted once it has been sent, or
+  as soon as building it fails; a file that grows past the cap while it is
+  being zipped stops the download with 413. Each request stages up to about
+  200 MB in the system temporary folder and requests are not limited in
+  number; the route is admin-only.
 
 UI: a Files panel for the open conversation: folders, sizes, a text or image
-preview, and a download link.
+preview, a download link, and **Download zip** for the folder being shown.
 
 ## Usage and cost
 
@@ -139,6 +156,5 @@ failed with its reason.
 - Ranking by relevance, stemming, or an FTS index.
 - PDFs and office documents as attachments; images for Codex, ACP and
   OpenAI-compatible engines.
-- Editing or deleting workspace files from the browser; zip download of a
-  folder.
+- Editing or deleting workspace files from the browser.
 - Budgets, alerts or price tables for engines that do not report cost.

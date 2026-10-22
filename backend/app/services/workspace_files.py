@@ -6,6 +6,12 @@ Security invariants, checked on every call:
 - a file is opened with O_NOFOLLOW and its inode must match the canonical
   path after opening, so a swap between the check and the open is refused;
 - secret files (keys, .env, VCS and cloud credentials) are never read.
+
+A folder download (`zip_folder`) applies the same checks to every file it
+adds, leaves out what a listing would hide and names that are unsafe inside a
+zip (backslashes, control or bidi characters, invalid UTF-8), does not follow
+folder links, and refuses a folder over ZIP_MAX_FILES files or ZIP_MAX_BYTES
+in total.
 """
 
 import fnmatch
@@ -13,7 +19,10 @@ import mimetypes
 import os
 import re
 import stat
+import tempfile
+import time
 import unicodedata
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -21,6 +30,8 @@ LIST_MAX_ENTRIES = 500
 TEXT_PREVIEW_BYTES = 256 * 1024
 IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024
 DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024
+ZIP_MAX_BYTES = 200 * 1024 * 1024  # total of the files, before compression
+ZIP_MAX_FILES = 2000
 PATH_MAX_CHARS = 1024
 
 SECRET_DIRS = {".git", ".ssh", ".aws", ".gnupg"}
@@ -179,10 +190,10 @@ class OpenedFile:
     truncated: bool
 
 
-def read_file(workspace: str | None, raw: str | None, *, max_bytes: int, whole: bool) -> OpenedFile:
-    """Read a file inside the workspace. `whole`: refuse (413) a file larger
-    than `max_bytes` instead of returning its first `max_bytes`."""
-    root, target, _ = resolve(workspace, raw)
+def _open_confined(root: Path, target: Path) -> tuple[int, os.stat_result, Path]:
+    """Open a regular file inside `root` without following a final link, and
+    check that what was opened is still the canonical file inside the root.
+    The caller closes the descriptor."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(target, flags)
@@ -199,9 +210,25 @@ def read_file(workspace: str | None, raw: str | None, *, max_bytes: int, whole: 
         after = Path(os.path.realpath(target))
         if not _contained(root, after):
             raise _outside()
+        if is_secret(after.relative_to(root).parts):
+            # A folder on the path was swapped for a link to a secret one
+            # after the path was checked.
+            raise FileAccessError(403, "secret_file", "Secret files (keys, .env, credentials) are never shown.")
         now = os.stat(after)
         if (now.st_dev, now.st_ino) != (opened.st_dev, opened.st_ino):
             raise FileAccessError(409, "file_changed", "The file changed while it was being opened. Try again.")
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd, opened, after
+
+
+def read_file(workspace: str | None, raw: str | None, *, max_bytes: int, whole: bool) -> OpenedFile:
+    """Read a file inside the workspace. `whole`: refuse (413) a file larger
+    than `max_bytes` instead of returning its first `max_bytes`."""
+    root, target, _ = resolve(workspace, raw)
+    fd, opened, after = _open_confined(root, target)
+    try:
         if whole and opened.st_size > max_bytes:
             raise FileAccessError(
                 413, "too_large", f"The file is over the {max_bytes // (1024 * 1024)} MB limit for this."
@@ -251,3 +278,109 @@ def download_name(name: str) -> str:
         or "download"
     )
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(clean, safe='')}"
+
+
+def _too_big_folder() -> FileAccessError:
+    return FileAccessError(
+        413,
+        "too_large",
+        f"That folder is over the zip limit ({ZIP_MAX_FILES} files or "
+        f"{ZIP_MAX_BYTES // (1024 * 1024)} MB). Download a smaller folder.",
+    )
+
+
+def safe_zip_name(name: str) -> bool:
+    """Whether a file or folder name can go into a zip unchanged: valid
+    UTF-8, no backslash, colon-drive prefix, control or format character
+    (bidi overrides, zero-width marks), and nothing clean_relative() refuses.
+    Such names are left out rather than rewritten."""
+    try:
+        name.encode("utf-8")
+        clean_relative(name)
+    except (UnicodeEncodeError, FileAccessError):
+        return False
+    if name in ("", ".", "..") or "/" in name or "\\" in name or _DRIVE.match(name):
+        return False
+    return not any(unicodedata.category(ch) in ("Cc", "Cf") for ch in name)
+
+
+def _zip_members(root: Path, folder: Path) -> tuple[list[tuple[str, Path]], int]:
+    """(name inside the zip, canonical path) for every file a zip of `folder`
+    may contain: what a listing would show as a file, in every subfolder,
+    without following folder links, and the number of files and folders left
+    out because their names are unsafe in a zip. Refuses (413) over the caps."""
+    members: list[tuple[str, Path]] = []
+    skipped = 0
+    total = 0
+    top = folder.name if folder.name and safe_zip_name(folder.name) else "workspace"
+    for current, dirs, names in os.walk(folder, followlinks=False):
+        here = Path(current)
+        kept = []
+        for d in sorted(dirs):
+            if is_secret((*here.relative_to(root).parts, d)):
+                continue
+            if not safe_zip_name(d):
+                skipped += 1
+                continue
+            kept.append(d)
+        dirs[:] = kept
+        for name in sorted(names):
+            child = here / name
+            rel = (*child.relative_to(root).parts,)
+            try:
+                real = Path(os.path.realpath(child))
+                if not _contained(root, real) or is_secret(rel) or is_secret(real.relative_to(root).parts):
+                    continue
+                info = os.stat(real)
+            except OSError:
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            if not safe_zip_name(name):
+                skipped += 1
+                continue
+            members.append(("/".join((top, *child.relative_to(folder).parts)), real))
+            total += info.st_size
+            if len(members) > ZIP_MAX_FILES or total > ZIP_MAX_BYTES:
+                raise _too_big_folder()
+    return members, skipped
+
+
+def zip_folder(workspace: str | None, raw: str | None) -> tuple[str, str, int]:
+    """Write a folder of the workspace (the root when `raw` is empty) to a
+    temporary zip file. Returns (download name, path of the zip, entries left
+    out for unsafe names); the caller deletes the file. Secret files and
+    links out of the workspace are left out, as in a listing; links to
+    folders are not followed."""
+    root, target, _ = resolve(workspace, raw)
+    if not target.is_dir():
+        raise FileAccessError(400, "not_a_folder", "That is a file, not a folder.")
+    members, skipped = _zip_members(root, target)
+    handle = tempfile.NamedTemporaryFile(prefix="workspace-", suffix=".zip", delete=False)
+    written = 0
+    try:
+        with handle, zipfile.ZipFile(handle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for arcname, path in members:
+                try:
+                    fd, opened, _ = _open_confined(root, path)
+                except FileAccessError as error:
+                    if error.code == "not_found":
+                        continue  # removed since the walk
+                    raise
+                try:
+                    stamp = time.localtime(opened.st_mtime)[:6]
+                    info = zipfile.ZipInfo(arcname, max(stamp, (1980, 1, 1, 0, 0, 0)))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o644 << 16
+                    with archive.open(info, "w", force_zip64=True) as out:
+                        while chunk := os.read(fd, 1024 * 1024):
+                            written += len(chunk)
+                            if written > ZIP_MAX_BYTES:
+                                raise _too_big_folder()  # a file grew after the walk
+                            out.write(chunk)
+                finally:
+                    os.close(fd)
+    except BaseException:
+        os.unlink(handle.name)
+        raise
+    return f"{target.name or 'workspace'}.zip", handle.name, skipped

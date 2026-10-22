@@ -9,7 +9,8 @@ function message(err: unknown, fallback: string): string {
 }
 
 // Read-only view of the open conversation's workspace: folders, a preview of
-// text and images, and downloads (docs/EVERYDAY.md).
+// text and images, and downloads of a file or a whole folder as a zip
+// (docs/EVERYDAY.md).
 export function FilesPanel({ threadId, workspace, onClose }: { threadId: number; workspace: string | null; onClose: () => void }) {
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<FolderListing | null>(null);
@@ -18,6 +19,9 @@ export function FilesPanel({ threadId, workspace, onClose }: { threadId: number;
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [zipping, setZipping] = useState(false);
+  // The folder a failed zip was for, so the message goes away on another folder.
+  const [zipError, setZipError] = useState<{ path: string; text: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -51,20 +55,36 @@ export function FilesPanel({ threadId, workspace, onClose }: { threadId: number;
     }
   };
 
+  const save = (url: string, name: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
   const download = async (filePath: string, name: string) => {
     setDownloading(true);
     setPreviewError(null);
     try {
-      const url = await api.workspaceDownloadUrl(threadId, filePath);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      save(await api.workspaceDownloadUrl(threadId, filePath), name);
     } catch (err) {
       setPreviewError(message(err, "Could not download this file."));
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const downloadFolder = async () => {
+    setZipping(true);
+    setZipError(null);
+    try {
+      const name = path ? path.split("/").pop() : "workspace";
+      save(await api.workspaceZipUrl(threadId, path), `${name}.zip`);
+    } catch (err) {
+      setZipError({ path, text: message(err, "Could not download this folder.") });
+    } finally {
+      setZipping(false);
     }
   };
 
@@ -100,7 +120,16 @@ export function FilesPanel({ threadId, workspace, onClose }: { threadId: number;
                   </button>
                 </span>
               ))}
+              <button
+                onClick={() => void downloadFolder()}
+                disabled={zipping || listError !== null}
+                title="Download this folder as a zip (secret files are left out)"
+                className="ml-auto cursor-pointer rounded-md border border-zinc-300 px-2 py-0.5 disabled:opacity-50 dark:border-zinc-700"
+              >
+                {zipping ? "Zipping…" : "Download zip"}
+              </button>
             </nav>
+            {zipError?.path === path && <p role="alert" className="px-3 pb-2 text-xs text-red-600 dark:text-red-400">{zipError.text}</p>}
             <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 text-sm">
               {path && (
                 <li>

@@ -5,7 +5,7 @@ agents that each have a job, instructions, memory, their own workspace and
 isolated computer, a schedule, and a human approval step before they do anything
 risky.** You chat with them in a browser, a desktop app or Telegram, hand them
 recurring routines, and keep their data and credentials on your own machine or
-server. It is an open alternative to paid AI agent products such as OpenAI Dots,
+server. It is an open alternative to Claude Duet and to other paid AI agent products such as OpenAI Dots,
 Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent, and
 is not yet a feature-for-feature replacement for them.
 
@@ -71,8 +71,8 @@ An **engine** is the model program your agents run on. You need at least one rea
 ### Desktop app
 
 ```bash
-git clone https://github.com/Anil-matcha/open-dots
-cd open-dots/desktop
+git clone https://github.com/Anil-matcha/open-duet
+cd open-duet/desktop
 npm run app
 ```
 

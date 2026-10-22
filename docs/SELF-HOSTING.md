@@ -29,8 +29,8 @@ Needs Docker with the Compose plugin. The app listens only on the host's loopbac
 
    <!-- verify:docker -->
    ```sh
-   git clone https://github.com/Anil-matcha/open-dots
-   cd open-dots
+   git clone https://github.com/Anil-matcha/open-duet
+   cd open-duet
    touch open-dots.env && chmod 600 open-dots.env
    docker compose build
    ```
@@ -89,7 +89,7 @@ Install [Node.js 22](https://nodejs.org) and [uv](https://docs.astral.sh/uv/) fi
 
    <!-- verify:skip -->
    ```sh
-   sudo -u opendots git clone https://github.com/Anil-matcha/open-dots /opt/open-dots
+   sudo -u opendots git clone https://github.com/Anil-matcha/open-duet /opt/open-dots
    ```
 
 2. **Build the web pages and install the backend** (as `opendots`: `sudo -iu opendots`; repeat after each update)

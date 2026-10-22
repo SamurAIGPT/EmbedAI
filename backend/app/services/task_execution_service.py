@@ -159,7 +159,7 @@ def _build_command(
                     "type": "http",
                     "url": "https://search.parallel.ai/mcp",
                     "headers": {
-                        "User-Agent": "OpenDots/0.1 (+https://github.com/Anil-matcha/open-dots)"
+                        "User-Agent": "OpenDots/0.1 (+https://github.com/Anil-matcha/open-duet)"
                     },
                 }
             }

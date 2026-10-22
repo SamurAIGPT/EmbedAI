@@ -225,7 +225,7 @@ def docker_route(steps: list[Block], keep: bool) -> bool:
         for step in steps:
             body = step.body
             if "git clone" in body:
-                body = "\n".join(line for line in body.splitlines() if not line.startswith(("git clone", "cd open-dots")))
+                body = "\n".join(line for line in body.splitlines() if not line.startswith(("git clone", "cd open-duet")))
             if "docker compose exec" in body:
                 body = body.replace("docker compose exec ", "docker compose exec -T ")
             stdin = None

@@ -1,16 +1,20 @@
-# Open Dots: Open-Source Alternative to Paid AI Agents
+# Open Dots: Open-Source AI Coworkers You Run Yourself
 
-**Open Dots is an open-source, self-hosted workspace for running coding-agent
-tasks, aimed at people exploring paid AI agent products such as OpenAI Dots,
-Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent.**
-Today it wraps the Claude Code CLI: run tasks from Telegram or the web, review
-risky actions before they run, connect GitHub, schedule recurring prompts, and
-chat with a locally signed-in Claude from a desktop app. It supports Claude
-only, has named agents but no multi-agent features yet, and is not a
-feature-for-feature replacement for those services. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for what is planned.
+**Open Dots is an open-source, self-hosted workspace for AI coworkers: named
+agents that each have a job, instructions, memory, their own workspace and
+isolated computer, a schedule, and a human approval step before they do anything
+risky.** You chat with them in a browser, a desktop app or Telegram, hand them
+recurring routines, and keep their data and credentials on your own machine or
+server. It is an open alternative to paid AI agent products such as OpenAI Dots,
+Meta Muse, Grok Bot, Instinct, Manus Cue, Claude Cowork, and ChatGPT agent, and
+is not yet a feature-for-feature replacement for them.
 
-Both interfaces use the same API, sandbox, and credentials for each user.
+An agent can be anything you would hand work to: a researcher, a support
+triager, a reporting assistant, a developer. Coding is one thing agents do, not
+what Open Dots is. Agents run on an engine you already have signed in (Claude,
+Codex, any Agent Client Protocol CLI, or an OpenAI-compatible endpoint). Teams of
+agents that delegate to each other, rooms, and connectors to other apps are
+planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Dots demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Dots demo video thumbnail — click to watch on YouTube" width="720"></a></p>
 <p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Dots demo on YouTube</b></a></p>
@@ -32,20 +36,25 @@ Both interfaces use the same API, sandbox, and credentials for each user.
 
 ## What it does
 
-- Run coding-agent tasks in disposable sandboxes from Telegram or a browser.
-- Connect Claude through its OAuth login flow and optionally connect a user's GitHub account.
-- Ask for approval before risky actions such as file writes, shell commands, and Git pushes.
-- Continue completed tasks in the same Claude conversation from the web UI.
-- Schedule recurring prompts and receive run results in Telegram (Boat sandboxes).
-- Run it on a server you own, behind HTTPS, and reach it from a browser or a phone (single owner; experimental): `python -m app.server`, a Docker image and compose file, nginx and Caddy overlays, `doctor`, `backup` and `restore`. See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
-- Run routines on your local agents (no Boat): cron, weekday, interval or one-off schedules with timezones, webhook triggers, run history, missed-run tracking, restart recovery and an in-app notification feed (see [docs/ROUTINES.md](docs/ROUTINES.md)).
-- Keep durable local conversations (threads) with streaming answers, a tool-call timeline, inline approvals, Stop, and rename/archive/delete, using your own signed-in `claude` CLI (opt-in; see [Local Claude](#local-claude-experimental)).
-- Run as a desktop app from a source checkout, or from unsigned installers built by the release workflow (experimental; see [Desktop app](#desktop-app-from-source-experimental)).
-- Store user credentials encrypted and manage sandbox, task, permission, thread, and schedule records in PostgreSQL (default) or SQLite (experimental, no Docker).
+- **Named agents** with a title, instructions, engine and model, workspace folder, approval mode and notes; export and import them as portable files.
+- **Memory:** each agent keeps notes (`MEMORY.md` plus topic notes) that load into its conversations, with recall across conversations and undo.
+- **Routines:** cron, weekday, interval, one-off and webhook schedules with timezones, run history, missed-run tracking, restart recovery and an in-app notification feed (see [docs/ROUTINES.md](docs/ROUTINES.md)).
+- **Approvals you control:** ask-first, accept-edits and plan modes, saved rules, a decision log and a safety floor; risky actions wait for your Allow or Deny.
+- **Their own computer:** give an agent an isolated Docker container so its commands and file edits run there, never on your machine (experimental, see [docs/COMPUTERS.md](docs/COMPUTERS.md)).
+- **Durable conversations** with streaming answers, a tool-call timeline, search, attachments, Stop, and resume after a restart.
+- **Several engines and limit-aware fallback:** Claude, Codex, ACP agents and OpenAI-compatible endpoints; usage limits are recognised and a turn can fall back to another engine (see [docs/ENGINES.md](docs/ENGINES.md)).
+- **Run it where you want:** a desktop app from a source checkout or unsigned installers (experimental); or on a server you own, behind HTTPS, reachable from a browser or phone (single owner; experimental): `python -m app.server`, a Docker image and compose file, nginx and Caddy overlays, `doctor`, `backup` and `restore`. See [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
+- **Channels:** the web UI, the desktop app and a Telegram bot share one API.
+- **Your data stays yours:** credentials are stored encrypted, in PostgreSQL (default) or SQLite (experimental, no Docker).
+- **Boat sandboxes (optional):** the original Telegram and web task flow in hosted sandboxes, with scheduled prompts and GitHub push.
 
 ## Why Open Dots
 
-Open Dots gives individuals and developers an inspectable workspace they can run themselves, with coding tasks, visible approval steps, and local control over the app and its data. The web UI supports guest use without Telegram and can also link to a Telegram identity. Read [Known limitations](#known-limitations) before running it for others.
+Paid AI coworker products keep your agents, memory and credentials on someone
+else's servers. Open Dots gives individuals and small teams the same idea in a
+form they can inspect and run themselves, with visible approval steps, local
+control over the app and its data, and no lock-in to one model provider. Read
+[Known limitations](#known-limitations) before running it for others.
 
 ## Quick start
 
@@ -384,8 +393,10 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   sandbox services have only partial coverage, and there are no frontend
   tests. The GitHub Actions workflows have not yet run on GitHub, so treat
   them as untested until the first run.
-- Only the Claude Code CLI is supported. Named agents exist, but there is no
-  delegation, connectors beyond an optional search MCP, or memory.
+- Engines are Claude, Codex, ACP agents and OpenAI-compatible endpoints; other
+  engine presets are planned. Named agents and memory exist, but agents cannot
+  delegate to each other yet, there are no rooms or teams, and connectors beyond
+  an optional search MCP are not built.
 - Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows
   about (see `github_classifier.py`); an unrecognized verb defaults to the

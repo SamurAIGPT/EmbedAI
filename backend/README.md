@@ -1,7 +1,9 @@
-# Vadoo Autonomous Agent — Backend
+# Open Duet — Backend
 
-FastAPI service + Telegram bot that run coding agent tasks (e.g. Claude Code)
-inside disposable sandboxes provided by [Boat](https://docs.boat.dev).
+FastAPI service behind Open Duet's AI coworkers: named agents, durable
+conversations on several engines, routines, approvals, memory and agent
+computers, plus an optional Telegram bot and the original task flow in
+disposable sandboxes provided by [Boat](https://docs.boat.dev).
 
 For prerequisites, `.env` setup, and how to run the whole stack (this API,
 the Telegram bot, and the [web UI](../frontend)) with one command, see the

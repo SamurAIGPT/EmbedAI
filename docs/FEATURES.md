@@ -1,6 +1,6 @@
 # Features
 
-Shipped capabilities. Planned work is in [ROADMAP.md](ROADMAP.md).
+Shipped capabilities of Open Duet, a workspace for AI coworkers: named agents with instructions, memory, routines, computers and approvals. Planned work is in [ROADMAP.md](ROADMAP.md). The first bullets describe the original Boat-sandbox task flow, which is optional.
 
 - Run Claude Code tasks in disposable Boat sandboxes from Telegram or the web UI.
 - Connect Claude through its OAuth login flow; optionally connect GitHub.

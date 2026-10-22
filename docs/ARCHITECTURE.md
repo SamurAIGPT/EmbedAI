@@ -3,26 +3,28 @@
 ## Current system
 
 ```text
-Next.js web UI (frontend/)        Telegram bot (backend/app/telegram_bot.py)
-          \                              /
-           +------- FastAPI (backend/app) -------+
-                     |            |
-        routers: task, sandbox, schedule,    Postgres (Alembic)
-        permission, link                     encrypted credentials
-                     |
-        services: task execution, Boat sandbox ops, Claude OAuth flow,
-        permission rules/asks, git classifier, schedules, notifications
-                     |
-              Boat remote sandbox running Claude Code
-              (calls back to the backend for permission approvals)
+Next.js web UI (frontend/)   Desktop app (desktop/)   Telegram bot (optional)
+          \                         |                        /
+           +----------- FastAPI (backend/app) ---------------+
+                  |                 |                |
+   agents, threads, routines,   engine adapters   PostgreSQL or SQLite (Alembic)
+   approvals, memory, search    (Claude, Codex,   encrypted credentials
+                  |              ACP, OpenAI-
+                  |              compatible)
+      agent computers (Docker)      |
+      one container per agent       +-- engine CLIs and endpoints, run by the backend
+                  |
+   optional: Boat remote sandboxes (the original Telegram and web task flow)
 ```
+
+An agent is a saved identity (name, title, instructions, engine, model, workspace, approval mode, notes). A conversation is a durable thread whose turns run on the agent's engine; a routine starts a new conversation of an agent on a schedule or webhook; risky actions wait for the owner's approval; an agent can have its own computer.
 
 - **Backend:** FastAPI, SQLAlchemy models (`task`, `schedule`, `user_sandbox`, `user_credential`, `permission_rule`, `permission_ask`, `link_code`), Alembic migrations, background loop for schedules and task sync.
 - **Frontend:** Next.js, components for connecting Claude/GitHub/Telegram and submitting tasks.
 - **Threads (experimental):** `thread`, `turn`, `event` and `approval` tables, and a runtime that runs each turn through the selected engine adapter, stores every event before announcing it, and keeps a heartbeat so that a turn whose process died is marked interrupted. Routes under `/api/v1/threads` include a server-sent-events stream that resumes from a stored event number. The Chat page (`/chat`) is their interface; it keeps nothing of its own, so everything it shows is rebuilt from the stored events after a reload.
 - **Engine registry:** `engine_registry.py` exposes readiness, models and capability flags at `/api/v1/engines`; bounded probes fail per engine, preserving the other engines. `provider_adapter.py` normalizes Claude, Codex app-server, ACP and OpenAI-compatible chat. Agent and new-chat controls use this catalog; existing threads pin their provider and permit model changes while idle. A null thread model follows the linked agent only on the same provider, otherwise the engine default. Agent provider changes affect new conversations.
 - **Engine configuration:** `/api/v1/engines/{id}/config` stores ACP commands and endpoint configuration through encrypted credentials. Public responses omit keys. Saving a blank key preserves it only at the same URL; a changed URL drops it unless supplied anew. Web and desktop Settings share the engine panel; local access checks apply. See [ENGINES.md](ENGINES.md).
-- **Identity:** guest or Telegram id stored in the browser; no owner authentication yet. The optional local Claude path (off by default) is instead restricted to requests from the machine itself by `local_access_policy`, and runs through the user's own `claude` CLI: chat-only by default, or with tools whose calls each wait for a person's approval when `LOCAL_TOOLS_ENABLED` is set.
+- **Identity:** a single owner signs in with a passphrase and can pair devices (see [AUTH.md](AUTH.md)); the older Boat routes still take a guest or Telegram `user_id`. The local engine path (off by default) is also restricted to requests from the machine itself by `local_access_policy`, and runs through the user's own `claude` CLI: chat-only by default, or with tools whose calls each wait for a person's approval when `LOCAL_TOOLS_ENABLED` is set.
 
 See [README](../README.md), [backend/README.md](../backend/README.md) and [frontend/README.md](../frontend/README.md) for details.
 

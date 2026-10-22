@@ -443,9 +443,9 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   sandbox services have only partial coverage, and there are no frontend
   tests. The GitHub Actions workflows have not yet run on GitHub, so treat
   them as untested until the first run.
-- Engines are Claude, Codex, ACP agents and OpenAI-compatible endpoints; other
-  engine presets are planned. Named agents and memory exist, but agents cannot
-  delegate to each other yet, there are no rooms or teams, and connectors beyond
+- Engines are Claude, Codex, ACP agents, OpenAI-compatible endpoints and an
+  OpenRouter preset of them; other engine presets are planned. Named agents
+  and memory exist, but agents cannot delegate to each other yet, there are no rooms or teams, and connectors beyond
   an optional search MCP are not built.
 - Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows

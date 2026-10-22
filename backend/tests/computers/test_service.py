@@ -79,6 +79,21 @@ async def test_start_makes_and_runs_the_machine_from_a_local_image(service, agen
     assert docker.commands().count("run") == 1
 
 
+async def test_a_workspace_docker_cannot_mount_is_a_refusal_not_a_stuck_computer(service, agent, tmp_path, docker):  # noqa: F811
+    folder = tmp_path / "client a,b"
+    folder.mkdir()
+    docker.add_image()
+    computer, _ = await service.create_for_agent(agent, workspace=str(folder))
+    with pytest.raises(ComputerError) as raised:
+        await service.start(computer.id)
+    assert raised.value.code == "invalid_computer" and "comma" in str(raised.value)
+    after = await service.get(computer.id)
+    assert after.state == "error" and "comma" in after.last_error
+    assert "run" not in docker.commands()
+    with pytest.raises(ComputerUnavailable, match="comma"):
+        await service.attach_for_turn(agent.id, 1, str(folder))
+
+
 async def test_prepare_image_is_the_only_download(service, agent, workspace, docker):  # noqa: F811
     computer, _ = await service.create_for_agent(agent, workspace=workspace)
     await service.prepare_image(computer.id)

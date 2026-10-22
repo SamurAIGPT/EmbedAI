@@ -27,7 +27,7 @@ def test_plain_file_names_are_topics(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["../x.md", "a/b.md", ".hidden.md", "travel", "travel.txt", "a.b.md", "MEMORY.md", "memory.md", "x" * 70 + ".md", ""]
+    "name", ["../x.md", "a/b.md", ".hidden.md", "travel", "travel.txt", "a.b.md", "MEMORY.md", "memory.md", "x" * 70 + ".md", "", "travel.md\n"]
 )
 def test_anything_else_is_refused(name):
     with pytest.raises(memory_topics.InvalidTopicName):

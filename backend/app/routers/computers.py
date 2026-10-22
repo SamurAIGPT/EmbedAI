@@ -39,6 +39,7 @@ _STATUS = {
     "docker_timeout": 503,
     "docker_failed": 502,
     "unknown_provider": 422,
+    "invalid_computer": 422,
 }
 
 

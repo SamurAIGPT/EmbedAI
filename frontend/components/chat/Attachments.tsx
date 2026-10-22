@@ -26,21 +26,21 @@ function Thumbnail({ threadId, item }: { threadId: number; item: AttachmentRef }
     };
   }, [threadId, item.id]);
   if (failed) return <FileChip item={item} note="image unavailable" />;
-  if (!url) return <span className="inline-block h-24 w-24 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-800" />;
+  if (!url) return <span className="inline-block h-24 w-24 animate-pulse rounded-lg bg-inset" />;
   return (
     <a href={url} target="_blank" rel="noreferrer" title={item.name}>
       {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, not an optimisable asset */}
-      <img src={url} alt={item.name} className="max-h-40 max-w-56 rounded-lg border border-zinc-200 object-cover dark:border-zinc-700" />
+      <img src={url} alt={item.name} className="max-h-40 max-w-56 rounded-lg border border-line object-cover" />
     </a>
   );
 }
 
 function FileChip({ item, note }: { item: { name: string; bytes: number }; note?: string }) {
   return (
-    <span className="inline-flex max-w-56 items-center gap-1 rounded-md border border-zinc-300 bg-background px-2 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
+    <span className="inline-flex max-w-56 items-center gap-1 rounded-field border border-line bg-raised px-2 py-1 text-xs text-ink">
       <span aria-hidden>📄</span>
       <span className="truncate">{item.name}</span>
-      <span className="shrink-0 text-zinc-500">{note ?? formatBytes(item.bytes)}</span>
+      <span className="shrink-0 text-muted">{note ?? formatBytes(item.bytes)}</span>
     </span>
   );
 }
@@ -95,7 +95,7 @@ export function PendingAttachments({
       {files.map((file, index) => (
         <li
           key={`${file.name}-${index}`}
-          className="flex items-center gap-2 rounded-md border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700"
+          className="flex items-center gap-2 rounded-field border border-line bg-inset px-2 py-1 text-xs"
         >
           {previews.get(file) ? (
             // eslint-disable-next-line @next/next/no-img-element -- a local data URL
@@ -104,13 +104,13 @@ export function PendingAttachments({
             <span aria-hidden>📄</span>
           )}
           <span className="max-w-40 truncate">{file.name}</span>
-          <span className="text-zinc-500">{formatBytes(file.size)}</span>
+          <span className="text-muted">{formatBytes(file.size)}</span>
           <button
             type="button"
             onClick={() => onRemove(index)}
             disabled={disabled}
             aria-label={`Remove ${file.name}`}
-            className="cursor-pointer rounded px-1 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800"
+            className="cursor-pointer rounded px-1 text-muted hover:bg-hover disabled:opacity-50 touch:px-2 touch:py-1"
           >
             ✕
           </button>

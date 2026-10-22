@@ -17,11 +17,11 @@ import {
 } from "@/lib/computers";
 
 const FIELD =
-  "w-full rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-sm placeholder:text-zinc-500 dark:border-zinc-700";
+  "w-full rounded-md border border-line bg-transparent px-2 py-1 text-sm placeholder:text-muted";
 const SMALL =
-  "cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900";
+  "cursor-pointer rounded-md border border-line px-2 py-1 text-xs font-medium hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50";
 const PRIMARY =
-  "cursor-pointer rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
+  "cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 bg-accent text-accent-fg hover:opacity-90";
 
 const REFRESH_MS = 10_000;
 
@@ -117,12 +117,12 @@ export function ComputerView({
     }
   };
 
-  if (phase.kind === "loading") return <p className="text-sm text-zinc-500">Loading the computer…</p>;
+  if (phase.kind === "loading") return <p className="text-sm text-muted">Loading the computer…</p>;
   if (phase.kind === "unsupported")
-    return <p className="text-sm text-zinc-500">This backend does not offer computers yet. Update it to give agents their own computer.</p>;
+    return <p className="text-sm text-muted">This backend does not offer computers yet. Update it to give agents their own computer.</p>;
 
   const alert = error && (
-    <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+    <p role="alert" className="text-sm text-danger">
       {error}
     </p>
   );
@@ -132,28 +132,28 @@ export function ComputerView({
     return (
       <div className="space-y-3 text-sm">
         {alert}
-        <p className="text-zinc-600 dark:text-zinc-400">
+        <p className="text-muted">
           {agent.name} works on this machine. Give it its own computer, an isolated Docker container, and its commands and
           file edits run there instead: only its workspace folder is shared, it runs as a normal user with CPU, memory and
           process limits. Reading files and listing folders inside the computer are automatically allowed. File writes and commands
           follow the agent&apos;s approval mode and any applicable saved rule.
         </p>
         {docker && !docker.available && (
-          <p className="text-amber-700 dark:text-amber-400">Docker is not available: {docker.error}</p>
+          <p className="text-warning">Docker is not available: {docker.error}</p>
         )}
         <fieldset className="space-y-1">
-          <legend className="text-xs text-zinc-500">Network</legend>
+          <legend className="text-xs text-muted">Network</legend>
           {NETWORK_MODES.map((mode) => (
             <label key={mode.value} className="flex cursor-pointer items-start gap-2 text-xs">
               <input type="radio" name="network" checked={network === mode.value} onChange={() => setNetwork(mode.value)} />
               <span>
-                <span className="font-medium">{mode.label}</span> <span className="text-zinc-500">{mode.description}</span>
+                <span className="font-medium">{mode.label}</span> <span className="text-muted">{mode.description}</span>
               </span>
             </label>
           ))}
         </fieldset>
         {!createGate.enabled && (
-          <p id={capabilityHelpId} className="text-xs text-amber-700 dark:text-amber-400">
+          <p id={capabilityHelpId} className="text-xs text-warning">
             {createGate.reason}
           </p>
         )}
@@ -189,34 +189,34 @@ export function ComputerView({
   return (
     <div className="space-y-3 text-sm">
       {alert}
-      <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="rounded-md border border-line p-3">
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{computerStateLabel(state)}</span>
-          {computer.busy && <span className="rounded bg-zinc-200 px-1.5 text-xs dark:bg-zinc-800">in use by a turn</span>}
-          <span className="font-mono text-xs text-zinc-500" title={computer.image}>
+          {computer.busy && <span className="rounded bg-hover px-1.5 text-xs">in use by a turn</span>}
+          <span className="font-mono text-xs text-muted" title={computer.image}>
             {imageLabel(computer.image)}
             {computer.image_pinned ? " · pinned" : " · not pinned"}
           </span>
         </p>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-muted">
           {computer.provider} · {NETWORK_MODES.find((m) => m.value === computer.network)?.label ?? computer.network} ·{" "}
           {limitsText(computer)}
           {computer.idle_minutes > 0 ? ` · stops after ${computer.idle_minutes} idle min` : " · never stops on its own"}
         </p>
         {computer.workspace_path && (
-          <p className="mt-1 truncate text-xs text-zinc-500" title={computer.workspace_path}>
+          <p className="mt-1 truncate text-xs text-muted" title={computer.workspace_path}>
             {computer.workspace_path} → {computer.guest_workspace}
           </p>
         )}
         {computer.health && !computer.health.available && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Docker is not available: {computer.health.error}</p>
+          <p className="mt-2 text-xs text-warning">Docker is not available: {computer.health.error}</p>
         )}
-        {computer.problem && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{computer.problem}</p>}
+        {computer.problem && <p className="mt-2 text-xs text-warning">{computer.problem}</p>}
         {!computer.problem && computer.last_error && state !== "running" && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{computer.last_error}</p>
+          <p className="mt-2 text-xs text-warning">{computer.last_error}</p>
         )}
         {computer.needs_recreate && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+          <p className="mt-2 text-xs text-warning">
             Settings changed since it was made. Recreate it for them to apply (files in the workspace folder stay).
           </p>
         )}
@@ -233,20 +233,20 @@ export function ComputerView({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-zinc-500">Last command</p>
+        <p className="mb-1 text-xs text-muted">Last command</p>
         {last ? (
           <>
             <p className="truncate font-mono text-xs" title={last}>
               {last}
             </p>
             {computer.last_command?.output && (
-              <pre className="mt-1 max-h-40 overflow-auto rounded bg-zinc-100 p-2 text-xs whitespace-pre-wrap dark:bg-zinc-900">
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-inset p-2 text-xs whitespace-pre-wrap">
                 {computer.last_command.output}
               </pre>
             )}
           </>
         ) : (
-          <p className="text-xs text-zinc-500">Nothing has run yet.</p>
+          <p className="text-xs text-muted">Nothing has run yet.</p>
         )}
       </div>
 
@@ -257,23 +257,23 @@ export function ComputerView({
           saveLimits();
         }}
       >
-        <label className="text-xs text-zinc-500">
+        <label className="text-xs text-muted">
           CPUs
           <input type="number" step="0.1" min="0.1" max="64" value={draft.cpus} onChange={(e) => setLimits({ ...draft, cpus: e.target.value })} className={`${FIELD} mt-1`} />
         </label>
-        <label className="text-xs text-zinc-500">
+        <label className="text-xs text-muted">
           Memory (MB)
           <input type="number" min="128" max="262144" value={draft.memory_mb} onChange={(e) => setLimits({ ...draft, memory_mb: e.target.value })} className={`${FIELD} mt-1`} />
         </label>
-        <label className="text-xs text-zinc-500">
+        <label className="text-xs text-muted">
           Processes
           <input type="number" min="32" max="65536" value={draft.pids_limit} onChange={(e) => setLimits({ ...draft, pids_limit: e.target.value })} className={`${FIELD} mt-1`} />
         </label>
-        <label className="text-xs text-zinc-500">
+        <label className="text-xs text-muted">
           Stop after idle (min, 0 never)
           <input type="number" min="0" max="10080" value={draft.idle_minutes} onChange={(e) => setLimits({ ...draft, idle_minutes: e.target.value })} className={`${FIELD} mt-1`} />
         </label>
-        <label className="col-span-2 text-xs text-zinc-500">
+        <label className="col-span-2 text-xs text-muted">
           Image (applies on recreate; name@sha256:… pins it)
           <input value={draft.image} onChange={(e) => setLimits({ ...draft, image: e.target.value })} className={`${FIELD} mt-1 font-mono`} />
         </label>
@@ -286,7 +286,7 @@ export function ComputerView({
             value={computer.network}
             disabled={busy}
             onChange={(e) => act(() => api.updateComputer(computer.id, { network: e.target.value as ComputerNetwork }))}
-            className="cursor-pointer rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
+            className="cursor-pointer rounded-md border border-line bg-transparent px-2 py-1 text-xs"
           >
             {NETWORK_MODES.map((mode) => (
               <option key={mode.value} value={mode.value}>
@@ -294,7 +294,7 @@ export function ComputerView({
               </option>
             ))}
           </select>
-          <label className="flex cursor-pointer items-center gap-1 text-xs text-zinc-500">
+          <label className="flex cursor-pointer items-center gap-1 text-xs text-muted">
             <input
               type="checkbox"
               checked={computer.auto_start}
@@ -306,7 +306,7 @@ export function ComputerView({
         </div>
       </form>
 
-      <div className="border-t border-zinc-200 pt-3 dark:border-zinc-800">
+      <div className="border-t border-line pt-3">
         {confirmRemove ? (
           <p className="flex flex-wrap items-center gap-2 text-xs">
             Remove the computer? Everything inside it is lost; the workspace folder stays. {agent.name} then works on this machine again.

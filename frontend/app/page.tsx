@@ -87,11 +87,11 @@ function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-zinc-50 px-4 py-12 dark:bg-black">
+    <div className="flex min-h-screen flex-col items-center bg-inset px-4 py-12">
       <main className="w-full max-w-lg space-y-4">
         <div className="mb-6 text-center">
           <h1 className="text-xl font-semibold">Open Duet</h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted">
             Connect your accounts, then submit a task.
           </p>
           <Link href="/chat" className="mt-2 inline-block text-sm font-medium underline">
@@ -100,18 +100,18 @@ function Home() {
         </div>
 
         {backendProblem ? (
-          <section className="rounded-lg border border-red-300 p-5 dark:border-red-800">
+          <section className="rounded-lg border border-danger/50 p-5">
             <h2 className="text-base font-semibold">Backend not reachable</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{backendProblem}</p>
+            <p className="mt-1 text-sm text-muted">{backendProblem}</p>
           </section>
         ) : boatEnabled === null ? (
-          <p className="text-center text-sm text-zinc-500">Loading…</p>
+          <p className="text-center text-sm text-muted">Loading…</p>
         ) : (
           <>
             <LocalClaude />
 
             <ConnectTelegram userId={userId} onLinked={handleLinked} onReset={handleReset} />
-            {identityError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{identityError}</p>}
+            {identityError && <p role="alert" className="text-sm text-danger">{identityError}</p>}
 
             {boatEnabled ? (
               <>
@@ -123,7 +123,7 @@ function Home() {
                     onSandbox={setSandboxId}
                   />
                 ) : (
-                  <section className="rounded-lg border border-zinc-200 p-5 opacity-50 dark:border-zinc-800">
+                  <section className="rounded-lg border border-line p-5 opacity-50">
                     <h2 className="text-base font-semibold">2. Connect Claude</h2>
                   </section>
                 )}
@@ -131,7 +131,7 @@ function Home() {
                 {userId ? (
                   <ConnectGitHub boxId={sandboxId} />
                 ) : (
-                  <section className="rounded-lg border border-zinc-200 p-5 opacity-50 dark:border-zinc-800">
+                  <section className="rounded-lg border border-line p-5 opacity-50">
                     <h2 className="text-base font-semibold">3. Connect GitHub (optional)</h2>
                   </section>
                 )}
@@ -139,16 +139,16 @@ function Home() {
                 {userId ? (
                   <SubmitTask userId={userId} boxId={boxId} />
                 ) : (
-                  <section className="rounded-lg border border-zinc-200 p-5 opacity-50 dark:border-zinc-800">
+                  <section className="rounded-lg border border-line p-5 opacity-50">
                     <h2 className="text-base font-semibold">4. Submit a task</h2>
                   </section>
                 )}
               </>
             ) : (
               <>
-                <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+                <section className="rounded-lg border border-line p-5">
                   <h2 className="text-base font-semibold">Boat sandboxes are off</h2>
-                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                  <p className="mt-1 text-sm text-muted">
                     Connecting Claude in a sandbox, GitHub, schedules and tool tasks need
                     Boat. Local Claude above works without it.
                     {boatReason ? ` (${boatReason}.)` : ""}

@@ -77,7 +77,7 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
   if (checking) {
     return (
       <Card step={3} title="Connect GitHub (optional)" disabled={!boxId}>
-        <p className="text-sm text-zinc-500">Checking…</p>
+        <p className="text-sm text-muted">Checking…</p>
       </Card>
     );
   }
@@ -85,7 +85,7 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
   if (connected) {
     return (
       <Card step={3} title="Connect GitHub (optional)" done>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-muted">
           GitHub is connected — tasks that push to a repo will use your account.
         </p>
       </Card>
@@ -94,7 +94,7 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
 
   return (
     <Card step={3} title="Connect GitHub (optional)" disabled={!boxId}>
-      <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mb-3 text-sm text-muted">
         Only needed if you want tasks to <code>git push</code> as you. Skip
         this if you don&apos;t need that.
       </p>
@@ -109,7 +109,7 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
         <div className="space-y-2">
           <p className="text-sm">
             Enter this code:{" "}
-            <code className="rounded bg-zinc-100 px-2 py-1 font-mono text-base font-semibold dark:bg-zinc-800">
+            <code className="rounded bg-inset px-2 py-1 font-mono text-base font-semibold">
               {deviceLogin.code}
             </code>
           </p>
@@ -117,11 +117,11 @@ export function ConnectGitHub({ boxId }: { boxId: string | null }) {
             href={deviceLogin.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-sm font-medium text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+            className="inline-block text-sm font-medium text-accent underline hover:opacity-80"
           >
             Open {deviceLogin.url} →
           </a>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted">
             Waiting for you to approve it — no need to come back here, this
             updates on its own.
           </p>

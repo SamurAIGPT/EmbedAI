@@ -7,11 +7,11 @@ import { api, ApiError, type MemoryJournalRow, type MemoryProposal, type TopicDo
 import { journalLabel, topicFileName } from "@/lib/memory";
 
 const FIELD =
-  "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm placeholder:text-zinc-500 dark:border-zinc-700";
+  "w-full rounded-md border border-line bg-transparent px-3 py-1.5 text-sm placeholder:text-muted";
 const SMALL =
-  "cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900";
+  "cursor-pointer rounded-md border border-line px-2 py-1 text-xs font-medium hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50";
 const PRIMARY_SMALL =
-  "cursor-pointer rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
+  "cursor-pointer rounded-md px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 bg-accent text-accent-fg hover:opacity-90";
 
 type Tab = "topics" | "proposed" | "history";
 
@@ -42,7 +42,7 @@ export function MemoryPanel({ agentId, onNotesChanged }: { agentId: number; onNo
     ["history", "History"],
   ];
   return (
-    <section className="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-800" aria-label="More memory">
+    <section className="space-y-3 border-t border-line pt-3" aria-label="More memory">
       <div role="tablist" className="flex gap-1">
         {tabs.map(([id, label]) => (
           <button
@@ -50,13 +50,13 @@ export function MemoryPanel({ agentId, onNotesChanged }: { agentId: number; onNo
             role="tab"
             aria-selected={tab === id}
             onClick={() => setTab(id)}
-            className={`${SMALL} ${tab === id ? "bg-zinc-100 dark:bg-zinc-900" : ""}`}
+            className={`${SMALL} ${tab === id ? "bg-inset" : ""}`}
           >
             {label}
           </button>
         ))}
       </div>
-      {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       {tab === "topics" && <Topics agentId={agentId} onError={setError} />}
       {tab === "proposed" && (
         <Proposed
@@ -150,7 +150,7 @@ function Topics({ agentId, onError }: { agentId: number; onError: (e: string | n
     const dirty = open.text !== open.doc.text;
     return (
       <div className="space-y-2">
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-muted">
           <span className="font-mono">memory/{open.doc.name}</span>
           {open.doc.exists ? "" : " (new)"} · not loaded whole: the agent reads it when relevant, and matching passages
           are recalled in front of a message. Start with front matter (<span className="font-mono">title:</span>,{" "}
@@ -165,7 +165,7 @@ function Topics({ agentId, onError }: { agentId: number; onError: (e: string | n
           className={`${FIELD} resize-y font-mono`}
         />
         {open.conflict && (
-          <div role="alert" className="rounded-md border border-amber-400 p-3 text-xs">
+          <div role="alert" className="rounded-md border border-warning/60 p-3 text-xs">
             <p>The agent changed this note while you were editing. Load its version, or keep yours and overwrite it.</p>
             <div className="mt-2 flex gap-2">
               <button onClick={() => openTopic(open.doc.name)} disabled={busy} className={SMALL}>
@@ -177,7 +177,7 @@ function Topics({ agentId, onError }: { agentId: number; onError: (e: string | n
             </div>
           </div>
         )}
-        {open.saved && <p className="text-xs text-zinc-600 dark:text-zinc-400">{open.saved}</p>}
+        {open.saved && <p className="text-xs text-muted">{open.saved}</p>}
         <div className="flex flex-wrap gap-2">
           <button onClick={() => save(false)} disabled={busy || !dirty} className={PRIMARY_SMALL}>
             {busy ? "Saving…" : "Save topic"}
@@ -197,23 +197,23 @@ function Topics({ agentId, onError }: { agentId: number; onError: (e: string | n
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Longer notes about one subject each, in{" "}
         <span className="font-mono break-all">{list?.folder ?? "memory/"}</span>. Only their names load into every
         conversation; passages that match a message are recalled in front of it.
       </p>
       {list === null ? (
-        <p className="text-xs text-zinc-500">Loading…</p>
+        <p className="text-xs text-muted">Loading…</p>
       ) : list.topics.length === 0 ? (
-        <p className="text-xs text-zinc-500">No topic notes yet.</p>
+        <p className="text-xs text-muted">No topic notes yet.</p>
       ) : (
         <ul className="space-y-1">
           {list.topics.map((t) => (
             <li key={t.name}>
               <button onClick={() => openTopic(t.name)} className="text-left text-sm hover:underline">
                 <span className="font-mono">{t.name}</span>
-                {t.title && <span className="text-zinc-500"> — {t.title}</span>}
-                <span className="text-xs text-zinc-500"> · {Math.max(1, Math.round(t.bytes / 1024))} KB</span>
+                {t.title && <span className="text-muted"> — {t.title}</span>}
+                <span className="text-xs text-muted"> · {Math.max(1, Math.round(t.bytes / 1024))} KB</span>
               </button>
             </li>
           ))}
@@ -263,21 +263,21 @@ function Proposed({
       setBusy(null);
     }
   };
-  if (items === null) return <p className="text-xs text-zinc-500">Loading…</p>;
+  if (items === null) return <p className="text-xs text-muted">Loading…</p>;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Lines picked from your own messages once a conversation has been quiet for two minutes. Nothing is saved until
         you accept it; a rejected line is not proposed again.
       </p>
       {items.length === 0 ? (
-        <p className="text-xs text-zinc-500">Nothing proposed right now.</p>
+        <p className="text-xs text-muted">Nothing proposed right now.</p>
       ) : (
         <ul className="space-y-2">
           {items.map((p) => (
-            <li key={p.id} className="rounded-md border border-zinc-200 p-2 text-sm dark:border-zinc-800">
+            <li key={p.id} className="rounded-md border border-line p-2 text-sm">
               <p className="font-mono text-xs break-words">{p.line}</p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-muted">
                 From “{p.thread_title || "a conversation"}” · would go to {p.target}
               </p>
               <div className="mt-2 flex gap-2">
@@ -336,22 +336,22 @@ function History({
     }
   };
 
-  if (rows === null) return <p className="text-xs text-zinc-500">Loading…</p>;
+  if (rows === null) return <p className="text-xs text-muted">Loading…</p>;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Changes made here, by accepted proposals and by undo. Undo puts a file back the way it was before that change.
         Edits the agent makes with its own file tools are not listed.
       </p>
       {rows.length === 0 ? (
-        <p className="text-xs text-zinc-500">No changes yet.</p>
+        <p className="text-xs text-muted">No changes yet.</p>
       ) : (
         <ul className="space-y-1">
           {rows.map((row) => (
             <li key={row.id} className="text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <span>{journalLabel(row)}</span>
-                <span className="text-zinc-500">{new Date(row.at).toLocaleString()}</span>
+                <span className="text-muted">{new Date(row.at).toLocaleString()}</span>
                 {row.diff && (
                   <button onClick={() => setShown(shown === row.id ? null : row.id)} className="underline">
                     {shown === row.id ? "Hide" : "Diff"}
@@ -362,13 +362,13 @@ function History({
                     {busy === row.id ? "Undoing…" : "Undo"}
                   </button>
                 ) : (
-                  <span className="text-zinc-500" title={row.reason ?? ""}>
+                  <span className="text-muted" title={row.reason ?? ""}>
                     cannot be undone
                   </span>
                 )}
               </div>
               {shown === row.id && (
-                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-zinc-100 p-2 font-mono dark:bg-zinc-900">
+                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-inset p-2 font-mono">
                   {row.diff}
                 </pre>
               )}

@@ -7,7 +7,7 @@ import { currentMonth, formatCost, formatTokens, shiftMonth } from "@/lib/everyd
 
 function Row({ group, link }: { group: UsageTotals; link?: string }) {
   return (
-    <tr className="border-t border-zinc-100 dark:border-zinc-900">
+    <tr className="border-t border-line">
       <td className="max-w-56 truncate py-1.5 pr-3">
         {link ? <Link href={link} className="hover:underline">{group.label}</Link> : group.label}
       </td>
@@ -26,9 +26,9 @@ function Table({ title, groups, linkFor }: { title: string; groups: UsageTotals[
   if (groups.length === 0) return null;
   return (
     <section>
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</h3>
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
       <table className="w-full text-xs">
-        <thead className="text-zinc-500">
+        <thead className="text-muted">
           <tr>
             <th className="py-1 text-left font-normal">Name</th>
             <th className="py-1 text-right font-normal">Turns</th>
@@ -48,7 +48,7 @@ function Table({ title, groups, linkFor }: { title: string; groups: UsageTotals[
 }
 
 // Tokens and cost for a month, exactly as engines reported them (docs/EVERYDAY.md).
-export function UsagePanel({ onClose }: { onClose: () => void }) {
+export function UsageView() {
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,42 +88,33 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
   const total = shown?.total;
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Usage"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-        <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="min-w-0 flex-1 text-sm font-semibold">Usage</h2>
-          <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">‹</button>
-          <span className="w-20 text-center text-sm tabular-nums">{month}</span>
-          <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= currentMonth()} aria-label="Next month" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-900">›</button>
-          <button onClick={onClose} aria-label="Close" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">✕</button>
-        </header>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
-          {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          {!error && !shown && <p className="text-sm text-zinc-500">Loading…</p>}
-          {total && total.turns === 0 && <p className="text-sm text-zinc-500">No finished turns in {month}.</p>}
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="cursor-pointer rounded px-3 py-1 text-sm hover:bg-hover">‹</button>
+        <span className="text-sm tabular-nums">{month}</span>
+        <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= currentMonth()} aria-label="Next month" className="cursor-pointer rounded px-3 py-1 text-sm hover:bg-hover disabled:opacity-40">›</button>
+      </div>
+      <div className="space-y-5">
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          {!error && !shown && <p className="text-sm text-muted">Loading…</p>}
+          {total && total.turns === 0 && <p className="text-sm text-muted">No finished turns in {month}.</p>}
           {total && total.turns > 0 && (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div><p className="text-xs text-zinc-500">Turns</p><p className="text-lg tabular-nums">{total.turns}</p></div>
+                <div><p className="text-xs text-muted">Turns</p><p className="text-lg tabular-nums">{total.turns}</p></div>
                 <div>
-                  <p className="text-xs text-zinc-500">Input tokens</p>
+                  <p className="text-xs text-muted">Input tokens</p>
                   <p className="text-lg tabular-nums">{formatTokens(total.input_tokens)}</p>
                   {total.cache_read_input_tokens + total.cache_creation_input_tokens > 0 && (
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-muted">
                       + {formatTokens(total.cache_read_input_tokens + total.cache_creation_input_tokens)} cached
                     </p>
                   )}
                 </div>
-                <div><p className="text-xs text-zinc-500">Output tokens</p><p className="text-lg tabular-nums">{formatTokens(total.output_tokens)}</p></div>
-                <div><p className="text-xs text-zinc-500">Cost</p><p className="text-lg tabular-nums">{formatCost(total.cost_usd)}</p></div>
+                <div><p className="text-xs text-muted">Output tokens</p><p className="text-lg tabular-nums">{formatTokens(total.output_tokens)}</p></div>
+                <div><p className="text-xs text-muted">Cost</p><p className="text-lg tabular-nums">{formatCost(total.cost_usd)}</p></div>
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted">
                 Numbers are what each engine reported; nothing is estimated. Days and months are in UTC.
                 {total.unreported_turns > 0 &&
                   ` ${total.unreported_turns} of ${total.turns} turns reported no usage, so they are not in these totals (marked * where a cost is shown).`}
@@ -134,12 +125,11 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
             </>
           )}
           <div className="flex items-center gap-3">
-            <button onClick={() => void exportCsv()} className="cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-xs dark:border-zinc-700">
+            <button onClick={() => void exportCsv()} className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-xs">
               Export {month} as CSV
             </button>
-            {csvError && <span className="text-xs text-red-600 dark:text-red-400">{csvError}</span>}
+            {csvError && <span className="text-xs text-danger">{csvError}</span>}
           </div>
-        </div>
       </div>
     </div>
   );

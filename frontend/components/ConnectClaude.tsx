@@ -87,7 +87,7 @@ export function ConnectClaude({
   if (status === "loading") {
     return (
       <Card step={2} title="Connect Claude">
-        <p className="text-sm text-zinc-500">Setting up your sandbox…</p>
+        <p className="text-sm text-muted">Setting up your sandbox…</p>
       </Card>
     );
   }
@@ -95,7 +95,7 @@ export function ConnectClaude({
   if (connected) {
     return (
       <Card step={2} title="Connect Claude" done>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-muted">
           Claude is connected for this account.
         </p>
       </Card>
@@ -116,11 +116,11 @@ export function ConnectClaude({
             href={loginUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-sm font-medium text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+            className="block text-sm font-medium text-accent underline hover:opacity-80"
           >
             Open Claude login →
           </a>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             After logging in, paste the code it gives you:
           </p>
           <div className="flex gap-2">
@@ -128,7 +128,7 @@ export function ConnectClaude({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="paste code here"
-              className="w-full max-w-xs rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full max-w-xs rounded-md border border-line px-3 py-2 text-sm"
             />
             <Button onClick={submitCode} disabled={status === "submitting" || !code.trim()}>
               {status === "submitting" ? "Submitting…" : "Submit"}

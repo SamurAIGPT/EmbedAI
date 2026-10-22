@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog } from "@/components/ui/Dialog";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Agent, type AgentInput, type AgentMemory, type ApprovalMode, type Engine } from "@/lib/api";
 import {
@@ -101,14 +102,14 @@ type ExportState = { agent: Agent; includeNotes: boolean; notice: string | null 
 type ImportState = { document: Record<string, unknown>; name: string; hasNotes: boolean; includeNotes: boolean };
 
 const FIELD =
-  "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm placeholder:text-zinc-500 dark:border-zinc-700";
+  "w-full rounded-md border border-line bg-transparent px-3 py-1.5 text-sm placeholder:text-muted";
 const BUTTON =
-  "cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900";
+  "cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm font-medium hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50";
 const SMALL =
-  "cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900";
+  "cursor-pointer rounded-md border border-line px-2 py-1 text-xs font-medium hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50";
 const PRIMARY =
-  "cursor-pointer rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
-const GAUGE_COLOR = { ok: "bg-emerald-500", near: "bg-amber-500", over: "bg-red-500" } as const;
+  "cursor-pointer rounded-md px-4 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 bg-accent text-accent-fg hover:opacity-90";
+const GAUGE_COLOR = { ok: "bg-success", near: "bg-warning", over: "bg-danger" } as const;
 
 function saveFile(fileName: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -126,13 +127,16 @@ export function AgentsPanel({
   agents,
   onClose,
   onChanged,
+  startCreating = false,
 }: {
   agents: Agent[];
   onClose: () => void;
+  // Open straight on the new-agent form (the sidebar's New agent button).
+  startCreating?: boolean;
   // Called after any change, so the page reads the agent list again.
   onChanged: () => void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(startCreating ? EMPTY : null);
   const [notes, setNotes] = useState<NotesState | null>(null);
   const [exporting, setExporting] = useState<ExportState | null>(null);
   const [importing, setImporting] = useState<ImportState | null>(null);
@@ -287,24 +291,9 @@ export function AgentsPanel({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Agents"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div className="flex max-h-full w-full max-w-xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-        <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{heading}</h2>
-          <button onClick={onClose} aria-label="Close" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">
-            ✕
-          </button>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={heading} size="wide">
           {error && (
-            <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="mb-3 text-sm text-danger">
               {error}
             </p>
           )}
@@ -317,7 +306,7 @@ export function AgentsPanel({
                 save();
               }}
             >
-              <label className="block text-xs text-zinc-500">
+              <label className="block text-xs text-muted">
                 Name
                 <input
                   autoFocus
@@ -328,7 +317,7 @@ export function AgentsPanel({
                   className={`${FIELD} mt-1`}
                 />
               </label>
-              <label className="block text-xs text-zinc-500">
+              <label className="block text-xs text-muted">
                 Title
                 <input
                   value={draft.title}
@@ -338,7 +327,7 @@ export function AgentsPanel({
                   className={`${FIELD} mt-1`}
                 />
               </label>
-              <label className="block text-xs text-zinc-500">
+              <label className="block text-xs text-muted">
                 Description
                 <textarea
                   value={draft.description}
@@ -349,7 +338,7 @@ export function AgentsPanel({
                   className={`${FIELD} mt-1 resize-y`}
                 />
               </label>
-              <label className="block text-xs text-zinc-500">
+              <label className="block text-xs text-muted">
                 Instructions
                 <textarea
                   value={draft.instructions}
@@ -360,7 +349,7 @@ export function AgentsPanel({
                 />
               </label>
               {draft.id === null && (
-                <label className="block text-xs text-zinc-500">
+                <label className="block text-xs text-muted">
                   Starter notes
                   <textarea
                     value={draft.starter_notes}
@@ -373,8 +362,8 @@ export function AgentsPanel({
                 </label>
               )}
               <EngineModelFields engines={engines} provider={draft.provider} model={draft.model} disabled={busy} hasComputer={agents.some((agent) => agent.id === draft.id && agent.computer != null)} onChange={(provider, model) => setDraft({ ...draft, provider, model })} />
-              <p className="text-xs text-zinc-500">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
-              <label className="block text-xs text-zinc-500">
+              <p className="text-xs text-muted">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
+              <label className="block text-xs text-muted">
                 Fallback engine when limited
                 <select
                   aria-label="Fallback engine"
@@ -390,7 +379,7 @@ export function AgentsPanel({
                 </select>
               </label>
               {draft.fallback_provider && draft.fallback_provider !== draft.provider && (
-                <label className="block text-xs text-zinc-500">
+                <label className="block text-xs text-muted">
                   Fallback model
                   <input
                     aria-label="Fallback model"
@@ -402,8 +391,8 @@ export function AgentsPanel({
                   />
                 </label>
               )}
-              <p className="text-xs text-zinc-500">When the engine refuses a message for a usage or rate limit before starting on it, the message goes to the fallback, if it can do everything the turn needs. The conversation shows the switch.</p>
-              <label className="block text-xs text-zinc-500">
+              <p className="text-xs text-muted">When the engine refuses a message for a usage or rate limit before starting on it, the message goes to the fallback, if it can do everything the turn needs. The conversation shows the switch.</p>
+              <label className="block text-xs text-muted">
                 Workspace folder
                 <input
                   value={draft.workspace_path}
@@ -412,7 +401,7 @@ export function AgentsPanel({
                   className={`${FIELD} mt-1 font-mono`}
                 />
               </label>
-              <fieldset className="text-xs text-zinc-500">
+              <fieldset className="text-xs text-muted">
                 <legend>Approvals</legend>
                 <div className="mt-1 flex flex-wrap gap-2">
                   {APPROVAL_MODES.map((mode) => (
@@ -420,8 +409,8 @@ export function AgentsPanel({
                       key={mode.value}
                       className={`cursor-pointer rounded-md border px-3 py-1.5 text-sm ${
                         draft.approval_mode === mode.value
-                          ? "border-zinc-900 bg-zinc-100 dark:border-zinc-100 dark:bg-zinc-900"
-                          : "border-zinc-300 dark:border-zinc-700"
+                          ? "border-accent bg-inset"
+                          : "border-line"
                       }`}
                     >
                       <input
@@ -437,7 +426,7 @@ export function AgentsPanel({
                 </div>
                 {modeInfo && <p className="mt-2">{modeInfo.description}</p>}
               </fieldset>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
                 <input
                   type="checkbox"
                   checked={draft.memory_enabled}
@@ -481,12 +470,12 @@ export function AgentsPanel({
             />
           ) : exporting ? (
             <div className="space-y-3 text-sm">
-              <p className="text-zinc-600 dark:text-zinc-400">
+              <p className="text-muted">
                 Saves this agent as one file you can keep or give to someone. It holds the name, title, description and
                 instructions. Never its model, folder, approval mode or conversations; an imported copy always starts on
                 &quot;Ask first&quot;.
               </p>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
                 <input
                   type="checkbox"
                   checked={exporting.includeNotes}
@@ -494,7 +483,7 @@ export function AgentsPanel({
                 />
                 Include its notes (MEMORY.md) as starter notes. Leave off if they hold private details.
               </label>
-              {exporting.notice && <p className="text-xs text-zinc-600 dark:text-zinc-400">{exporting.notice}</p>}
+              {exporting.notice && <p className="text-xs text-muted">{exporting.notice}</p>}
               <div className="flex gap-2">
                 <button onClick={doExport} disabled={busy} className={PRIMARY}>
                   {busy ? "Saving…" : "Save file"}
@@ -511,7 +500,7 @@ export function AgentsPanel({
                 with the default model and its own folder; a name already in use gets a number.
               </p>
               {importing.hasNotes && (
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={importing.includeNotes}
@@ -536,7 +525,7 @@ export function AgentsPanel({
           ) : (
             <>
               {visible.length === 0 ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted">
                   No agents yet. An agent keeps its own instructions, model, workspace, approval mode and notes.
                 </p>
               ) : (
@@ -544,21 +533,21 @@ export function AgentsPanel({
                   {visible.map((agent) => {
                     const archived = agent.archived_at !== null;
                     return (
-                      <li key={agent.id} className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+                      <li key={agent.id} className="rounded-md border border-line p-3">
                         <p className="truncate text-sm font-medium">
                           {agent.name}
-                          {agent.pinned && <span className="ml-2 rounded bg-zinc-200 px-1.5 text-xs font-normal dark:bg-zinc-800">pinned</span>}
-                          {agent.title && <span className="ml-2 text-xs font-normal text-zinc-500">{agent.title}</span>}
-                          {archived && <span className="ml-2 text-xs font-normal text-zinc-500">archived</span>}
+                          {agent.pinned && <span className="ml-2 rounded bg-hover px-1.5 text-xs font-normal">pinned</span>}
+                          {agent.title && <span className="ml-2 text-xs font-normal text-muted">{agent.title}</span>}
+                          {archived && <span className="ml-2 text-xs font-normal text-muted">archived</span>}
                         </p>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-muted">
                           {engines.find((engine) => engine.id === agent.provider)?.label ?? agent.provider} · {modelLabel(agent.model)} · {approvalModeLabel(agent.approval_mode)}
                           {agent.memory_enabled === false && " · notes off"}
                           {agent.memory_enabled !== false && agent.recall_enabled === false && " · recall off"}
                           {agent.computer && ` · computer: ${computerStateLabel(agent.computer.state).toLowerCase()}`}
                         </p>
                         {agent.instructions && (
-                          <p className="mt-1 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">{agent.instructions}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-muted">{agent.instructions}</p>
                         )}
                         <div className="mt-2 flex flex-wrap gap-1">
                           <button onClick={() => setDraft(toDraft(agent))} disabled={busy} className={SMALL}>
@@ -621,16 +610,14 @@ export function AgentsPanel({
                   aria-label="Agent file to import"
                   onChange={(e) => pickImport(e.target.files?.[0])}
                 />
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
                   <input type="checkbox" checked={showArchived} onChange={() => setShowArchived((on) => !on)} />
                   Show archived
                 </label>
               </div>
             </>
           )}
-        </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -658,23 +645,23 @@ function NotesEditor({
   onBack: () => void;
 }) {
   const { memory } = notes;
-  if (!memory) return <p className="text-sm text-zinc-500">Loading notes…</p>;
+  if (!memory) return <p className="text-sm text-muted">Loading notes…</p>;
   const gauge = memoryGauge(memory);
   const dirty = notes.text !== memory.text;
   const enabled = notes.agent.memory_enabled ?? true;
   const recall = notes.agent.recall_enabled ?? true;
   return (
     <div className="space-y-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Notes this agent keeps between conversations, in <span className="font-mono break-all">{memory.path}</span>. Only
         the first {memory.max_lines} lines load into each conversation. Anything that looks like a password or key is
         replaced when saved.
       </p>
       <div>
-        <div className="h-1.5 w-full overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800" aria-hidden="true">
+        <div className="h-1.5 w-full overflow-hidden rounded bg-hover" aria-hidden="true">
           <div className={`h-full ${GAUGE_COLOR[gauge.level]}`} style={{ width: `${gauge.percent}%` }} />
         </div>
-        <p className={`mt-1 text-xs ${gauge.level === "over" ? "text-red-600 dark:text-red-400" : "text-zinc-500"}`}>{gauge.text}</p>
+        <p className={`mt-1 text-xs ${gauge.level === "over" ? "text-danger" : "text-muted"}`}>{gauge.text}</p>
       </div>
       <textarea
         value={notes.text}
@@ -685,7 +672,7 @@ function NotesEditor({
         className={`${FIELD} resize-y font-mono`}
       />
       {notes.conflict && (
-        <div role="alert" className="rounded-md border border-amber-400 p-3 text-xs">
+        <div role="alert" className="rounded-md border border-warning/60 p-3 text-xs">
           <p>The agent changed these notes while you were editing. Load its version, or keep yours and overwrite it.</p>
           <div className="mt-2 flex gap-2">
             <button onClick={onLoadTheirs} disabled={busy} className={SMALL}>
@@ -697,12 +684,12 @@ function NotesEditor({
           </div>
         </div>
       )}
-      {notes.saved && <p className="text-xs text-zinc-600 dark:text-zinc-400">{notes.saved}</p>}
-      <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+      {notes.saved && <p className="text-xs text-muted">{notes.saved}</p>}
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
         <input type="checkbox" checked={enabled} disabled={busy} onChange={() => onToggle(!enabled)} />
         Use notes in this agent&apos;s conversations
       </label>
-      <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-500">
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
         <input type="checkbox" checked={recall} disabled={busy || !enabled} onChange={() => onToggleRecall(!recall)} />
         Recall before each message: add matching topic notes and passages from earlier conversations to the message
         (shown as a &ldquo;Recalled&rdquo; chip)

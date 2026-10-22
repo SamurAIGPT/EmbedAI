@@ -65,7 +65,7 @@ export function ApprovalRules({
 
   return (
     <div className="space-y-4 text-sm">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         A saved rule lets a shell command run without asking. Anything else still asks, and a command on the
         safety floor (deleting your home folder, formatting a disk, a force push…) always asks, whatever a rule
         says. A rule that starts with some words never matches a command that chains another one.
@@ -76,21 +76,21 @@ export function ApprovalRules({
           Only rules that apply in this conversation&apos;s folder
         </label>
       )}
-      {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {rules === null && !error && <p className="text-xs text-zinc-500">Loading…</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {rules === null && !error && <p className="text-xs text-muted">Loading…</p>}
       {rules !== null && rules.length === 0 && (
-        <p className="rounded-md bg-zinc-100 px-3 py-3 text-xs text-zinc-500 dark:bg-zinc-900">
+        <p className="rounded-md bg-inset px-3 py-3 text-xs text-muted">
           No saved rules{onlyHere ? " for this folder" : ""}. Choose &ldquo;Always allow this command&rdquo; on a
           request, or add one below.
         </p>
       )}
       {rules !== null && rules.length > 0 && (
-        <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="divide-y divide-line rounded-md border border-line">
           {rules.map((rule) => (
             <li key={rule.id} className="flex items-start gap-3 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <p className="break-all font-mono text-xs">{rule.command}</p>
-                <p className="mt-0.5 break-all text-xs text-zinc-500">
+                <p className="mt-0.5 break-all text-xs text-muted">
                   {ruleMatchLabel(rule)} · {ruleScopeLabel(rule)}
                 </p>
               </div>
@@ -106,7 +106,7 @@ export function ApprovalRules({
           ))}
         </ul>
       )}
-      <form onSubmit={add} className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      <form onSubmit={add} className="space-y-2 rounded-md border border-line p-3">
         <p className="text-xs font-medium">Add a rule</p>
         <div className="flex gap-2">
           <select

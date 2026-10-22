@@ -10,7 +10,7 @@ function renderInline(nodes: Inline[]): ReactNode {
         return <Fragment key={i}>{node.text}</Fragment>;
       case "code":
         return (
-          <code key={i} className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.85em] dark:bg-zinc-800">
+          <code key={i} className="rounded bg-code px-1 py-0.5 font-mono text-[0.85em]">
             {node.text}
           </code>
         );
@@ -27,7 +27,7 @@ function renderInline(nodes: Inline[]): ReactNode {
             href={node.href}
             target="_blank"
             rel="noopener noreferrer nofollow"
-            className="underline underline-offset-2 hover:text-zinc-500"
+            className="text-accent underline underline-offset-2 hover:opacity-80"
           >
             {renderInline(node.children)}
           </a>
@@ -48,19 +48,19 @@ function CodeBlock({ lang, text, closed }: { lang: string; text: string; closed:
     }
   };
   return (
-    <div className="my-2 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between bg-zinc-50 px-3 py-1 text-xs text-zinc-500 dark:bg-zinc-900">
+    <div className="my-3 overflow-hidden rounded-field border border-line">
+      <div className="flex items-center justify-between bg-inset px-3 py-1 text-xs text-muted">
         <span>{lang || "text"}</span>
         <button
           onClick={copy}
           disabled={!closed && text === ""}
           aria-label="Copy code"
-          className="cursor-pointer rounded px-1.5 py-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+          className="cursor-pointer rounded px-1.5 py-0.5 hover:bg-hover touch:px-3 touch:py-2"
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto bg-zinc-100 p-3 font-mono text-xs leading-relaxed text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+      <pre className="overflow-x-auto bg-code p-3 font-mono text-xs leading-relaxed text-ink">
         <code>{text}</code>
       </pre>
     </div>
@@ -87,7 +87,7 @@ function renderBlock(block: Block, key: number): ReactNode {
       return <CodeBlock key={key} lang={block.lang} text={block.text} closed={block.closed} />;
     case "quote":
       return (
-        <blockquote key={key} className="my-2 border-l-2 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        <blockquote key={key} className="my-2 border-l-2 border-line pl-3 text-muted">
           {block.blocks.map(renderBlock)}
         </blockquote>
       );
@@ -117,7 +117,7 @@ function renderBlock(block: Block, key: number): ReactNode {
                   <th
                     key={i}
                     style={{ textAlign: (block.align[i] ?? undefined) as "left" | "right" | "center" | undefined }}
-                    className="border border-zinc-200 bg-zinc-50 px-2 py-1 font-semibold dark:border-zinc-800 dark:bg-zinc-900"
+                    className="border border-line bg-inset px-2 py-1 font-semibold"
                   >
                     {renderInline(cell)}
                   </th>
@@ -131,7 +131,7 @@ function renderBlock(block: Block, key: number): ReactNode {
                     <td
                       key={i}
                       style={{ textAlign: (block.align[i] ?? undefined) as "left" | "right" | "center" | undefined }}
-                      className="border border-zinc-200 px-2 py-1 dark:border-zinc-800"
+                      className="border border-line px-2 py-1"
                     >
                       {renderInline(cell)}
                     </td>
@@ -143,7 +143,7 @@ function renderBlock(block: Block, key: number): ReactNode {
         </div>
       );
     case "rule":
-      return <hr key={key} className="my-3 border-zinc-200 dark:border-zinc-800" />;
+      return <hr key={key} className="my-3 border-line" />;
   }
 }
 
@@ -151,5 +151,5 @@ function renderBlock(block: Block, key: number): ReactNode {
 // parsed to plain data first (see lib/markdown.ts), so it is safe on half-written
 // answers while they stream.
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  return <div className="text-zinc-800 dark:text-zinc-200">{parseMarkdown(text).map(renderBlock)}</div>;
+  return <div className="text-ink">{parseMarkdown(text).map(renderBlock)}</div>;
 });

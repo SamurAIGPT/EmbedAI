@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiError, isLaunchTokenMissing, type Agent, type Engine, type LocalStatus, type Thread } from "@/lib/api";
-import { activeAgents, agentNames, approvalModeLabel, modelLabel } from "@/lib/agents";
+import { activeAgents, approvalModeLabel, modelLabel } from "@/lib/agents";
 import { pendingApprovals } from "@/lib/transcript";
 import { attachmentProblem, conversationUsage, formatCost, formatTokens, MAX_ATTACHMENTS } from "@/lib/everyday";
 import { FilesPanel } from "./FilesPanel";
-import { UsagePanel } from "./UsagePanel";
+import { UsageView } from "./UsagePanel";
+import { Inspector } from "@/components/shell/Inspector";
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
 import { NotificationBell } from "./NotificationBell";
@@ -19,7 +22,12 @@ import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
 import type { Remembered } from "./items";
 import { Composer } from "./Composer";
 import { Conversation } from "./Conversation";
-import { ThreadList } from "./ThreadList";
+import { ChatHeader } from "./ChatHeader";
+import { Sidebar } from "@/components/shell/Sidebar";
+import { Drawer } from "@/components/ui/Drawer";
+import { SIDEBAR_AND_PANEL_FIT, SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-media-query";
+import { t } from "@/lib/i18n";
+import { chatHref, parsePanel, type Panel } from "@/lib/panel";
 import { useThreadStream } from "./useThreadStream";
 
 const LIST_REFRESH_MS = 15_000;
@@ -67,13 +75,13 @@ function Notice({
 }) {
   return (
     <div className="flex flex-1 items-center justify-center p-6">
-      <section className="max-w-md rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+      <section className="max-w-md rounded-card border border-line bg-raised p-5">
         <h2 className="text-base font-semibold">{title}</h2>
-        <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{children}</div>
+        <div className="mt-1 text-sm text-muted">{children}</div>
         {action && (
           <button
             onClick={action.onClick}
-            className="mt-3 cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="mt-3 cursor-pointer rounded-field border border-line px-3 py-1.5 text-sm font-medium hover:bg-hover"
           >
             {action.label}
           </button>
@@ -98,9 +106,16 @@ export function ChatApp() {
   const [openedThread, setOpenedThread] = useState<Thread | null>(null);
   // Bumped to ask for a fresh thread list (after a send, a reset, a poll).
   const [listTick, setListTick] = useState(0);
-  const [listOpen, setListOpen] = useState(false);
+  // Below the sidebar breakpoint the conversation list is a drawer.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarInline = useMediaQuery(SIDEBAR_INLINE);
+  const inspectorInline = useMediaQuery(SIDEBAR_AND_PANEL_FIT);
+  // The right-hand inspector page, kept in the address (?panel=usage) so a reload reopens it.
+  const panel = parsePanel(params.get("panel"));
+  const setPanel = (next: Panel | null) => router.replace(chatHref(params.toString(), next));
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [focusComposer, setFocusComposer] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
@@ -116,11 +131,11 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  // The Agents panel opened from New agent starts on the form.
+  const [agentsCreate, setAgentsCreate] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
-  const [computerOpen, setComputerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
   // Files chosen for the next message, and why one was refused.
   const [attached, setAttached] = useState<File[]>([]);
   const [attachNotice, setAttachNotice] = useState<string | null>(null);
@@ -237,7 +252,6 @@ export function ChatApp() {
   }, [ready]);
 
   const thread = (openedThread?.id === threadId ? openedThread : null) ?? threads?.find((t) => t.id === threadId) ?? null;
-  const names = agentNames(agents);
   const threadAgent = thread?.agent_id != null ? (agents?.find((a) => a.id === thread.agent_id) ?? null) : null;
   // The computer this conversation's tools run in; older backends send none.
   const threadComputer = thread?.computer ?? threadAgent?.computer ?? null;
@@ -451,132 +465,103 @@ export function ChatApp() {
     }
   };
 
-  const header = (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-200 px-4 dark:border-zinc-800">
-      <button
-        onClick={() => setListOpen((open) => !open)}
-        aria-label="Conversations"
-        className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 md:hidden dark:hover:bg-zinc-900"
-      >
-        ☰
-      </button>
-      <Link href="/settings/" className="text-sm text-zinc-500 hover:underline">
-        Settings
-      </Link>
-      <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">
-        {thread?.title || (threadId === null ? "New chat" : "Chat")}
-      </h1>
-      {agents !== null &&
-        (threadId === null ? (
-          <select
-            value={startingAgentId ?? ""}
-            onChange={(e) => { setNewAgentId(e.target.value === "" ? null : Number(e.target.value)); setNewModel(null); setModelDraft(null); }}
-            aria-label="Agent for this chat"
-            className="max-w-40 cursor-pointer truncate rounded-md border border-zinc-300 bg-transparent px-2 py-1 text-xs dark:border-zinc-700"
-          >
-            <option value="">No agent</option>
-            {choosable.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-        ) : (
-          threadAgent && (
-            <span
-              className="hidden max-w-48 truncate text-xs text-zinc-500 sm:inline"
-              title={`${modelLabel(threadAgent.model)} · ${approvalModeLabel(threadAgent.approval_mode)}`}
-            >
-              {threadAgent.name}
-            </span>
-          )
-        ))}
-      {ready && engines && (threadId === null || thread !== null) && <button aria-label="Choose engine and model" disabled={modelBusy || sending || transcript.runningTurnId !== null} onClick={() => { setModelError(null); setModelDraft({ threadId, agentId: startingAgentId, provider: selectedProvider, model: threadId === null ? newModel : thread?.model ?? null }); }} className="max-w-52 cursor-pointer truncate rounded-md border border-zinc-300 px-2 py-1 text-xs disabled:opacity-50 dark:border-zinc-700">{selectedEngine?.label ?? selectedProvider} · {modelLabel(selectedModel)}</button>}
-      {threadComputer && threadAgent && (
-        <button
-          onClick={() => setComputerOpen(true)}
-          title={`This conversation's commands and file edits run in ${threadAgent.name}'s computer (${threadComputer.image}), not on this machine.`}
-          className="cursor-pointer rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300"
-        >
-          {computerChip(threadComputer, liveComputerState)}
-        </button>
-      )}
-      {ready && gate.phase === "ready" && (gate.status.tools_enabled || threadComputer) && threadId !== null && (
-        <span
-          className="hidden rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 sm:inline dark:bg-zinc-900 dark:text-zinc-400"
-          title="How much the engine may do before it asks. Set by the conversation's agent; a plain chat asks first."
-        >
-          {approvalModeLabel(threadAgent?.approval_mode ?? "ask")}
-        </span>
-      )}
-      {ready && (
-        <button
-          onClick={() => setApprovalsOpen(true)}
-          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          Approvals
-        </button>
-      )}
-      {agents !== null && (
-        <button
-          onClick={() => setAgentsOpen(true)}
-          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          Agents
-        </button>
-      )}
-      {ready && agents !== null && (
-        <button
-          onClick={() => setRoutinesOpen(true)}
-          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          Routines
-        </button>
-      )}
-      {ready && threadId !== null && thread !== null && (
-        <button
-          onClick={() => setFilesOpen(true)}
-          title="Browse and download the files in this conversation's workspace"
-          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          Files
-        </button>
-      )}
-      {ready && (
-        <button
-          onClick={() => setUsageOpen(true)}
-          title={conversationTotal}
-          className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          Usage
-        </button>
-      )}
-      {ready && (
-        <NotificationBell
-          elevated={routinesOpen || usageOpen}
-          onOpen={() => {
-            setRoutinesOpen(false);
-            setUsageOpen(false);
-          }}
-        />
-      )}
-      {stream.connection === "reconnecting" && (
-        <span className="text-xs text-amber-600 dark:text-amber-400">Reconnecting…</span>
-      )}
-      {ready && selectedEngine && (
-        <span className="hidden text-xs text-zinc-500 sm:inline">
-          {selectedEngine.available ? selectedEngine.version ?? "Ready" : "Unavailable"}
-          {selectedEngine.capabilities.tools ? "" : " · chat only"}
-        </span>
-      )}
-    </header>
+  const openModelDialog = () => {
+    setModelError(null);
+    setModelDraft({ threadId, agentId: startingAgentId, provider: selectedProvider, model: threadId === null ? newModel : thread?.model ?? null });
+  };
+
+  const computerText = threadComputer ? computerChip(threadComputer, liveComputerState) : null;
+  const buildHeader = (withSidebar: boolean) => (
+    <ChatHeader
+      title={thread?.title || (threadId === null ? t("shell.newChat") : "Chat")}
+      agent={threadAgent ? { id: threadAgent.id, name: threadAgent.name } : null}
+      onOpenSidebar={withSidebar && !sidebarInline ? () => setDrawerOpen(true) : undefined}
+      agentChoice={
+        agents !== null && threadId === null
+          ? { agents: choosable, value: startingAgentId, onChange: (id) => { setNewAgentId(id); setNewModel(null); setModelDraft(null); } }
+          : undefined
+      }
+      engine={
+        ready && engines && (threadId === null || thread !== null)
+          ? {
+              label: `${selectedEngine?.label ?? selectedProvider} · ${modelLabel(selectedModel)}`,
+              disabled: modelBusy || sending || transcript.runningTurnId !== null,
+              onClick: openModelDialog,
+            }
+          : undefined
+      }
+      computer={
+        threadComputer && threadAgent && computerText
+          ? {
+              text: computerText,
+              hint: `This conversation's commands and file edits run in ${threadAgent.name}'s computer (${threadComputer.image}), not on this machine.`,
+              onClick: () => setPanel("computer"),
+            }
+          : undefined
+      }
+      approvalMode={
+        ready && gate.phase === "ready" && (gate.status.tools_enabled || threadComputer) && threadId !== null
+          ? {
+              label: approvalModeLabel(threadAgent?.approval_mode ?? "ask"),
+              hint: "How much the engine may do before it asks. Set by the conversation's agent; a plain chat asks first.",
+            }
+          : undefined
+      }
+      onApprovals={ready ? () => setApprovalsOpen(true) : undefined}
+      onFiles={ready && threadId !== null && thread !== null ? () => setFilesOpen(true) : undefined}
+      onUsage={ready ? () => setPanel("usage") : undefined}
+      usageHint={conversationTotal}
+      trailing={
+        ready ? (
+          <NotificationBell
+            elevated={routinesOpen || panel === "usage"}
+            onOpen={() => {
+              setRoutinesOpen(false);
+              if (panel === "usage") setPanel(null);
+            }}
+          />
+        ) : undefined
+      }
+      status={
+        stream.connection === "reconnecting"
+          ? { text: t("header.reconnecting"), warn: true }
+          : ready && selectedEngine
+            ? { text: `${selectedEngine.available ? selectedEngine.version ?? t("header.ready") : t("header.unavailable")}${selectedEngine.capabilities.tools ? "" : ` · ${t("header.chatOnly")}`}` }
+            : null
+      }
+    />
+  );
+  const header = buildHeader(false);
+
+  const sidebar = (
+    <Sidebar
+      agents={agents}
+      threads={threads}
+      selectedThreadId={threadId}
+      selectedAgentId={thread?.agent_id ?? (threadId === null ? startingAgentId : null)}
+      live={{ threadId, agentId: thread?.agent_id ?? null, working: transcript.runningTurnId !== null, waiting }}
+      showArchived={showArchived}
+      onToggleArchived={() => setShowArchived((on) => !on)}
+      actions={listActions}
+      error={manageError}
+      onNewChat={(agentId) => {
+        if (agentId !== undefined) { setNewAgentId(agentId); setNewModel(null); }
+        setModelDraft(null);
+        setFocusComposer(true);
+        router.push("/chat");
+      }}
+      onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
+      onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
+      onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
+      onNavigate={() => { setDrawerOpen(false); setModelDraft(null); }}
+    />
   );
 
   if (gate.phase === "loading") {
     return (
       <div className="flex h-dvh flex-col">
         {header}
-        <p className="p-6 text-center text-sm text-zinc-500">Loading…</p>
+        <p className="p-6 text-center text-sm text-muted">Loading…</p>
       </div>
     );
   }
@@ -624,21 +609,37 @@ export function ChatApp() {
   }
 
   return (
-    <div className="relative flex h-dvh flex-col">
-      {header}
-      {modelDraft && modelDraft.threadId === threadId && (threadId !== null || modelDraft.agentId === startingAgentId) && engines && <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Engine and model">
-        <form onSubmit={(event) => { event.preventDefault(); void saveModel(); }} className="w-full max-w-md space-y-4 rounded-lg border border-zinc-200 bg-background p-5 shadow-xl dark:border-zinc-800">
-          <h2 className="font-semibold">Engine and model</h2>
-          <EngineModelFields engines={engines} provider={modelDraft.provider} model={modelDraft.model} onChange={(provider, model) => setModelDraft({ ...modelDraft, provider, model })} disabled={modelBusy} lockProvider={threadId !== null || startingAgentId !== null} defaultLabel={selectedAgent ? `Agent default (${modelLabel(selectedAgent.model)})` : undefined} />
-          {threadId !== null && <p className="text-xs text-zinc-500">The model changes on the next message. This conversation keeps its engine.</p>}
-          {modelError && <p role="alert" className="text-sm text-red-600">{modelError}</p>}
-          <div className="flex gap-2"><button type="submit" disabled={modelBusy} className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700">{modelBusy ? "Saving…" : "Use model"}</button><button type="button" disabled={modelBusy} onClick={() => setModelDraft(null)} className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">Cancel</button><button type="button" disabled={modelBusy} onClick={() => { setModelBusy(true); api.getEngines(true).then(setEngines).catch(() => setModelError("Could not refresh engines.")).finally(() => setModelBusy(false)); }} className="px-2 text-sm underline disabled:opacity-50">Refresh status</button></div>
-        </form>
-      </div>}
+    <div className="relative flex h-dvh">
+      <a
+        href="#conversation"
+        className="sr-only z-50 rounded-field bg-raised px-3 py-2 text-sm font-medium text-ink shadow-lg focus:not-sr-only focus:absolute focus:left-3 focus:top-3"
+      >
+        {t("shell.skip")}
+      </a>
+      {sidebarInline ? (
+        <aside className="w-72 shrink-0 border-r border-line">{sidebar}</aside>
+      ) : (
+        <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} label={t("shell.conversations")}>{sidebar}</Drawer>
+      )}
+      <div className="relative flex min-w-0 flex-1 flex-col">
+      {buildHeader(true)}
+      {modelDraft && modelDraft.threadId === threadId && (threadId !== null || modelDraft.agentId === startingAgentId) && engines && (
+        <Dialog open onOpenChange={(open) => { if (!open) setModelDraft(null); }} title="Engine and model" size="sm">
+          <form onSubmit={(event) => { event.preventDefault(); void saveModel(); }} className="space-y-4">
+            <EngineModelFields engines={engines} provider={modelDraft.provider} model={modelDraft.model} onChange={(provider, model) => setModelDraft({ ...modelDraft, provider, model })} disabled={modelBusy} lockProvider={threadId !== null || startingAgentId !== null} defaultLabel={selectedAgent ? `Agent default (${modelLabel(selectedAgent.model)})` : undefined} />
+            {threadId !== null && <p className="text-xs text-muted">The model changes on the next message. This conversation keeps its engine.</p>}
+            {modelError && <p role="alert" className="text-sm text-danger">{modelError}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="submit" variant="primary" disabled={modelBusy}>{modelBusy ? "Saving…" : "Use model"}</Button>
+              <Button disabled={modelBusy} onClick={() => setModelDraft(null)}>Cancel</Button>
+              <Button variant="ghost" disabled={modelBusy} onClick={() => { setModelBusy(true); api.getEngines(true).then(setEngines).catch(() => setModelError("Could not refresh engines.")).finally(() => setModelBusy(false)); }}>Refresh status</Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
       {filesOpen && threadId !== null && (
         <FilesPanel threadId={threadId} workspace={thread?.workspace_path ?? null} onClose={() => setFilesOpen(false)} />
       )}
-      {usageOpen && <UsagePanel onClose={() => setUsageOpen(false)} />}
       {approvalsOpen && (
         <ApprovalsPanel
           threadId={threadId}
@@ -646,70 +647,24 @@ export function ChatApp() {
           onClose={() => setApprovalsOpen(false)}
         />
       )}
-      {computerOpen && threadAgent && (
-        <div
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Computer"
-          onMouseDown={(event) => event.target === event.currentTarget && setComputerOpen(false)}
-        >
-          <div className="flex max-h-full w-full max-w-xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-            <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">Computer · {threadAgent.name}</h2>
-              <button
-                onClick={() => setComputerOpen(false)}
-                aria-label="Close"
-                className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
-              >
-                ✕
-              </button>
-            </header>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              <ComputerView
-                agent={threadAgent}
-                onChanged={() => setAgentTick((n) => n + 1)}
-                engineSupportsComputers={engines?.find((engine) => engine.id === threadAgent.provider)?.capabilities.computers}
-                engineLabel={engines?.find((engine) => engine.id === threadAgent.provider)?.label ?? threadAgent.provider}
-              />
-            </div>
-          </div>
-        </div>
-      )}
       {routinesOpen && agents !== null && (
         <RoutinesPanel agents={agents} onClose={() => setRoutinesOpen(false)} />
       )}
       {agentsOpen && agents !== null && (
         <AgentsPanel
           agents={agents}
+          startCreating={agentsCreate}
           onClose={() => setAgentsOpen(false)}
           onChanged={() => setAgentTick((n) => n + 1)}
         />
       )}
-      <div className="relative flex min-h-0 flex-1">
-        <aside
-          className={`${
-            listOpen ? "flex" : "hidden"
-          } absolute inset-y-0 left-0 z-20 w-72 shrink-0 flex-col border-r border-zinc-200 bg-background md:static md:flex dark:border-zinc-800`}
-        >
-          <ThreadList
-            threads={threads}
-            selectedId={threadId}
-            onNavigate={() => { setListOpen(false); setModelDraft(null); }}
-            showArchived={showArchived}
-            onToggleArchived={() => setShowArchived((on) => !on)}
-            actions={listActions}
-            error={manageError}
-            agentNames={names}
-          />
-        </aside>
-
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main id="conversation" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
           {stream.connection === "failed" ? (
             <Notice title="Cannot open this conversation">{stream.error}</Notice>
           ) : (
             <Conversation
               threadId={threadId}
+              agent={threadAgent ? { id: threadAgent.id, name: threadAgent.name } : startingAgent ? { id: startingAgent.id, name: startingAgent.name } : null}
               emptyHint={
                 selectedEngine && !selectedEngine.available
                   ? `${selectedEngine.label} is not ready: ${(selectedEngine.reason ?? "check it in Settings").replace(/\.+$/, "")}.`
@@ -726,27 +681,23 @@ export function ChatApp() {
           )}
 
           {thread?.session_state === "broken" && (
-            <div className="border-t border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <div className="border-t border-warning/50 bg-warning/10 px-4 py-3 text-sm">
               <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
-                <p className="min-w-0 flex-1 text-amber-900 dark:text-amber-200">
+                <p className="min-w-0 flex-1 text-ink">
                   The engine can no longer find this conversation&apos;s session, so it cannot continue it. A new
                   session keeps the messages above but starts without them as context.
                 </p>
-                <button
-                  onClick={resetSession}
-                  disabled={resetting}
-                  className="cursor-pointer rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-                >
+                <Button variant="primary" onClick={resetSession} loading={resetting}>
                   {resetting ? "Starting…" : "Start a new session"}
-                </button>
+                </Button>
               </div>
-              {resetError && (
-                <p className="mx-auto mt-2 max-w-3xl text-xs text-red-600 dark:text-red-400">{resetError}</p>
-              )}
+              {resetError && <p className="mx-auto mt-2 max-w-3xl text-xs text-danger">{resetError}</p>}
             </div>
           )}
 
           <Composer
+            focusRequested={focusComposer}
+            onFocused={() => setFocusComposer(false)}
             value={draft}
             onChange={setDraft}
             onSend={send}
@@ -766,6 +717,21 @@ export function ChatApp() {
           />
         </main>
       </div>
+      {panel === "usage" && (
+        <Inspector title="Usage" inline={inspectorInline} onClose={() => setPanel(null)}>
+          <UsageView />
+        </Inspector>
+      )}
+      {panel === "computer" && threadAgent && (
+        <Inspector title={`Computer · ${threadAgent.name}`} inline={inspectorInline} onClose={() => setPanel(null)}>
+          <ComputerView
+            agent={threadAgent}
+            onChanged={() => setAgentTick((n) => n + 1)}
+            engineSupportsComputers={engines?.find((engine) => engine.id === threadAgent.provider)?.capabilities.computers}
+            engineLabel={engines?.find((engine) => engine.id === threadAgent.provider)?.label ?? threadAgent.provider}
+          />
+        </Inspector>
+      )}
     </div>
   );
 }

@@ -5,10 +5,12 @@ export type Segment = { text: string; mark: boolean };
 
 // A snippet split into plain and marked parts from [start, length] pairs.
 // Overlapping or out-of-range pairs are clipped; the text is never parsed as HTML.
+// The server counts characters (code points), so an emoji is one, not two UTF-16 units.
 export function snippetSegments(snippet: string, highlights: number[][]): Segment[] {
+  const chars = Array.from(snippet);
   const spans = highlights
     .filter((h) => Array.isArray(h) && h.length === 2 && h[1] > 0)
-    .map(([start, length]) => [Math.max(0, start), Math.min(snippet.length, start + length)] as const)
+    .map(([start, length]) => [Math.max(0, start), Math.min(chars.length, start + length)] as const)
     .filter(([start, end]) => start < end)
     .sort((a, b) => a[0] - b[0]);
   const out: Segment[] = [];
@@ -16,11 +18,11 @@ export function snippetSegments(snippet: string, highlights: number[][]): Segmen
   for (const [start, end] of spans) {
     if (end <= at) continue;
     const from = Math.max(start, at);
-    if (from > at) out.push({ text: snippet.slice(at, from), mark: false });
-    out.push({ text: snippet.slice(from, end), mark: true });
+    if (from > at) out.push({ text: chars.slice(at, from).join(""), mark: false });
+    out.push({ text: chars.slice(from, end).join(""), mark: true });
     at = end;
   }
-  if (at < snippet.length) out.push({ text: snippet.slice(at), mark: false });
+  if (at < chars.length) out.push({ text: chars.slice(at).join(""), mark: false });
   return out;
 }
 

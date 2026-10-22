@@ -37,7 +37,7 @@ Thread search, attachments and images, workspace files and usage/cost visibility
 
 ## Sprint 3 and beyond
 
-A lead agent that creates specialist agents and delegates work to them, rooms (group chats of agents), more engine presets (Gemini, OpenCode, Cursor, OpenRouter), visible desktop computers the person can watch and take control of, per-turn sandboxing for server installs, routine results reported into the agent's chat, audit log, diffs, computer egress allowlist, bring-your-own server over SSH (the Docker computer provider exists, see F11), a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
+A lead agent that creates specialist agents and delegates work to them, rooms (group chats of agents), more engine presets (Gemini, OpenCode, Cursor; an OpenRouter preset of the OpenAI-compatible engine exists, see [ENGINES.md](ENGINES.md#openrouter)), visible desktop computers the person can watch and take control of, per-turn sandboxing for server installs, routine results reported into the agent's chat, audit log, diffs, computer egress allowlist, bring-your-own server over SSH (the Docker computer provider exists, see F11), a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
 
 Out of scope until explicitly approved: multi-tenant paid hosting, hosting third-party subscription credentials, enterprise roles/billing.
 

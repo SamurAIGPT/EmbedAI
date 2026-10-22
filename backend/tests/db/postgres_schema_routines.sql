@@ -32,6 +32,8 @@ CREATE TABLE routine (
 	approval_mode VARCHAR DEFAULT 'ask' NOT NULL, 
 	approval_timeout_minutes INTEGER DEFAULT '30' NOT NULL, 
 	catch_up_minutes INTEGER DEFAULT '60' NOT NULL, 
+	retry_limit INTEGER DEFAULT '0' NOT NULL,
+	retry_delay_minutes INTEGER DEFAULT '5' NOT NULL,
 	webhook_secret_hash VARCHAR, 
 	last_run_at TIMESTAMP WITH TIME ZONE, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
@@ -54,6 +56,8 @@ CREATE TABLE routine_run (
 	error TEXT, 
 	waiting_since TIMESTAMP WITH TIME ZONE, 
 	waited_seconds INTEGER DEFAULT '0' NOT NULL, 
+	attempt INTEGER DEFAULT '1' NOT NULL,
+	retry_of BIGINT,
 	started_at TIMESTAMP WITH TIME ZONE, 
 	finished_at TIMESTAMP WITH TIME ZONE, 
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
@@ -66,3 +70,5 @@ CREATE INDEX ix_routine_run_routine_id_created_at ON routine_run (routine_id, cr
 CREATE INDEX ix_routine_run_state ON routine_run (state);
 
 CREATE UNIQUE INDEX uq_routine_run_occurrence ON routine_run (routine_id, scheduled_for) WHERE trigger = 'schedule';
+
+CREATE UNIQUE INDEX uq_routine_run_retry_of ON routine_run (retry_of);

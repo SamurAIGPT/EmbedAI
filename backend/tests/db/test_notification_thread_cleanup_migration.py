@@ -23,7 +23,7 @@ def test_upgrade_detaches_retained_notifications_from_deleted_threads(tmp_path):
     connection.commit()
     connection.close()
 
-    upgraded = run_alembic(database, "upgrade", "head")
+    upgraded = run_alembic(database, "upgrade", NEW_REVISION)
     assert upgraded.returncode == 0, upgraded.stderr
 
     connection = sqlite3.connect(database)

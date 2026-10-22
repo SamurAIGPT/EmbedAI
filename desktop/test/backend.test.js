@@ -251,6 +251,23 @@ test("the backend's environment drops what could change its Python and the launc
   assert.deepEqual(base, before, "the input is not changed");
 });
 
+test("an app opened from Finder or the Dock still lets the backend find user-installed engines", () => {
+  // macOS gives an app started from Finder, the Dock or Launchpad only the system
+  // PATH, so a Claude or Codex CLI in Homebrew or a per-user folder is not found.
+  const existing = new Set(["/Users/x/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]);
+  const options = { platform: "darwin", home: "/Users/x", isDirectory: (folder) => existing.has(folder) };
+  const env = backendEnvironment({ PATH: "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin" }, options);
+  assert.equal(env.PATH, "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/Users/x/.local/bin:/opt/homebrew/bin");
+
+  // A PATH that already has them (started from a terminal) is left as it was.
+  const full = "/opt/homebrew/bin:/Users/x/.local/bin:/usr/local/bin:/usr/bin:/bin";
+  assert.equal(backendEnvironment({ PATH: full }, options).PATH, full);
+
+  // Windows gives every app the user's PATH: nothing is added there.
+  const windows = { platform: "win32", home: "C:\\Users\\x", isDirectory: () => true };
+  assert.equal(backendEnvironment({ Path: "C:\\Windows" }, windows).Path, "C:\\Windows");
+});
+
 test("a token is 32 random bytes in URL-safe text and differs every time", () => {
   const first = newToken();
   assert.match(first, /^[A-Za-z0-9_-]{43}$/);

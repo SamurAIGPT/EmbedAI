@@ -122,6 +122,41 @@ def _second_of_repeated_hour(moment: datetime, tz: ZoneInfo) -> bool:
     return local.utcoffset() == second.utcoffset()
 
 
+def _carried_gap_after(expression: str, tz: ZoneInfo, after: datetime) -> datetime | None:
+    """Find a still-future occurrence from a recent skipped wall-clock interval."""
+    # UTC offsets are less than 24 hours in magnitude, so a gap's carried
+    # occurrence cannot remain future for 48 hours. The supported IANA dataset
+    # has no offset transitions closer than this window (checked in qualification).
+    local_now = after.astimezone(tz)
+    previous = (after - timedelta(hours=48)).astimezone(tz)
+    change = local_now.utcoffset() - previous.utcoffset()
+    if change <= timedelta(0):
+        return None
+    # Under the same one-transition window, the last carried instant is
+    # expired once the entire forward shift lies in the new offset.
+    if (after - change).astimezone(tz).utcoffset() == local_now.utcoffset():
+        return None
+
+    # Evaluate the same calendar fields in UTC to walk the missing *wall*
+    # times. Walking in the real zone would normalize into the post-gap hour
+    # and lose the remaining imaginary times again.
+    wall_end = local_now.replace(tzinfo=UTC)
+    cursor = wall_end - change
+    shadow = _crontab_trigger(expression, ZoneInfo("UTC"))
+    # Five-field cron can match at most once a minute in this <48-hour window.
+    for _ in range(48 * 60 + 1):
+        wall = shadow.get_next_fire_time(None, cursor)
+        if wall is None or wall > wall_end:
+            return None
+        naive = wall.replace(tzinfo=None)
+        carried = naive.replace(tzinfo=tz, fold=0).astimezone(UTC)
+        roundtrip = carried.astimezone(tz).replace(tzinfo=None)
+        if roundtrip > naive and carried > after:
+            return carried
+        cursor = wall + timedelta(microseconds=1)
+    raise InvalidSchedule("The clock-change search exceeded its bounded window")
+
+
 def next_after(kind: str, spec: dict, timezone: str, after: datetime) -> datetime | None:
     """The first occurrence strictly after `after` (UTC), or None if there is none."""
     after = after.astimezone(UTC)
@@ -138,18 +173,20 @@ def next_after(kind: str, spec: dict, timezone: str, after: datetime) -> datetim
             return anchor
         elapsed = (after - anchor) // step
         return anchor + (elapsed + 1) * step
-    trigger = _crontab_trigger(_cron_expression(kind, spec), tz)
+    expression = _cron_expression(kind, spec)
+    carried = _carried_gap_after(expression, tz, after)
+    trigger = _crontab_trigger(expression, tz)
     cursor = after
     for _ in range(_MAX_SKIPS):
         # get_next_fire_time is inclusive of its `now`; nudge past it.
         candidate = trigger.get_next_fire_time(None, cursor + timedelta(microseconds=1))
         if candidate is None:
-            return None
+            return carried
         candidate = candidate.astimezone(UTC)
         if not _second_of_repeated_hour(candidate, tz):
-            return candidate
+            return min(candidate, carried) if carried is not None else candidate
         cursor = candidate
-    return None
+    return carried
 
 
 def next_dates(kind: str, spec: dict, timezone: str, after: datetime, count: int = 3) -> list[datetime]:

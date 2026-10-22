@@ -222,6 +222,23 @@ async def test_duplicating_copies_the_settings_under_a_new_name(api):
         assert copy["pinned"] is False and copy["id"] != source["id"]
 
 
+async def test_a_copy_of_a_long_name_stays_within_the_name_limit(api):
+    long = "N" * 76 + uuid4().hex[:4]
+    source = await make(api, name=long)
+    one = (await api.post(f"/api/v1/agents/{source['id']}/duplicate")).json()
+    two = (await api.post(f"/api/v1/agents/{source['id']}/duplicate")).json()
+    assert one["name"] == long[:75] + " copy" and two["name"] == long[:73] + " copy 2"
+    # The copy can be renamed, exported and imported again like any agent.
+    assert (await api.patch(f"/api/v1/agents/{one['id']}", json={"name": one["name"]})).status_code == 200
+    document = (await api.get(f"/api/v1/agents/{one['id']}/export")).json()["document"]
+    imported = await api.post("/api/v1/agents/import", json={"document": document})
+    assert imported.status_code == 201, imported.text
+    assert len(imported.json()["name"]) <= 80
+    document = (await api.get(f"/api/v1/agents/{source['id']}/export")).json()["document"]
+    again = (await api.post("/api/v1/agents/import", json={"document": document})).json()
+    assert again["name"] == long[:78] + " 2"
+
+
 async def test_deleting_an_agent_removes_it(api):
     agent = await make(api)
     assert (await api.delete(f"/api/v1/agents/{agent['id']}")).status_code == 204

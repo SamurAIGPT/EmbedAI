@@ -57,6 +57,7 @@ def test_output_over_the_cap_stops_the_process(tmp_path):
 def test_app_secrets_are_not_passed_to_the_child(tmp_path, monkeypatch):
     monkeypatch.setenv("BOAT_API_KEY", "should-not-leak")
     monkeypatch.setenv("HARMLESS_VAR", "visible")
+    monkeypatch.setenv("OPEN_DOTS_ENGINE_ENV", "HARMLESS_VAR")
     out = run(
         "import os; print(os.environ.get('BOAT_API_KEY', 'absent'), os.environ.get('HARMLESS_VAR'))",
         tmp_path=tmp_path,

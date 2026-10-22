@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
+from app.core.engine_env import EXTRA_NAMES_VARIABLE
 from app.server import entry, proxies
 from tests.conftest import BACKEND_DIR
 
@@ -44,14 +45,14 @@ def test_the_files_exist():
 
 
 def test_every_setting_in_the_env_example_exists():
-    known = set(Settings.model_fields) | ENTRY_SETTINGS | {"OPEN_DOTS_PUBLIC_URL"}
+    known = set(Settings.model_fields) | ENTRY_SETTINGS | {"OPEN_DOTS_PUBLIC_URL", EXTRA_NAMES_VARIABLE}
     named = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", text(DEPLOY / "open-dots.env.example"), re.MULTILINE))
     assert named, "the example names no settings?"
     assert named <= known, f"not settings: {sorted(named - known)}"
 
 
 def test_every_open_dots_name_the_docs_use_is_a_setting_or_a_compose_variable():
-    known = set(Settings.model_fields) | ENTRY_SETTINGS | compose_variables() | {"OPEN_DOTS_PUBLIC_URL"}
+    known = set(Settings.model_fields) | ENTRY_SETTINGS | compose_variables() | {"OPEN_DOTS_PUBLIC_URL", EXTRA_NAMES_VARIABLE}
     for path in FILES:
         named = set(re.findall(r"\bOPEN_DOTS_[A-Z_]+\b", text(path)))
         assert named <= known, f"{path.name} names things that do not exist: {sorted(named - known)}"

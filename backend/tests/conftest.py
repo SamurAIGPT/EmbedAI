@@ -117,3 +117,10 @@ def user_id() -> str:
 @pytest.fixture
 def other_user_id() -> str:
     return "test-user-2"
+
+
+@pytest.fixture(autouse=True)
+def fake_engine_environment(monkeypatch):
+    """The fake engine CLIs read their scratch folders from FAKE_* variables;
+    engines only get listed names (app/core/engine_env.py)."""
+    monkeypatch.setenv("OPEN_DOTS_ENGINE_ENV", "FAKE_*")

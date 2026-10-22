@@ -26,6 +26,7 @@ from pathlib import Path
 from fastapi.concurrency import run_in_threadpool
 
 from app.core import app_settings, engine_processes
+from app.core.engine_env import engine_environment
 from app.desktop import profile
 from app.services.approval_modes import cli_permission_mode
 
@@ -64,16 +65,6 @@ COMPUTER_SERVER = "computer"
 
 _NPM_SHIM_SUFFIXES ={".cmd", ".bat", ".ps1"}
 _NPM_REAL_BINARY = Path("node_modules") / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
-
-# App secrets that must never reach a child process. Chat-only runs have no
-# tool to read them with, but with tools on an approved shell command could.
-_APP_SECRET_ENV = (
-    "BOAT_API_KEY",
-    "TOKEN_ENCRYPTION_KEYS",
-    "HOOK_TOKEN",
-    "TELEGRAM_BOT_TOKEN",
-    "POSTGRES_PASSWORD",
-)
 
 _STATUS_TIMEOUT_SECONDS = 20
 
@@ -262,7 +253,7 @@ def workspace_dir() -> Path:
 
 
 def _child_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k not in _APP_SECRET_ENV}
+    env = engine_environment()
     # The CLI's own memory feature can save notes under ~/.claude/projects/,
     # outside the workspace and without asking. Not for runs this app starts;
     # the user's own use of the CLI is unaffected (only this process sees it).
@@ -273,8 +264,9 @@ def _child_env() -> dict[str, str]:
 
 
 def child_env() -> dict[str, str]:
-    """The environment for any engine process this app starts: this
-    process's, without the app's own secrets."""
+    """The environment for any engine process this app starts: the names
+    an engine needs (app/core/engine_env.py), not this process's whole
+    environment."""
     return _child_env()
 
 

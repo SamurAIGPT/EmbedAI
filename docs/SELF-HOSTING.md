@@ -201,6 +201,8 @@ Agents use an engine CLI that is signed in as the account running Open Dots. Sig
 
 `python -m app.server doctor` reports which engines it found and whether they are signed in.
 
+Engine processes (and any shell command or tool server they start) get a limited environment, not the server's: standard shell and OS names, proxy and certificate names, and the engines' own settings and provider keys (`ANTHROPIC_*`, `CLAUDE_*`, `CODEX_*`, `OPENAI_*`, `GEMINI_*`, `GOOGLE_API_KEY`). Cloud-account names (`AWS_*` for Bedrock, `GOOGLE_APPLICATION_CREDENTIALS` for Vertex, `AZURE_*`) and `SSH_AUTH_SOCK` are not passed by default. To give a turn another variable, such as `AWS_*` for Bedrock or a `GH_TOKEN` for `gh`, list it in `OPEN_DOTS_ENGINE_ENV` (comma-separated names, or a prefix ending in `*`). The app's own secrets, database settings and `OPEN_DOTS_*` names are never passed, even when listed. This limits what a steered turn can read from its environment; it does not stop it reading files the server's account can read.
+
 ## The proxy rules
 
 Any reverse proxy works if it:

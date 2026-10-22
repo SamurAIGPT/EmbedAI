@@ -1,5 +1,6 @@
 "use client";
 
+import { Dialog } from "@/components/ui/Dialog";
 import { useEffect, useState } from "react";
 import { api, ApiError, type FilePreview, type FolderListing } from "@/lib/api";
 import { formatBytes, parentPath } from "@/lib/everyday";
@@ -71,24 +72,8 @@ export function FilesPanel({ threadId, workspace, onClose }: { threadId: number;
   const crumbs = path ? path.split("/") : [];
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Workspace files"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div className="flex h-[80vh] w-full max-w-4xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-        <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">Files</h2>
-            {workspace && <p className="truncate text-xs text-zinc-500" title={workspace}>{workspace}</p>}
-          </div>
-          <button onClick={onClose} aria-label="Close" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">
-            ✕
-          </button>
-        </header>
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title="Files" description={workspace ?? undefined} size="lg" flush>
+        <div className="flex h-[min(68dvh,40rem)] min-h-0 flex-col md:flex-row">
           <section className="flex min-h-0 flex-col border-b border-zinc-200 md:w-80 md:border-b-0 md:border-r dark:border-zinc-800">
             <nav aria-label="Folder" className="flex flex-wrap items-center gap-1 px-3 py-2 text-xs">
               <button onClick={() => setPath("")} className="cursor-pointer underline">workspace</button>
@@ -177,7 +162,6 @@ export function FilesPanel({ threadId, workspace, onClose }: { threadId: number;
             )}
           </section>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

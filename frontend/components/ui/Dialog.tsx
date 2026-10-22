@@ -6,9 +6,9 @@ import { useRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "wide" | "lg";
 
-const WIDTHS: Record<Size, string> = { sm: "sm:max-w-md", md: "sm:max-w-xl", lg: "sm:max-w-4xl" };
+const WIDTHS: Record<Size, string> = { sm: "sm:max-w-md", md: "sm:max-w-xl", wide: "sm:max-w-2xl", lg: "sm:max-w-4xl" };
 
 // A modal. On a phone it becomes a sheet anchored to the bottom edge (full width, rounded top,
 // scrolls inside itself); from `sm` up it is a centered card. Use `lg` for forms and workflows
@@ -19,6 +19,7 @@ export function Dialog({
   title,
   description,
   size = "md",
+  flush = false,
   children,
   footer,
 }: {
@@ -27,6 +28,8 @@ export function Dialog({
   title: string;
   description?: string;
   size?: Size;
+  // No padding around the body, for content that lays itself out (a file browser).
+  flush?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -64,7 +67,7 @@ export function Dialog({
               <X size={18} aria-hidden="true" />
             </RadixDialog.Close>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+          <div className={cn("min-h-0 flex-1", flush ? "flex flex-col" : "overflow-y-auto px-5 py-4")}>{children}</div>
           {footer ? <footer className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer> : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>

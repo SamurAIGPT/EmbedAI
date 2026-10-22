@@ -101,6 +101,7 @@
   --animate-fade-in: fade-in var(--dur-base) var(--ease-ui);
   --animate-sheet-in: sheet-in var(--dur-base) var(--ease-ui);
   --animate-drawer-in: drawer-in var(--dur-base) var(--ease-ui);
+  --animate-inspector-in: inspector-in var(--dur-base) var(--ease-ui);
 }
 
 /* Existing `dark:` classes follow the chosen theme, not only the operating system. */
@@ -123,6 +124,10 @@
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes inspector-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
 }
 @keyframes drawer-in {
   from { transform: translateX(-100%); }

@@ -48,7 +48,7 @@ function Table({ title, groups, linkFor }: { title: string; groups: UsageTotals[
 }
 
 // Tokens and cost for a month, exactly as engines reported them (docs/EVERYDAY.md).
-export function UsagePanel({ onClose }: { onClose: () => void }) {
+export function UsageView() {
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,22 +88,13 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
   const total = shown?.total;
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Usage"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
-    >
-      <div className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-        <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="min-w-0 flex-1 text-sm font-semibold">Usage</h2>
-          <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">‹</button>
-          <span className="w-20 text-center text-sm tabular-nums">{month}</span>
-          <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= currentMonth()} aria-label="Next month" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-900">›</button>
-          <button onClick={onClose} aria-label="Close" className="cursor-pointer rounded px-2 py-1 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900">✕</button>
-        </header>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="cursor-pointer rounded px-3 py-1 text-sm hover:bg-hover">‹</button>
+        <span className="text-sm tabular-nums">{month}</span>
+        <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= currentMonth()} aria-label="Next month" className="cursor-pointer rounded px-3 py-1 text-sm hover:bg-hover disabled:opacity-40">›</button>
+      </div>
+      <div className="space-y-5">
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           {!error && !shown && <p className="text-sm text-zinc-500">Loading…</p>}
           {total && total.turns === 0 && <p className="text-sm text-zinc-500">No finished turns in {month}.</p>}
@@ -139,7 +130,6 @@ export function UsagePanel({ onClose }: { onClose: () => void }) {
             </button>
             {csvError && <span className="text-xs text-red-600 dark:text-red-400">{csvError}</span>}
           </div>
-        </div>
       </div>
     </div>
   );

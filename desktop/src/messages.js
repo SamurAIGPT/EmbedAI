@@ -27,9 +27,17 @@ function lastReason(logFile, fsImpl = fs) {
   return lines.length ? lines[lines.length - 1].slice("[desktop] ".length) : null;
 }
 
-function describeFailure({ code, logFile, reason }) {
+// `kind` is how the start failed (see startBackend): "spawn" means the backend
+// program could not be run at all, so it never started and has no exit code.
+function describeFailure({ code, logFile, reason, kind }) {
   const where = `Details are in ${logFile}.`;
   const because = reason ? `\n\n${reason}` : "";
+  if (kind === "spawn") {
+    return {
+      title: "Open Duet could not start its backend",
+      body: `The backend program could not be run.${because}\n\n${where}`,
+    };
+  }
   switch (code) {
     case EXIT.KEY_MISMATCH:
       return {

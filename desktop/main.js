@@ -180,7 +180,9 @@ async function main() {
     // The window was closed while the backend was starting: that is a quit, not a failure.
     if (quitting) return;
     const code = failure.kind === "exit" ? failure.code : null;
-    const description = describeFailure({ code, logFile, reason: lastReason(logFile) });
+    // A backend that could not be run wrote nothing, so the launcher's error is the reason.
+    const reason = failure.kind === "spawn" ? failure.message : lastReason(logFile);
+    const description = describeFailure({ code, logFile, reason, kind: failure.kind });
     if (failure.kind === "timeout") {
       description.body = `The backend did not become ready in time.\n\n${description.body}`;
     }

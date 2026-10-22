@@ -117,6 +117,10 @@ class Backend:
             "LOCAL_TOOLS_ENABLED": "true",
             "LOCAL_CLAUDE_CLI_PATH": str(self.claude),
             "LOCAL_CODEX_CLI_PATH": str(self.root / "bin" / "no-codex"),
+            # The server allow-lists child-process env vars. Expose the fake
+            # CLI's FAKE_* configuration to subprocesses in E2E runs, just as
+            # tests that run the adapters in-process do in conftest.py.
+            "OPEN_DOTS_ENGINE_ENV": "FAKE_*",
             "LOCAL_WORKSPACE_ROOT": str(self.root / "work"),
             "DECISION_LOG_DIR": str(self.root / "decisions"),
             "ATTACHMENTS_DIR": str(self.root / "attachments"),

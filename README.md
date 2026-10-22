@@ -16,8 +16,8 @@ Codex, any Agent Client Protocol CLI, or an OpenAI-compatible endpoint). Teams o
 agents that delegate to each other, rooms, and connectors to other apps are
 planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Duet demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Duet demo video thumbnail — click to watch on YouTube" width="720"></a></p>
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Duet demo on YouTube</b></a></p>
+<p align="center"><a href="https://youtu.be/MzgrNQXgVX4" title="Watch the Open Duet demo on YouTube"><img src="https://i.ytimg.com/vi/MzgrNQXgVX4/maxresdefault.jpg" alt="Open Duet demo video thumbnail — click to watch on YouTube" width="720"></a></p>
+<p align="center"><a href="https://youtu.be/MzgrNQXgVX4"><b>▶ Watch the Open Duet demo on YouTube</b></a></p>
 
 > **Status:** Active development. See [Known limitations](#known-limitations) before running it for others.
 

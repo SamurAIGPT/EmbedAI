@@ -11,6 +11,7 @@
 const childProcess = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
 
@@ -25,10 +26,43 @@ const LOG_LIMIT_BYTES = 5 * 1024 * 1024;
 // PATH and its own settings (including ANTHROPIC_*).
 const NOT_PASSED_ON = /^(ELECTRON_RUN_AS_NODE|PYTHONHOME|PYTHONPATH|PYTHONSTARTUP|OPEN_DOTS_.*)$/i;
 
-function backendEnvironment(base) {
+// Where the engines' CLIs are usually installed (per-user installers, npm prefixes,
+// Homebrew). An app opened from Finder, the Dock or a desktop launcher gets only the
+// system PATH, not the one the person's shell sets up, so these are added to the
+// END of the PATH when they exist and are missing. Nothing already there is
+// overridden. The same idea as the server's app/server/engine_path.py.
+const USER_ENGINE_DIRS = [".local/bin", ".npm-global/bin", ".claude/local"];
+const SYSTEM_ENGINE_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+function isDirectory(folder) {
+  try {
+    return fs.statSync(folder).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function withEngineFolders(current, { home, isDirectoryImpl }) {
+  const parts = (current ?? "").split(":").filter(Boolean);
+  const candidates = [...(home ? USER_ENGINE_DIRS.map((name) => path.posix.join(home, name)) : []), ...SYSTEM_ENGINE_DIRS];
+  for (const folder of candidates) {
+    if (!parts.includes(folder) && isDirectoryImpl(folder)) parts.push(folder);
+  }
+  return parts.join(":");
+}
+
+function backendEnvironment(
+  base,
+  { platform = process.platform, home = os.homedir(), isDirectory: isDirectoryImpl = isDirectory } = {},
+) {
   const env = {};
   for (const [name, value] of Object.entries(base)) {
     if (!NOT_PASSED_ON.test(name) && value !== undefined) env[name] = value;
+  }
+  // Windows gives every app the user's PATH, and its folders are written differently.
+  if (platform !== "win32") {
+    const extended = withEngineFolders(env.PATH, { home, isDirectoryImpl });
+    if (extended) env.PATH = extended;
   }
   env.PYTHONUTF8 = "1";
   env.PYTHONIOENCODING = "utf-8";

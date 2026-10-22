@@ -5,7 +5,8 @@ Definitions and webhooks are plain functions over a session. Running is the
 `RoutineScheduler`'s job, a background loop in the backend process: it records
 due occurrences (queued, missed or skipped), starts queued runs as new
 conversations through the thread runtime, follows them to the end, enforces
-the run limit, and at startup marks runs the previous process left behind as
+the run limit, queues a bounded retry of a failed run when the routine asks
+for one, and at startup marks runs the previous process left behind as
 interrupted. It never re-runs an interrupted run.
 """
 
@@ -17,7 +18,7 @@ import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, exists, select, update
+from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,12 +55,16 @@ LIMITS = {
     "run_limit_minutes": (1, 240),
     "approval_timeout_minutes": (1, 1440),
     "catch_up_minutes": (0, 1440),
+    "retry_limit": (0, 3),
+    "retry_delay_minutes": (1, 1440),
 }
 EDITABLE = {
     "agent_id", "name", "prompt", "schedule_kind", "schedule_spec", "timezone",
     "run_limit_minutes", "approval_mode", "approval_timeout_minutes", "catch_up_minutes",
+    "retry_limit", "retry_delay_minutes",
 }
 
+RETRY_REPLACED = "Skipped: a newer scheduled run of this routine replaced this retry."
 INTERRUPTED_MESSAGE = (
     "The app stopped while this run was in progress. It was not re-run, because it may "
     "already have done part of its work; open the conversation to see how far it got."
@@ -214,6 +219,8 @@ async def create_routine(
             "approval_timeout_minutes", data.get("approval_timeout_minutes", 30)
         ),
         catch_up_minutes=_bounded("catch_up_minutes", data.get("catch_up_minutes", 60)),
+        retry_limit=_bounded("retry_limit", data.get("retry_limit", 0)),
+        retry_delay_minutes=_bounded("retry_delay_minutes", data.get("retry_delay_minutes", 5)),
     )
     _apply(routine, now)
     db.add(routine)
@@ -290,6 +297,15 @@ async def set_paused(
     routine = await get_routine(db, owner_id, routine_id)
     routine.paused = paused
     routine.paused_reason = None
+    if paused:
+        # Pausing also cancels a retry that is waiting for its time.
+        await db.execute(
+            update(RoutineRun)
+            .where(RoutineRun.routine_id == routine.id, RoutineRun.trigger == "retry",
+                   RoutineRun.state == "queued")
+            .values(state="skipped", finished_at=now,
+                    error="Skipped: the routine was paused before this retry started.")
+        )
     # Resumed: computed from now, so occurrences that passed while paused do
     # not fire (they were not missed, they were paused).
     routine.next_run_at = None if paused else schedules.next_after(
@@ -384,6 +400,8 @@ def export_document(routine: Routine) -> dict:
         "approval_mode": routine.approval_mode,
         "approval_timeout_minutes": routine.approval_timeout_minutes,
         "catch_up_minutes": routine.catch_up_minutes,
+        "retry_limit": routine.retry_limit,
+        "retry_delay_minutes": routine.retry_delay_minutes,
     }
 
 
@@ -578,8 +596,8 @@ class RoutineScheduler:
 
     async def recover(self) -> list[int]:
         """At startup: runs the previous process left running or waiting
-        become interrupted (never re-run); queued scheduled runs that are now
-        past their catch-up window become missed."""
+        become interrupted (never re-run); queued scheduled runs and retries
+        that are now past their catch-up window become missed."""
         now = self.clock()
         staged = []
         async with self.session() as db:
@@ -608,7 +626,8 @@ class RoutineScheduler:
                         f"Routine “{routine.name}” was interrupted", INTERRUPTED_MESSAGE,
                     ))
                     changed.append(run.id)
-                elif run.trigger == "schedule" and self._too_late(routine, run.scheduled_for, now):
+                elif run.trigger in ("schedule", "retry") and self._too_late(routine, run.scheduled_for, now):
+                    # A retry is held to the same catch-up window as an occurrence.
                     run.state, run.finished_at = "missed", now
                     run.error = "Missed: the app was not running in time to start it."
                     staged.append(self._notify(
@@ -734,6 +753,14 @@ class RoutineScheduler:
                 staged.append(self._notify(db, routine, run, "routine_missed",
                                            f"Routine “{routine.name}” missed a run", run.error))
             return staged
+        # A fresh occurrence replaces a retry that is still waiting: it does
+        # the same work, newer.
+        await db.execute(
+            update(RoutineRun)
+            .where(RoutineRun.routine_id == routine.id, RoutineRun.trigger == "retry",
+                   RoutineRun.state == "queued")
+            .values(state="skipped", finished_at=now, error=RETRY_REPLACED)
+        )
         if await _has_active_run(db, routine.id):
             await self._record(db, RoutineRun(
                 routine_id=routine.id, trigger="schedule", state="skipped", scheduled_for=latest,
@@ -756,7 +783,12 @@ class RoutineScheduler:
                 await db.execute(
                     select(RoutineRun.id)
                     .join(Routine, Routine.id == RoutineRun.routine_id)
-                    .where(Routine.owner_id == self.owner_id, RoutineRun.state == "queued")
+                    .where(
+                        Routine.owner_id == self.owner_id,
+                        RoutineRun.state == "queued",
+                        # A retry waits for its delay (scheduled_for).
+                        or_(RoutineRun.trigger != "retry", RoutineRun.scheduled_for <= self.clock()),
+                    )
                     .order_by(RoutineRun.id)
                     .limit(START_BATCH)
                 )
@@ -787,7 +819,13 @@ class RoutineScheduler:
             return run, routine
 
     async def _fail(
-        self, run_id: int, error: str, kind: str = "routine_failed", *, pause_reason: str | None = None
+        self,
+        run_id: int,
+        error: str,
+        kind: str = "routine_failed",
+        *,
+        pause_reason: str | None = None,
+        retry: bool = True,
     ) -> None:
         now = self.clock()
         async with self.session() as db:
@@ -798,9 +836,40 @@ class RoutineScheduler:
             run.state, run.error, run.finished_at = "failed", _clip(error, ERROR_CHARS), now
             if pause_reason is not None:
                 routine.paused, routine.paused_reason, routine.next_run_at = True, pause_reason, None
-            staged = [self._notify(db, routine, run, kind, f"Routine “{routine.name}” failed", run.error)]
+            body = run.error
+            if retry and pause_reason is None:
+                body += await self._queue_retry(db, routine, run, now)
+            staged = [self._notify(db, routine, run, kind, f"Routine “{routine.name}” failed", body)]
             await db.commit()
         await self._deliver(staged)
+
+    async def _queue_retry(self, db: AsyncSession, routine: Routine, run: RoutineRun, now: datetime) -> str:
+        """Queue the next attempt of a run that just failed, if its routine
+        asks for retries and attempts are left. Returns a sentence for the
+        failure notification ("" when nothing was queued). The unique
+        `retry_of` index means a failed run gets at most one retry, even when
+        two schedulers settle it at the same time."""
+        if routine.paused or run.attempt > (routine.retry_limit or 0):
+            return ""
+        attempt = run.attempt + 1
+        start = now + timedelta(seconds=routine.retry_delay_minutes * MINUTE_SECONDS)
+        prompt = run.prompt or routine.prompt
+        if run.retry_of is not None and "\n\n" in prompt:
+            prompt = prompt.split("\n\n", 1)[1]  # drop the previous attempt's first line
+        retry = RoutineRun(
+            routine_id=routine.id,
+            trigger="retry",
+            state="queued",
+            scheduled_for=start,
+            attempt=attempt,
+            retry_of=run.id,
+            prompt=f"[Attempt {attempt}: an earlier attempt of this run failed. Its work may be partly "
+            f"done; check before repeating anything.]\n\n{prompt}",
+        )
+        if not await self._record(db, retry):
+            return ""
+        when = _local(start, routine.timezone)
+        return f" It will be tried again at {when} (attempt {attempt} of {routine.retry_limit + 1})."
 
     async def _set(self, run_id: int, **values) -> None:
         async with self.session() as db:
@@ -815,8 +884,16 @@ class RoutineScheduler:
         if claimed is None:
             return
         run, routine = claimed
+        if run.trigger == "retry" and routine.paused:
+            await self._set(run.id, state="skipped", finished_at=now,
+                            error="Skipped: the routine was paused before this retry started.")
+            return
         if not settings.LOCAL_EXECUTION_ENABLED:
-            await self._fail(run.id, "Local execution is disabled. Set LOCAL_EXECUTION_ENABLED=true and restart the backend.")
+            await self._fail(
+                run.id,
+                "Local execution is disabled. Set LOCAL_EXECUTION_ENABLED=true and restart the backend.",
+                retry=False,
+            )
             return
         async with self.session() as db:
             agent = await db.get(Agent, routine.agent_id)
@@ -840,19 +917,21 @@ class RoutineScheduler:
         except runtime_module.ProviderUnavailable as exc:
             await self._fail(run.id, f"The engine is not available: {exc}")
             return
+        # Configuration problems do not fix themselves: never retried.
         except (runtime_module.UnknownAgent, runtime_module.AgentArchived):
-            await self._fail(run.id, "Its agent is not available.")
+            await self._fail(run.id, "Its agent is not available.", retry=False)
             return
         except runtime_module.UnknownProvider as exc:
-            await self._fail(run.id, f"Unknown engine: {exc}")
+            await self._fail(run.id, f"Unknown engine: {exc}", retry=False)
             return
         except runtime_module.EngineModelInvalid as exc:
-            await self._fail(run.id, str(exc))
+            await self._fail(run.id, str(exc), retry=False)
             return
         except OSError as exc:
             await self._fail(run.id, f"The agent's workspace is not usable: {exc}")
             return
         except Exception as exc:  # noqa: BLE001
+            # Unexpected and possibly transient (a database or process hiccup): retryable.
             logger.exception("routine run could not start", run_id=run.id)
             await self._fail(run.id, f"Could not start: {type(exc).__name__}")
             return
@@ -902,7 +981,10 @@ class RoutineScheduler:
         stop_thread: int | None = None
         async with self.session() as db:
             await begin_write(db)
-            run = await db.get(RoutineRun, run_id)
+            # Locked on PostgreSQL (SQLite already serializes through
+            # begin_write): two followers of one run settle it, and queue its
+            # retry, once.
+            run = await db.get(RoutineRun, run_id, with_for_update=True)
             if run is None or run.state not in ("running", "needs_input"):
                 await db.rollback()
                 return
@@ -916,7 +998,7 @@ class RoutineScheduler:
             else:
                 turn = await db.get(Turn, run.turn_id)
                 if turn is None or turn.status != "running":
-                    staged.extend(self._settle(db, routine, run, turn, now))
+                    staged.extend(await self._settle(db, routine, run, turn, now))
                 else:
                     pending = (
                         await db.execute(
@@ -952,7 +1034,7 @@ class RoutineScheduler:
                 pass  # already over, or another process's: its lease ends it
         await self._deliver(staged)
 
-    def _settle(self, db, routine: Routine, run: RoutineRun, turn: Turn | None, now: datetime) -> list:
+    async def _settle(self, db, routine: Routine, run: RoutineRun, turn: Turn | None, now: datetime) -> list:
         self._close_wait(run, now)
         run.finished_at = now
         status = turn.status if turn is not None else "interrupted"
@@ -966,12 +1048,15 @@ class RoutineScheduler:
             return [self._notify(db, routine, run, "routine_interrupted",
                                  f"Routine “{routine.name}” was interrupted", INTERRUPTED_MESSAGE)]
         run.state = "failed"
+        body = None
         if status == "cancelled":
+            # Stopped by a person (or by the run limit): never retried.
             run.error = "The run was stopped."
         else:
             run.error = _clip(turn.error or "The engine reported a failure.", ERROR_CHARS)
+            body = run.error + await self._queue_retry(db, routine, run, now)
         return [self._notify(db, routine, run, "routine_failed",
-                             f"Routine “{routine.name}” failed", run.error)]
+                             f"Routine “{routine.name}” failed", body or run.error)]
 
 
 scheduler = RoutineScheduler()

@@ -93,6 +93,7 @@ test('run states and triggers read as words', () => {
   assert.equal(runStateTone('interrupted'), 'bad');
   assert.equal(runStateTone('skipped'), 'muted');
   assert.equal(triggerLabel('webhook'), 'Webhook');
+  assert.equal(triggerLabel('retry'), 'Retry');
   assert.equal(isActiveRun({ state: 'queued' }), true);
   assert.equal(isActiveRun({ state: 'completed' }), false);
   assert.equal(isActiveRun(null), false);

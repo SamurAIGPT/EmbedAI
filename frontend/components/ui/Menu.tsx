@@ -5,7 +5,19 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 // A dropdown menu: arrow keys, type-ahead, Escape and focus return come from Radix.
-export function Menu({ trigger, children, align = "end" }: { trigger: ReactNode; children: ReactNode; align?: "start" | "end" }) {
+export function Menu({
+  trigger,
+  children,
+  align = "end",
+  onCloseAutoFocus,
+}: {
+  trigger: ReactNode;
+  children: ReactNode;
+  align?: "start" | "end";
+  // Called when the menu closes and focus is about to return to the trigger. preventDefault()
+  // keeps focus where it is, for an item that moves focus itself (an inline rename field).
+  onCloseAutoFocus?: (event: Event) => void;
+}) {
   return (
     <RadixMenu.Root>
       <RadixMenu.Trigger asChild>{trigger}</RadixMenu.Trigger>
@@ -14,6 +26,7 @@ export function Menu({ trigger, children, align = "end" }: { trigger: ReactNode;
           align={align}
           sideOffset={6}
           collisionPadding={8}
+          onCloseAutoFocus={onCloseAutoFocus}
           className="z-50 min-w-44 max-w-[calc(100vw-1rem)] animate-pop-in rounded-card border border-line bg-raised p-1 text-sm text-ink shadow-lg"
         >
           {children}

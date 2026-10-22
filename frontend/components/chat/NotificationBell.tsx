@@ -1,9 +1,12 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, type AppNotification } from "@/lib/api";
 import { badgeText, formatWhen } from "@/lib/routines";
+import { t } from "@/lib/i18n";
+import { IconButton } from "@/components/ui/IconButton";
 
 const POLL_MS = 15_000;
 
@@ -55,41 +58,38 @@ export function NotificationBell({
 
   return (
     <div className={`relative ${elevated ? "z-50" : ""}`}>
-      <button
+      <IconButton
+        label={badge ? t("notifications.unread", { count: unread }) : t("notifications.title")}
+        aria-expanded={open}
         onClick={() => {
           if (!open) onOpen?.();
           setOpen(!open);
         }}
-        aria-label={badge ? `Notifications, ${unread} unread` : "Notifications"}
-        aria-expanded={open}
-        className="relative cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        className="relative"
       >
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-        </svg>
+        <Bell size={18} />
         {badge && (
-          <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-5 text-white">{badge}</span>
+          <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] font-semibold leading-4 text-accent-fg">{badge}</span>
         )}
-      </button>
+      </IconButton>
       {open && (
-        <div role="dialog" aria-label="Notifications" className="absolute right-0 top-9 z-40 w-80 rounded-lg border border-zinc-200 bg-background shadow-xl dark:border-zinc-800">
-          <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <p className="flex-1 text-xs font-semibold">Notifications</p>
-            <button onClick={() => void readAll()} className="cursor-pointer text-xs underline">Mark all read</button>
+        <div role="dialog" aria-label={t("notifications.title")} className="absolute right-0 top-11 z-40 w-[min(20rem,calc(100vw-1.5rem))] animate-pop-in rounded-card border border-line bg-raised shadow-xl">
+          <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+            <p className="flex-1 text-xs font-semibold">{t("notifications.title")}</p>
+            <button onClick={() => void readAll()} className="cursor-pointer text-xs text-accent underline">{t("notifications.markAll")}</button>
           </div>
           <ul className="max-h-96 overflow-y-auto">
             {items === null ? (
-              <li className="p-3 text-xs text-zinc-500">Loading…</li>
+              <li className="p-3 text-xs text-muted">{t("common.loading")}</li>
             ) : items.length === 0 ? (
-              <li className="p-3 text-xs text-zinc-500">Nothing yet.</li>
+              <li className="p-3 text-xs text-muted">{t("notifications.empty")}</li>
             ) : (
               items.map((item) => (
                 <li key={item.id}>
-                  <button onClick={() => void choose(item)} className={`block w-full cursor-pointer px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-900 ${item.read_at ? "" : "bg-sky-50 dark:bg-sky-950/30"}`}>
+                  <button onClick={() => void choose(item)} className={`block w-full cursor-pointer px-3 py-2 text-left hover:bg-hover ${item.read_at ? "" : "bg-accent/10"}`}>
                     <p className="text-xs font-medium">{item.title}</p>
-                    {item.body && <p className="line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">{item.body}</p>}
-                    <p className="text-[10px] text-zinc-500">{formatWhen(item.created_at)}</p>
+                    {item.body && <p className="line-clamp-2 text-xs text-muted">{item.body}</p>}
+                    <p className="text-[10px] text-faint">{formatWhen(item.created_at)}</p>
                   </button>
                 </li>
               ))

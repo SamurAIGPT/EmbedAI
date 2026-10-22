@@ -67,10 +67,10 @@ export function ConversationSearch({
         onKeyDown={(e) => e.key === "Escape" && setQuery("")}
         placeholder="Search conversations"
         aria-label="Search conversations"
-        className="w-full rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm placeholder:text-zinc-500 dark:border-zinc-700"
+        className="w-full rounded-field border border-line bg-raised px-3 py-2 text-sm placeholder:text-faint"
       />
       {active && (
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
             Include archived
@@ -80,7 +80,7 @@ export function ConversationSearch({
               value={agentId ?? ""}
               onChange={(e) => setAgentId(e.target.value === "" ? null : Number(e.target.value))}
               aria-label="Only conversations with this agent"
-              className="max-w-36 truncate rounded border border-zinc-300 bg-transparent px-1 py-0.5 dark:border-zinc-700"
+              className="max-w-36 truncate rounded border border-line bg-raised px-1 py-0.5"
             >
               <option value="">Any agent</option>
               {[...agentNames.entries()].map(([id, name]) => (
@@ -94,10 +94,10 @@ export function ConversationSearch({
       )}
       {active && (
         <ul aria-label="Search results" className="mt-2 space-y-1">
-          {hits === null && <li className="px-1 py-2 text-xs text-zinc-500">Searching…</li>}
-          {error && <li className="px-1 py-2 text-xs text-red-600 dark:text-red-400">{error}</li>}
+          {hits === null && <li className="px-1 py-2 text-xs text-muted">Searching…</li>}
+          {error && <li className="px-1 py-2 text-xs text-danger">{error}</li>}
           {hits?.length === 0 && !error && (
-            <li className="px-1 py-2 text-xs text-zinc-500">
+            <li className="px-1 py-2 text-xs text-muted">
               No conversation mentions “{q}”{archived ? "" : ". Archived ones are not searched unless you include them"}.
             </li>
           )}
@@ -106,19 +106,19 @@ export function ConversationSearch({
               <Link
                 href={`/chat?thread=${hit.thread_id}`}
                 onClick={onNavigate}
-                className="block rounded-md px-2 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                className="block rounded-field px-2 py-1.5 hover:bg-hover/60"
               >
-                <span className="flex items-baseline gap-2 text-xs text-zinc-500">
-                  <span className="min-w-0 flex-1 truncate font-medium text-zinc-800 dark:text-zinc-200">
+                <span className="flex items-baseline gap-2 text-xs text-muted">
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">
                     {hit.thread_title || `Conversation ${hit.thread_id}`}
                   </span>
                   <span className="shrink-0">{when(hit.at)}</span>
                 </span>
-                <span className="mt-0.5 line-clamp-3 break-words text-xs text-zinc-600 dark:text-zinc-400">
-                  <span className="mr-1 text-zinc-400">{KIND_LABEL[hit.kind]}:</span>
+                <span className="mt-0.5 line-clamp-3 break-words text-xs text-muted">
+                  <span className="mr-1 text-faint">{KIND_LABEL[hit.kind]}:</span>
                   {snippetSegments(hit.snippet, hit.highlights).map((part, i) =>
                     part.mark ? (
-                      <mark key={i} className="rounded-sm bg-amber-200 px-0.5 text-zinc-900 dark:bg-amber-700 dark:text-white">
+                      <mark key={i} className="rounded-sm bg-warning/30 px-0.5 text-ink">
                         {part.text}
                       </mark>
                     ) : (
@@ -127,7 +127,7 @@ export function ConversationSearch({
                   )}
                 </span>
                 {(hit.archived || (hit.agent_id != null && agentNames?.get(hit.agent_id))) && (
-                  <span className="mt-0.5 block text-[11px] text-zinc-400">
+                  <span className="mt-0.5 block text-[11px] text-faint">
                     {[hit.agent_id != null ? agentNames?.get(hit.agent_id) : null, hit.archived ? "archived" : null]
                       .filter(Boolean)
                       .join(" · ")}

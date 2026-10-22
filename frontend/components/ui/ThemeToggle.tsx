@@ -23,7 +23,7 @@ const serverSnapshot = (): ThemeChoice => "system";
 
 // System / Light / Dark. The choice is remembered in this browser only; when it is "system"
 // the page follows the operating system live.
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({ className, iconOnly = false }: { className?: string; iconOnly?: boolean }) {
   const choice = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
 
   useEffect(() => {
@@ -51,14 +51,17 @@ export function ThemeToggle({ className }: { className?: string }) {
             type="button"
             role="radio"
             aria-checked={selected}
+            aria-label={iconOnly ? t(LABELS[value]) : undefined}
+            title={iconOnly ? t(LABELS[value]) : undefined}
             onClick={() => pick(value)}
             className={cn(
-              "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-[13px] transition-colors duration-(--dur-fast) touch:h-11",
+              "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg text-[13px] transition-colors duration-(--dur-fast) touch:h-11",
+              iconOnly ? "px-2.5" : "px-3",
               selected ? "bg-raised text-ink shadow-sm" : "text-muted hover:text-ink",
             )}
           >
             <Icon size={14} aria-hidden="true" />
-            {t(LABELS[value])}
+            {iconOnly ? null : t(LABELS[value])}
           </button>
         );
       })}

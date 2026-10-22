@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "globals.css"), "utf8");
+const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
 
 // The custom properties declared in the first block whose selector contains `selector`.
 export function tokens(source, selector) {

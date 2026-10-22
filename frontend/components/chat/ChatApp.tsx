@@ -115,6 +115,7 @@ export function ChatApp() {
   const setPanel = (next: Panel | null) => router.replace(chatHref(params.toString(), next));
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [focusComposer, setFocusComposer] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
@@ -546,6 +547,7 @@ export function ChatApp() {
       onNewChat={(agentId) => {
         if (agentId !== undefined) { setNewAgentId(agentId); setNewModel(null); }
         setModelDraft(null);
+        setFocusComposer(true);
         router.push("/chat");
       }}
       onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
@@ -694,6 +696,8 @@ export function ChatApp() {
           )}
 
           <Composer
+            focusRequested={focusComposer}
+            onFocused={() => setFocusComposer(false)}
             value={draft}
             onChange={setDraft}
             onSend={send}

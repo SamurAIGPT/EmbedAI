@@ -24,6 +24,8 @@ export function Composer({
   onAddFiles,
   onRemoveFile,
   attachNotice = null,
+  focusRequested = false,
+  onFocused,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -45,10 +47,19 @@ export function Composer({
   onRemoveFile?: (index: number) => void;
   // Why an attachment was refused or cannot be sent, if anything.
   attachNotice?: string | null;
+  // New chat asks for the box to take focus; onFocused clears the request.
+  focusRequested?: boolean;
+  onFocused?: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!focusRequested) return;
+    box.current?.focus();
+    onFocused?.();
+  }, [focusRequested, onFocused]);
 
   // Grows with the text up to a limit.
   useEffect(() => {

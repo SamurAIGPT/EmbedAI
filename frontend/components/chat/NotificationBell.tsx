@@ -2,7 +2,7 @@
 
 import { Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type AppNotification } from "@/lib/api";
 import { badgeText, formatWhen } from "@/lib/routines";
 import { t } from "@/lib/i18n";
@@ -24,6 +24,7 @@ export function NotificationBell({
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(() => {
     api.unreadNotifications().then((r) => { setUnread(r.unread); setFailed(false); }).catch(() => setFailed(true));
@@ -39,6 +40,18 @@ export function NotificationBell({
     if (!open) return;
     api.listNotifications().then(setItems).catch(() => setItems([]));
   }, [open, unread]);
+
+  // Escape closes the feed and puts focus back on the bell, wherever focus is inside it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      opener.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const choose = async (item: AppNotification) => {
     if (!item.read_at) await api.readNotification(item.id).catch(() => undefined);
@@ -59,6 +72,7 @@ export function NotificationBell({
   return (
     <div className={`relative ${elevated ? "z-50" : ""}`}>
       <IconButton
+        ref={opener}
         label={badge ? t("notifications.unread", { count: unread }) : t("notifications.title")}
         aria-expanded={open}
         onClick={() => {

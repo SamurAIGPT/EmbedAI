@@ -22,6 +22,12 @@ dependencies = [
     "aiosqlite>=0.20",
 ]
 
+[project.optional-dependencies]
+# The LiteLLM engine (app/services/litellm_adapter.py); `uv sync --extra litellm`.
+litellm = [
+    "litellm>=1.97.0,<1.106.0",
+]
+
 [tool.fastapi]
 entrypoint = "app.main:app"
 

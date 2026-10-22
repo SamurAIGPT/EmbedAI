@@ -73,6 +73,7 @@ def default_adapters() -> dict:
     from app.services.acp_adapter import AcpAdapter
     from app.services.claude_adapter import ClaudeAdapter
     from app.services.codex_adapter import CodexAdapter
+    from app.services.litellm_adapter import LiteLLMAdapter
     from app.services.openai_chat_adapter import OpenAIChatAdapter, OpenRouterAdapter
 
     adapters: dict = {}
@@ -82,6 +83,7 @@ def default_adapters() -> dict:
         ("acp", "ACP agent", AcpAdapter),
         ("openai_compat", "OpenAI-compatible", OpenAIChatAdapter),
         ("openrouter", "OpenRouter", OpenRouterAdapter),
+        ("litellm", "LiteLLM", LiteLLMAdapter),
     ):
         try:
             adapters[key] = factory()

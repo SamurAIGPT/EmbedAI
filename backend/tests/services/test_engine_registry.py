@@ -187,7 +187,7 @@ async def test_cli_probe_reads_output():
 
 def test_the_contract_flags_of_the_built_in_engines():
     adapters = default_adapters()
-    assert set(adapters) == {"claude", "codex", "acp", "openai_compat", "openrouter"}
+    assert set(adapters) == {"claude", "codex", "acp", "openai_compat", "openrouter", "litellm"}
     caps = {k: engine_registry.capabilities_of(a) for k, a in adapters.items()}
     assert caps["claude"].computers and not caps["codex"].computers
     assert not caps["openai_compat"].tools and not caps["openai_compat"].computers

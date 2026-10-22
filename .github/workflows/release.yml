@@ -55,3 +55,4 @@ jobs:
         with:
           files: installers/*
           generate_release_notes: true
+          prerelease: true

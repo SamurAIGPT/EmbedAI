@@ -1,6 +1,6 @@
 {
   "name": "open-dots-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Open Duet desktop app: an Electron window around the local backend. Runs from a source checkout or installed.",
   "main": "main.js",
@@ -29,8 +29,8 @@
   "author": "Open Duet",
   "build": {
     "appId": "app.opendots.desktop",
-    "productName": "Open Dots",
-    "executableName": "Open Dots",
+    "productName": "Open Duet",
+    "executableName": "Open Duet",
     "directories": {
       "output": "release"
     },

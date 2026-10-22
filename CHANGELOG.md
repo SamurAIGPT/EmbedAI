@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.0 (2026-10-22)
+
 ### Changed
 - **Renamed to Open Duet.** The product name shown in the app, the desktop messages, the installers' file names, the README and the docs is now Open Duet. Names that identify an install did not change, so nothing needs migrating: the `OPEN_DOTS_*` settings, the `~/.open-dots` data folder, the desktop data folder (still `Open Dots`, which also keeps its encryption key readable), the `opendots` service account, the `open-dots.service` unit, Docker image and volume names, and the `X-Open-Dots-Token` header.
 - The repository moved to `Anil-matcha/open-duet`; the old address redirects. Clone commands in the README and the self-hosting guide use the new name.

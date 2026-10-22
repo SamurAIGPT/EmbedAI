@@ -36,6 +36,10 @@ from app.services.agent_memory import redact_secrets
 KEEP_EXCHANGES = 4
 SUMMARY_MAX_CHARS = 6_000
 EXCERPT_MAX_CHARS = 240
+# How much of a message is redacted before its excerpt is cut: enough for any
+# key block that starts inside the excerpt, and bounded because redaction is
+# slow on very long unbroken text.
+REDACT_SCAN_CHARS = 8_192
 # The summary takes at most this share of the budget (and SUMMARY_MAX_CHARS).
 SUMMARY_SHARE = 0.25
 SUMMARY_MIN_CHARS = 512
@@ -150,7 +154,9 @@ def excerpt_summary(folded: list[dict], previous: str | None = None, max_chars: 
             continue
         if role not in ("user", "assistant") or not isinstance(text, str) or not text.strip():
             continue
-        flat = " ".join(text.split())
+        # Redacted before the cut: a cut can leave only part of a secret (a
+        # key block without its END line), which no longer matches.
+        flat = " ".join(redact_secrets(text[:REDACT_SCAN_CHARS])[0].split())
         if len(flat) > EXCERPT_MAX_CHARS:
             flat = flat[: EXCERPT_MAX_CHARS - 1] + "…"
         line = f"{'Person' if role == 'user' else 'Assistant'}: {flat}"

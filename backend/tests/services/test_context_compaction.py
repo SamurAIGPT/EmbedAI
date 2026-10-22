@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import context_compaction as cc
+from app.services.agent_memory import redact_secrets
 
 
 def conversation(exchanges: int, size: int = 100, current: int | None = None) -> list[dict]:
@@ -98,6 +99,34 @@ def test_the_summary_is_bounded_and_redacted():
     summary = cc.excerpt_summary(folded, max_chars=2_000)
     assert len(summary) <= 2_000 and "abcdef123456" not in summary
     assert "older excerpts left out]" in summary
+
+
+def test_a_secret_cut_by_the_excerpt_limit_is_still_redacted():
+    # A private key is longer than one excerpt: cut first, its END line is gone
+    # and the block no longer looks like a key, so it must be redacted before.
+    body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ" * 8
+    key = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\n-----END OPENSSH PRIVATE KEY-----"
+    summary = cc.excerpt_summary([{"role": "user", "text": f"here is the key\n{key}", "turn_id": 1}])
+    assert "BEGIN OPENSSH PRIVATE KEY" not in summary
+    assert "b3BlbnNzaC1rZXktdjEAAAAABG5vbmU" not in summary
+
+
+def test_a_long_message_is_redacted_only_up_to_the_bound(monkeypatch):
+    # Redaction is slow on long unbroken text, so only the start of a message
+    # is scanned; a key that starts in the excerpt is still caught.
+    body = "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ" * 8
+    key = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\n-----END OPENSSH PRIVATE KEY-----"
+    text = f"key {key} " + "a-b.c" * 200_000
+    seen = []
+
+    def recording(value):
+        seen.append(len(value))
+        return redact_secrets(value)
+
+    monkeypatch.setattr(cc, "redact_secrets", recording)
+    summary = cc.excerpt_summary([{"role": "user", "text": text, "turn_id": 1}])
+    assert "b3BlbnNzaC1rZXktdjEAAAAABG5vbmU" not in summary
+    assert max(seen) <= max(cc.REDACT_SCAN_CHARS, cc.SUMMARY_MAX_CHARS)
 
 
 def test_only_the_kept_exchanges_left_is_no_fold():

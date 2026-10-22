@@ -27,8 +27,7 @@ planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 - [Why Open Dots](#why-open-dots)
 - [Quick start](#quick-start)
 - [Using Open Dots](#using-open-dots)
-- [Scheduling tasks](#scheduling-tasks)
-- [Permission prompts](#permission-prompts)
+- [Telegram and Boat sandboxes (optional)](#telegram-and-boat-sandboxes-optional)
 - [Architecture](#architecture)
 - [Project layout](#project-layout)
 - [Known limitations](#known-limitations)
@@ -58,7 +57,53 @@ control over the app and its data, and no lock-in to one model provider. Read
 
 ## Quick start
 
-### Prerequisites
+Pick how you want to run it:
+
+| | Desktop app | Server you own | Development checkout |
+|---|---|---|---|
+| For | one person on a laptop or desktop | agents and routines that keep working with your laptop closed, reachable from a phone | working on Open Dots itself |
+| Needs | Node.js 22+, [uv](https://docs.astral.sh/uv/), one signed-in engine | Linux, a domain, Docker or Node.js and uv, one signed-in engine | the same, plus Docker for PostgreSQL (or SQLite) |
+| Status | experimental, from a source checkout or unsigned installers | experimental | |
+| Guide | below | [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md) | [Development setup](#development-setup-telegram-and-boat-optional) |
+
+An **engine** is the model program your agents run on. You need at least one ready: a signed-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or Codex CLI, an Agent Client Protocol CLI, or an OpenAI-compatible endpoint. Settings → Engines shows what is ready and why not.
+
+### Desktop app
+
+```bash
+git clone https://github.com/Anil-matcha/open-dots
+cd open-dots/desktop
+npm run app
+```
+
+`npm run app` sets up the first time, builds the page when needed, and opens Open Dots. It needs no `.env`, keeps its own encryption key in the operating system's secret storage, and uses a local SQLite database. On first start a setup flow in Settings detects your engines, asks you to pick a workspace folder, explains the approval modes and can create a starter agent. Details and troubleshooting: [docs/SETUP.md](docs/SETUP.md#desktop-app-from-a-source-checkout-experimental). Tagged releases also build unsigned installers; they are unverified on a clean machine apart from a Windows smoke test, and there is no auto-update.
+
+### On a server
+
+One owner, one data folder, HTTPS through nginx or Caddy, and engines signed in on the server. `python -m app.server`, a Docker image and compose file, `doctor`, `backup` and `restore` are included. Follow [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md), and read what has and has not been checked there before relying on it.
+
+## Using Open Dots
+
+A first session in the web app or the desktop app (the Chat page):
+
+1. **Sign in.** The first start asks you to set the owner passphrase ([docs/AUTH.md](docs/AUTH.md)). Pair a phone or another browser from Settings → Devices.
+2. **Check your engine.** Settings → Engines lists what is ready. Without a ready engine nothing can answer.
+3. **Create an agent.** Chat → Agents → New agent. Give it a name, a title, instructions (its job, tone and rules), an engine and model, a workspace folder and an approval mode. Agents can be exported to a file and imported again.
+4. **Talk to it.** Start a chat with the agent. Answers stream in, every tool call is a step you can open, and Stop works at any time. Conversations survive a restart and are searchable.
+5. **Approve what matters.** A risky action shows a card with exactly what will run, and does not run until you press Allow. "Always allow this command" saves a rule you can review and undo in the Approvals panel. See [Approval modes](docs/SETUP.md#approval-modes-saved-rules-and-the-decision-log).
+6. **Let it remember.** Each agent keeps notes (`MEMORY.md` and topic notes) that load into its conversations. Edit them under Agents → Notes. See [docs/MEMORY.md](docs/MEMORY.md).
+7. **Give it a routine.** Chat → Routines runs a prompt as a new conversation of an agent on a schedule, by webhook or on demand, with run history, missed-run tracking and notifications. A routine never approves by itself. See [docs/ROUTINES.md](docs/ROUTINES.md).
+8. **Give it a computer (optional).** With Docker installed, Agents → Computer gives an agent its own isolated container so its commands and file edits never run on your machine. See [docs/COMPUTERS.md](docs/COMPUTERS.md).
+
+Agents need `LOCAL_EXECUTION_ENABLED=true` on a server or development setup (the desktop app sets it itself). File edits and commands also need `LOCAL_TOOLS_ENABLED=true`, and every command still asks you first.
+
+## Telegram and Boat sandboxes (optional)
+
+Open Dots started as a Telegram bot and web page that run tasks in hosted [Boat](https://docs.boat.dev/api-keys) sandboxes. That flow still works, is independent of agents, and needs the Boat key and Telegram setup described in [Development setup](#development-setup-telegram-and-boat-optional).
+
+### Development setup, Telegram and Boat (optional)
+
+#### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python dependency management
 - [Node.js](https://nodejs.org/) (20.9+) and npm, for the web UI (required by Next.js 16)
@@ -73,13 +118,13 @@ control over the app and its data, and no lock-in to one model provider. Read
   needed if you want to run the bot, or let people link the web UI to
   Telegram — the web UI's guest mode works without it)
 - A public URL the sandbox can reach to call back into your backend for
-  permission decisions (see [Permission prompts](#permission-prompts)) — in
+  permission decisions (see [Permission prompts (Boat)](#permission-prompts-boat-sandboxes)) — in
   local dev this means tunneling your backend with
   [ngrok](https://ngrok.com/) or similar; not needed to run the app, only
   for any task that triggers a risky action (writing files, shell commands,
   etc.) to actually get a decision instead of hanging until it times out.
 
-### Configure the environment
+#### Configure the environment
 
 `scripts/dev.sh` creates `backend/.env` from the example on first run, saves a
 private encryption key and webhook token, and preserves existing secrets on
@@ -104,6 +149,7 @@ Fill in `backend/.env`:
 | `BOAT_BASE_URL` | no | Defaults to `https://boat.dev/api/v1`. |
 | `BOAT_ORG_ID` | see note above | Team/org id (e.g. `team_...`) to attach to sandbox creation so it bills the org instead of your personal account. |
 | `PARALLEL_SEARCH_ENABLED` | no | Set to `true` to add free Parallel web search and page fetching to Claude tasks. Defaults to `false`. See [Optional web search](#optional-web-search). |
+| `LOCAL_EXECUTION_ENABLED` | for agents | Set to `true` to chat with agents and run routines on a local engine (Claude, Codex, ACP or an OpenAI-compatible endpoint). Off by default. `LOCAL_TOOLS_ENABLED=true` also lets agents read and write files and run commands, each call asking for your approval. |
 | `TOKEN_ENCRYPTION_KEYS` | generated by `dev.sh` | Persistent Fernet key used to encrypt stored credentials. For manual setup, generate with `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Comma-separate multiple keys to support rotation. |
 | `TELEGRAM_BOT_TOKEN` | only for the bot / Telegram linking | From @BotFather. `dev.sh` skips the bot when this or the Boat key is missing. |
 | `TELEGRAM_BOT_USERNAME` | no | Your bot's `@username` (no `@`), shown as a clickable link in the web UI. Cosmetic only. |
@@ -120,7 +166,7 @@ it to `.env.local` automatically on first run. Copy it yourself if you're
 running the frontend separately, and point `NEXT_PUBLIC_API_BASE_URL` at the
 backend if you're not using the defaults.
 
-### Start the app
+#### Start the app
 
 ```bash
 ./scripts/dev.sh
@@ -142,7 +188,7 @@ Skip pieces you don't need:
 ./scripts/dev.sh --no-frontend   # API + bot only
 ```
 
-#### Run the pieces manually
+##### Run the pieces manually
 
 ```bash
 cd backend
@@ -156,7 +202,10 @@ cd ../frontend
 npm install && npm run dev                # web UI (terminal 3)
 ```
 
-## Using Open Dots
+
+### Telegram and web task flow (Boat)
+
+The original flow: tasks run in hosted Boat sandboxes, started from Telegram or the web page. Agents, routines and the Chat page below do not need it.
 
 The Telegram bot walks a user through:
 
@@ -180,7 +229,7 @@ The Telegram bot walks a user through:
    back in the chat — the result on success, the error on failure — and a
    schedule that can't succeed (e.g. an expired login) is paused
    automatically instead of retrying forever. See [Scheduling
-   tasks](#scheduling-tasks) below.
+   tasks](#scheduling-tasks-boat) below.
 
 The web UI covers the same ground from a browser:
 
@@ -204,7 +253,7 @@ The web UI covers the same ground from a browser:
    recurring schedule instead (`POST /api/v1/schedules`) — pick a frequency
    (hourly/daily/weekdays/weekly) and a time, in the browser's own timezone.
    Schedules are listed below the composer with pause/resume/delete
-   controls. See [Scheduling tasks](#scheduling-tasks).
+   controls. See [Scheduling tasks](#scheduling-tasks-boat).
 
 
 In Telegram:
@@ -221,7 +270,7 @@ In Telegram:
    day at 08:00 UTC. `/schedules` shows it; `/pause 1`, `/resume 1`,
    `/unschedule 1` manage it by the id the bot gave you. The API process
    must be running for it to actually fire — see [Scheduling
-   tasks](#scheduling-tasks).
+   tasks](#scheduling-tasks-boat).
 
 In the web UI (`http://localhost:3000`), after setting the owner passphrase
 on first start (or signing in):
@@ -241,7 +290,7 @@ on first start (or signing in):
    minutes out, and click "Create schedule". It appears in the schedules
    list below with its next run time; pause/resume/delete it from there.
 
-### Optional web search
+### Optional web search (Boat tasks)
 
 Set `PARALLEL_SEARCH_ENABLED=true` in `backend/.env` and restart the backend
 and bot processes to make [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
@@ -256,7 +305,7 @@ through the existing permission prompts when asked. Claude still needs its
 usual connected account. The setting is off by default and leaves saved MCP
 configuration in place.
 
-## Scheduling tasks
+### Scheduling tasks (Boat)
 
 A schedule (`schedule` table) is a saved prompt plus a cron expression and
 timezone. Three background loops in the **API process** — not the bot
@@ -287,7 +336,7 @@ captured at creation time. One created from Telegram is always UTC, since
 Telegram gives the bot no way to read the user's timezone — the bot's
 replies always spell out times in UTC.
 
-## Permission prompts
+### Permission prompts (Boat sandboxes)
 
 Every risky action the AI attempts inside a sandbox — writing a file,
 running a shell command, a `git push`, etc. — is intercepted by a

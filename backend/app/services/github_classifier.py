@@ -85,6 +85,57 @@ def _is_read_only(invocation: list[str]) -> bool:
     return verb in _READ_VERBS
 
 
+# What a segment may contain and still count as a plain read. Everything
+# else (another program, a wrapper, an expansion, a redirection, a global
+# option or config override, an option that runs a program or writes a
+# file) is left to the generic Bash bucket, which asks by default.
+_READ_GLOBAL_FLAGS = {"-C", "--no-pager", "-P", "-c"}
+_READ_CONFIG_KEYS = {"user.name", "user.email", "core.quotepath"}
+_UNSAFE_READ_OPTIONS = (
+    "--output", "--output-directory", "--upload-pack", "--exec",
+    "--ext-diff", "--textconv", "--open-files-in-pager",
+)
+
+
+def _is_plain_read(segment: str) -> bool:
+    """True only for nothing at all, or a single `git <read verb> ...` that
+    can't run another program, write a file or expand anything."""
+    try:
+        tokens = shlex.split(segment)
+    except ValueError:
+        return False
+    if not tokens:
+        return not segment.strip()
+    if tokens[0] != "git" or any(c in t for t in tokens for c in "$<>"):
+        return False
+
+    i = 1
+    while i < len(tokens) and tokens[i].startswith("-"):
+        flag = tokens[i]
+        if flag not in _READ_GLOBAL_FLAGS:
+            return False
+        if flag in _GLOBAL_FLAGS_WITH_SEPARATE_VALUE:
+            if i + 1 >= len(tokens):
+                return False
+            if flag == "-c":
+                key = tokens[i + 1].split("=", 1)[0].lower()
+                if key not in _READ_CONFIG_KEYS and not key.startswith("color."):
+                    return False
+            i += 2
+        else:
+            i += 1
+
+    invocation = tokens[i:]
+    if not invocation or not _is_read_only(invocation):
+        return False
+    for arg in invocation[1:]:
+        # git accepts any unambiguous prefix of a long option.
+        name = arg.split("=", 1)[0]
+        if len(name) > 2 and name.startswith("--") and any(o.startswith(name) for o in _UNSAFE_READ_OPTIONS):
+            return False
+    return True
+
+
 def classify_bash_command(command: str) -> tuple[str, str, str] | None:
     """If `command` invokes git, return (bucket, connector, tool) describing
     the riskiest git operation found in it. Returns None for anything else,
@@ -113,5 +164,8 @@ def classify_bash_command(command: str) -> tuple[str, str, str] | None:
                 matched_verb = verb
 
     if matched_verb is None:
+        return None
+    # A read is only a read if nothing else rides along with it.
+    if bucket == "read" and not all(_is_plain_read(s) for s in _SEGMENT_SPLIT_RE.split(command)):
         return None
     return bucket, "github", f"git.{matched_verb}"

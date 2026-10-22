@@ -116,3 +116,82 @@ def test_wrapped_read_only_git_stays_read() -> None:
         "git.log",
     )
     assert classify_bash_command("cat .gitignore") is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Another command chained with a read-only git verb.
+        "git status; touch x",
+        "git status && touch x",
+        "touch x || git status",
+        "git log | sh",
+        "git status\ntouch x",
+        "git status & touch x",
+        "cd /tmp && git status",
+        # Substitution, expansion and redirection.
+        "git log $(touch x)",
+        "git log `touch x`",
+        "echo $(git status)",
+        "git show $REV",
+        "git log > out.txt",
+        "git diff >> out.txt",
+        "git log < in.txt",
+        # Wrappers whose behaviour isn't git's own.
+        "sudo git status",
+        "env A=1 git status",
+        "bash -c 'git status'",
+        "./git status",
+        "git 'unterminated status",
+        # Options of read verbs that run a program or write a file.
+        "git -c core.pager=x log",
+        "git -c alias.st=x st",
+        "git -c diff.external=x diff",
+        "git --config-env=core.pager=X log",
+        "git --exec-path=/tmp log",
+        "git --git-dir=/tmp/x status",
+        "git fetch --upload-pack=x origin",
+        "git fetch --upl=x origin",
+        "git diff --output=out.txt",
+        "git diff --outp=out.txt",
+        "git log --output out.txt",
+        "git diff --ext-diff",
+        "git log --textconv -p",
+    ],
+)
+def test_read_verb_with_anything_else_is_not_read(command: str) -> None:
+    # Only a plain read-only git invocation is a read; anything that could
+    # run another program or write a file must not ride on a "read" allow.
+    classified = classify_bash_command(command)
+    assert classified is None or classified[0] != "read"
+
+
+@pytest.mark.parametrize(
+    "command,tool",
+    [
+        ("git status", "git.status"),
+        ("git status --short", "git.status"),
+        ("git log --oneline -n 5", "git.log"),
+        ("git log --format=%H -- src/app.py", "git.log"),
+        ("git diff HEAD~1 -- README.md", "git.diff"),
+        ("git diff --no-ext-diff --stat", "git.diff"),
+        ("git show HEAD:README.md", "git.show"),
+        ("git -C /repo status", "git.status"),
+        ("git --no-pager log", "git.log"),
+        ("git -c color.ui=false log", "git.log"),
+        ("git blame README.md", "git.blame"),
+        ("git ls-files", "git.ls-files"),
+        ("git fetch origin", "git.fetch"),
+        ("git branch --list", "git.branch"),
+        ("git remote -v", "git.remote"),
+        ("git status && git log --oneline", "git.log"),
+        ("git status\n", "git.status"),
+    ],
+)
+def test_plain_read_only_git_stays_read(command: str, tool: str) -> None:
+    assert classify_bash_command(command) == ("read", "github", tool)
+
+
+def test_mutation_after_another_command_keeps_its_bucket() -> None:
+    assert classify_bash_command("touch x && git commit -m x") == ("create", "github", "git.commit")
+    assert classify_bash_command("touch x; git push") == ("publish", "github", "git.push")

@@ -29,6 +29,7 @@ of `context_tokens` when the engine's saved configuration gives its model's
 context window.
 """
 
+import re
 from dataclasses import dataclass
 
 from app.services.agent_memory import redact_secrets
@@ -36,9 +37,9 @@ from app.services.agent_memory import redact_secrets
 KEEP_EXCHANGES = 4
 SUMMARY_MAX_CHARS = 6_000
 EXCERPT_MAX_CHARS = 240
-# How much of a message is redacted before its excerpt is cut: enough for any
-# key block that starts inside the excerpt, and bounded because redaction is
-# slow on very long unbroken text.
+# How much of a message is redacted before its excerpt is cut. The scan is
+# bounded because redaction is slow on very long unbroken text; incomplete
+# private-key blocks at the bound are hidden through the end of the prefix.
 REDACT_SCAN_CHARS = 8_192
 # The summary takes at most this share of the budget (and SUMMARY_MAX_CHARS).
 SUMMARY_SHARE = 0.25
@@ -52,6 +53,8 @@ DEFAULT_CHARS_PER_TOKEN = 4.0
 WINDOW_SHARE = 0.8
 # A fold aims to leave the replay under this share of the budget.
 TARGET_SHARE = 0.7
+
+_PRIVATE_KEY_BEGIN = re.compile(r"-----BEGIN ([A-Z ]*PRIVATE KEY)-----")
 
 SUMMARY_HEADER = (
     "[Summary of earlier messages in this conversation, made of excerpts, oldest first. "
@@ -155,8 +158,16 @@ def excerpt_summary(folded: list[dict], previous: str | None = None, max_chars: 
         if role not in ("user", "assistant") or not isinstance(text, str) or not text.strip():
             continue
         # Redacted before the cut: a cut can leave only part of a secret (a
-        # key block without its END line), which no longer matches.
-        flat = " ".join(redact_secrets(text[:REDACT_SCAN_CHARS])[0].split())
+        # key block without its END line), which no longer matches. If an
+        # unusually long key has no END marker inside the bounded scan, hide
+        # its remaining prefix before applying the usual redactors.
+        excerpt = text[:REDACT_SCAN_CHARS]
+        for match in _PRIVATE_KEY_BEGIN.finditer(excerpt):
+            end_marker = f"-----END {match.group(1)}-----"
+            if end_marker not in excerpt[match.end():]:
+                excerpt = excerpt[:match.start()] + "[redacted]"
+                break
+        flat = " ".join(redact_secrets(excerpt)[0].split())
         if len(flat) > EXCERPT_MAX_CHARS:
             flat = flat[: EXCERPT_MAX_CHARS - 1] + "…"
         line = f"{'Person' if role == 'user' else 'Assistant'}: {flat}"

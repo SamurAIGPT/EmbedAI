@@ -111,6 +111,14 @@ def test_a_secret_cut_by_the_excerpt_limit_is_still_redacted():
     assert "b3BlbnNzaC1rZXktdjEAAAAABG5vbmU" not in summary
 
 
+def test_a_private_key_longer_than_the_scan_bound_is_still_redacted():
+    body = "private-key-material-" * cc.REDACT_SCAN_CHARS
+    key = f"-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\n-----END OPENSSH PRIVATE KEY-----"
+    summary = cc.excerpt_summary([{"role": "user", "text": key, "turn_id": 1}])
+    assert "BEGIN OPENSSH PRIVATE KEY" not in summary
+    assert "private-key-material" not in summary
+
+
 def test_a_long_message_is_redacted_only_up_to_the_bound(monkeypatch):
     # Redaction is slow on long unbroken text, so only the start of a message
     # is scanned; a key that starts in the excerpt is still caught.

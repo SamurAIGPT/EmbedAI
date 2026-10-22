@@ -48,3 +48,27 @@ def test_cloud_account_and_agent_socket_names_are_opt_in():
     assert engine_environment(env) == {"GOOGLE_API_KEY": "g"}
     env["OPEN_DOTS_ENGINE_ENV"] = "AWS_*,SSH_AUTH_SOCK"
     assert set(engine_environment(env)) == {"AWS_ACCESS_KEY_ID", "SSH_AUTH_SOCK", "GOOGLE_API_KEY"}
+
+
+def test_adapter_names_are_exact_local_and_cannot_override_never_list():
+    source = {"X_KEY": "yes", "X_OTHER": "no", **SECRETS}
+    assert engine_environment(source, extra_names=("X_KEY", *SECRETS)) == {"X_KEY": "yes"}
+    assert engine_environment(source, extra_names=("X_*",)) == {}
+    assert engine_environment(source) == {}
+
+
+async def test_scoped_values_reach_a_real_probe_process_only(monkeypatch):
+    import json
+    import sys
+
+    from app.services.cli_probe import run
+    from app.services.local_claude_runner import child_env
+
+    monkeypatch.setenv("X_KEY", "ambient")
+    env = child_env(extra_names=("X_KEY",), extra_env={"X_KEY": "saved", "SECRET_KEY": "never"})
+    result = await run(
+        [sys.executable, "-c", "import os,json; print(json.dumps({k:os.getenv(k) for k in ['X_KEY','SECRET_KEY']}))"],
+        timeout=5, env=env,
+    )
+    assert result.ok and json.loads(result.stdout) == {"X_KEY": "saved", "SECRET_KEY": None}
+    assert "X_KEY" not in child_env()

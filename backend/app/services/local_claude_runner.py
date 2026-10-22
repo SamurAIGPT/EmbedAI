@@ -252,8 +252,12 @@ def workspace_dir() -> Path:
     return workspace
 
 
-def _child_env() -> dict[str, str]:
-    env = engine_environment()
+def _child_env(*, extra_names=(), extra_env=None) -> dict[str, str]:
+    env = engine_environment(extra_names=extra_names)
+    if extra_env:
+        # Values supplied by an adapter are scoped to this process. The
+        # never-list still wins, including for explicit overrides.
+        env.update(engine_environment(extra_env, extra_names=extra_env))
     # The CLI's own memory feature can save notes under ~/.claude/projects/,
     # outside the workspace and without asking. Not for runs this app starts;
     # the user's own use of the CLI is unaffected (only this process sees it).
@@ -263,11 +267,11 @@ def _child_env() -> dict[str, str]:
     return engine_processes.mark(env)
 
 
-def child_env() -> dict[str, str]:
+def child_env(*, extra_names=(), extra_env=None) -> dict[str, str]:
     """The environment for any engine process this app starts: the names
     an engine needs (app/core/engine_env.py), not this process's whole
     environment."""
-    return _child_env()
+    return _child_env(extra_names=extra_names, extra_env=extra_env)
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:

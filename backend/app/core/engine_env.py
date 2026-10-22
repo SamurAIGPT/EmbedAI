@@ -11,7 +11,7 @@ engine or a normal shell needs are passed. A name the operator needs on top
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 EXTRA_NAMES_VARIABLE = "OPEN_DOTS_ENGINE_ENV"
 
@@ -82,14 +82,17 @@ def allows(name: str, environ: Mapping[str, str] | None = None) -> bool:
     return name in extra_names or name.startswith(extra_prefixes)
 
 
-def engine_environment(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+def engine_environment(
+    environ: Mapping[str, str] | None = None, *, extra_names: Iterable[str] = ()
+) -> dict[str, str]:
     """The allowed names of `environ` (default: this process's), in a fresh dict."""
     source = os.environ if environ is None else environ
-    extra_names, extra_prefixes = _extra(source)
+    operator_names, extra_prefixes = _extra(source)
+    names = operator_names | frozenset(extra_names)
     kept: dict[str, str] = {}
     for name, value in source.items():
         if _never(name):
             continue
-        if name in _NAMES or name.startswith(_PREFIXES) or name in extra_names or name.startswith(extra_prefixes):
+        if name in _NAMES or name.startswith(_PREFIXES) or name in names or name.startswith(extra_prefixes):
             kept[name] = value
     return kept

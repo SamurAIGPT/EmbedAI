@@ -50,7 +50,7 @@ def kill_group(proc: asyncio.subprocess.Process) -> None:
         pass
 
 
-async def run(args: list[str], *, timeout: float, cwd: str | None = None) -> ProbeRun:
+async def run(args: list[str], *, timeout: float, cwd: str | None = None, env: dict | None = None) -> ProbeRun:
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -58,7 +58,7 @@ async def run(args: list[str], *, timeout: float, cwd: str | None = None) -> Pro
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd or os.path.expanduser("~"),
-            env=child_env(),
+            env=env if env is not None else child_env(),
             start_new_session=sys.platform != "win32",
         )
     except (OSError, ValueError) as exc:

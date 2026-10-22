@@ -151,6 +151,7 @@ const TRIGGER_LABEL: Record<RoutineRun["trigger"], string> = {
   schedule: "Scheduled",
   manual: "Run now",
   webhook: "Webhook",
+  retry: "Retry",
 };
 
 export function triggerLabel(trigger: string): string {

@@ -61,11 +61,11 @@ function describeSchedule(schedule: Schedule): string {
 function statusColor(status: Task["status"]) {
   switch (status) {
     case "succeeded":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-success";
     case "failed":
-      return "text-red-600 dark:text-red-400";
+      return "text-danger";
     default:
-      return "text-amber-600 dark:text-amber-400";
+      return "text-warning";
   }
 }
 
@@ -349,7 +349,7 @@ export function SubmitTask({
     <Card step={step} title={canSubmit ? "Submit a task" : "Task history"}>
       <div className="space-y-3">
         {!canSubmit && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             {blockedReason ?? "Connect Claude above to submit new tasks."} Your earlier tasks
             stay readable below.
           </p>
@@ -362,9 +362,9 @@ export function SubmitTask({
           placeholder='e.g. "create a webpage that says hello"'
           rows={3}
           disabled={!canSubmit}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+          className="w-full rounded-md border border-line px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         />
-        <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={scheduleEnabled}
@@ -375,11 +375,11 @@ export function SubmitTask({
         </label>
 
         {scheduleEnabled && (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
             <select
               value={frequency}
               onChange={(e) => setFrequency(e.target.value as Frequency)}
-              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="rounded-md border border-line px-2 py-1.5 text-sm"
             >
               {FREQUENCIES.map((f) => (
                 <option key={f} value={f}>
@@ -392,7 +392,7 @@ export function SubmitTask({
               <select
                 value={scheduleWeekday}
                 onChange={(e) => setScheduleWeekday(Number(e.target.value))}
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="rounded-md border border-line px-2 py-1.5 text-sm"
               >
                 {WEEKDAYS.map((d) => (
                   <option key={d.value} value={d.value}>
@@ -407,11 +407,11 @@ export function SubmitTask({
                 type="time"
                 value={scheduleTime}
                 onChange={(e) => setScheduleTime(e.target.value)}
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="rounded-md border border-line px-2 py-1.5 text-sm"
               />
             )}
 
-            <span className="text-xs text-zinc-500">{timezone}</span>
+            <span className="text-xs text-muted">{timezone}</span>
           </div>
         )}
 
@@ -433,24 +433,24 @@ export function SubmitTask({
             {schedules.map((schedule) => (
               <li
                 key={schedule.id}
-                className="rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800"
+                className="rounded-md border border-line p-3 text-sm"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-zinc-700 dark:text-zinc-300">
+                    <p className="truncate text-ink">
                       {schedule.prompt_text}
                     </p>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-muted">
                       {schedule.cron_expression} ({schedule.timezone}) ·{" "}
                       {describeSchedule(schedule)}
                     </p>
                     {schedule.paused_reason && (
-                      <p className="text-xs text-red-600 dark:text-red-400">
+                      <p className="text-xs text-danger">
                         Paused: {schedule.paused_reason}
                       </p>
                     )}
                     {!schedule.paused_reason && schedule.last_error && (
-                      <p className="text-xs text-red-600 dark:text-red-400">
+                      <p className="text-xs text-danger">
                         {schedule.last_error}
                       </p>
                     )}
@@ -459,14 +459,14 @@ export function SubmitTask({
                     <button
                       onClick={() => toggleSchedule(schedule)}
                       disabled={scheduleBusy[schedule.id]}
-                      className="text-xs text-zinc-500 underline disabled:opacity-50"
+                      className="text-xs text-muted underline disabled:opacity-50"
                     >
                       {schedule.is_active ? "Pause" : "Resume"}
                     </button>
                     <button
                       onClick={() => removeSchedule(schedule)}
                       disabled={scheduleBusy[schedule.id]}
-                      className="text-xs text-red-600 underline disabled:opacity-50 dark:text-red-400"
+                      className="text-xs text-danger underline disabled:opacity-50"
                     >
                       Delete
                     </button>
@@ -487,13 +487,13 @@ export function SubmitTask({
               return (
                 <li
                   key={task.id}
-                  className="rounded-md border border-zinc-200 dark:border-zinc-800"
+                  className="rounded-md border border-line"
                 >
                   <button
                     onClick={() => setExpandedId(expanded ? null : task.id)}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm"
                   >
-                    <span className="truncate text-zinc-700 dark:text-zinc-300">
+                    <span className="truncate text-ink">
                       #{task.id} {task.prompt_text}
                     </span>
                     <span className={`shrink-0 text-xs ${statusColor(task.status)}`}>
@@ -502,20 +502,20 @@ export function SubmitTask({
                   </button>
 
                   {expanded && (
-                    <div className="border-t border-zinc-200 p-3 text-sm dark:border-zinc-800">
+                    <div className="border-t border-line p-3 text-sm">
                       {task.result && (
-                        <pre className="whitespace-pre-wrap break-words text-xs text-zinc-700 dark:text-zinc-300">
+                        <pre className="whitespace-pre-wrap break-words text-xs text-ink">
                           {task.result}
                         </pre>
                       )}
                       {task.error && (
-                        <pre className="whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-400">
+                        <pre className="whitespace-pre-wrap break-words text-xs text-danger">
                           {task.error}
                         </pre>
                       )}
                       {task.status === "waiting_approval" && (
-                        <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
-                          <p className="text-xs text-amber-800 dark:text-amber-300">
+                        <div className="space-y-2 rounded-md border border-warning/50 bg-warning/10 p-3">
+                          <p className="text-xs text-ink">
                             {ask
                               ? `Wants to use: ${ask.tool ?? ask.connector ?? ask.bucket} (bucket: ${ask.bucket}). Allow it?`
                               : "Waiting on a permission decision…"}
@@ -537,7 +537,7 @@ export function SubmitTask({
                               <button
                                 onClick={() => answerAsk(task, "deny", false)}
                                 disabled={askBusy[ask.id]}
-                                className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                                className="rounded-md border border-danger/50 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 Deny
                               </button>
@@ -547,7 +547,7 @@ export function SubmitTask({
                       )}
 
                       {active && task.status !== "waiting_approval" && (
-                        <p className="text-xs text-zinc-500">Working…</p>
+                        <p className="text-xs text-muted">Working…</p>
                       )}
 
                       {!active && showComposer && (
@@ -560,7 +560,7 @@ export function SubmitTask({
                             placeholder="Reply in this conversation…"
                             rows={2}
                             disabled={!canSubmit}
-                            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                            className="w-full rounded-md border border-line px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                           />
                           <Button
                             onClick={() => submitReply(task)}

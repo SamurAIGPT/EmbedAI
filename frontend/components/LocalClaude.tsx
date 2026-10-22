@@ -13,11 +13,11 @@ const ACTIVE_STATUSES: Task["status"][] = ["queued", "starting", "pending", "run
 function statusColor(status: Task["status"]) {
   switch (status) {
     case "succeeded":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-success";
     case "failed":
-      return "text-red-600 dark:text-red-400";
+      return "text-danger";
     default:
-      return "text-amber-600 dark:text-amber-400";
+      return "text-warning";
   }
 }
 
@@ -50,17 +50,17 @@ function ApprovalCard({
   onAnswer: (decision: "allow" | "deny") => void;
 }) {
   return (
-    <div className="space-y-2 rounded-md border border-amber-400 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950/30">
-      <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+    <div className="space-y-2 rounded-md border border-warning/60 bg-warning/10 p-3">
+      <p className="text-xs font-medium text-ink">
         Claude wants to use <span className="font-mono">{approval.tool}</span>. It will not run
         until you allow it.
       </p>
       <dl className="space-y-1">
         {Object.entries(approval.input).map(([key, value]) => (
           <div key={key}>
-            <dt className="text-xs text-zinc-500">{key}</dt>
+            <dt className="text-xs text-muted">{key}</dt>
             <dd>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-code p-2 font-mono text-xs text-ink">
                 {formatInput(value)}
               </pre>
             </dd>
@@ -313,16 +313,16 @@ export function LocalClaude() {
             <span
               className={
                 step.state === "error"
-                  ? "text-red-600 dark:text-red-400"
+                  ? "text-danger"
                   : step.state === "done"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-amber-600 dark:text-amber-400"
+                    ? "text-success"
+                    : "text-warning"
               }
             >
               {step.state === "running" ? "…" : step.state === "done" ? "✓" : "✗"}
             </span>{" "}
-            <span className="font-mono text-zinc-700 dark:text-zinc-300">{step.tool}</span>{" "}
-            <span className="break-all text-zinc-500">{step.summary}</span>
+            <span className="font-mono text-ink">{step.tool}</span>{" "}
+            <span className="break-all text-muted">{step.summary}</span>
           </li>
         ))}
       </ul>
@@ -347,7 +347,7 @@ export function LocalClaude() {
         <>
           {timeline}
           {questions}
-          {pending.length === 0 && <p className="text-xs text-zinc-500">Waiting for Claude…</p>}
+          {pending.length === 0 && <p className="text-xs text-muted">Waiting for Claude…</p>}
         </>
       );
     }
@@ -355,7 +355,7 @@ export function LocalClaude() {
       return (
         <>
           {timeline}
-          <p className="text-xs text-zinc-500">Claude returned an empty response.</p>
+          <p className="text-xs text-muted">Claude returned an empty response.</p>
         </>
       );
     }
@@ -364,42 +364,42 @@ export function LocalClaude() {
         {timeline}
         {questions}
         {answer && (
-          <pre className="whitespace-pre-wrap break-words text-xs text-zinc-700 dark:text-zinc-300">
+          <pre className="whitespace-pre-wrap break-words text-xs text-ink">
             {answer}
             {active && <span className="animate-pulse">▍</span>}
           </pre>
         )}
         {task.status === "failed" && answer && (
-          <p className="mt-2 text-xs text-zinc-500">The run stopped before finishing. This is the partial answer.</p>
+          <p className="mt-2 text-xs text-muted">The run stopped before finishing. This is the partial answer.</p>
         )}
         {task.error && (
-          <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-red-600 dark:text-red-400">
+          <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-danger">
             {task.error}
           </pre>
         )}
         {task.status === "failed" && !task.error && !answer && (
-          <p className="text-xs text-red-600 dark:text-red-400">The run failed.</p>
+          <p className="text-xs text-danger">The run failed.</p>
         )}
       </>
     );
   };
 
   return (
-    <section className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+    <section className="rounded-lg border border-line p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Local Claude</h2>
         {status.cli_version && (
-          <span className="text-xs text-zinc-500">Claude Code {status.cli_version}</span>
+          <span className="text-xs text-muted">Claude Code {status.cli_version}</span>
         )}
       </div>
 
       {!status.available ? (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-muted">
           Local Claude is not available: {status.reason ?? "unknown reason"}
         </p>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted">
             {status.tools_enabled
               ? "Runs on this computer with your own signed-in Claude CLI. Claude can read and write files in its workspace folder and run commands, but it asks first: nothing it is unsure about runs until you press Allow."
               : "Runs on this computer with your own signed-in Claude CLI. Chat only: Claude cannot use tools, read files or run commands here. Set LOCAL_TOOLS_ENABLED=true in backend/.env to let it ask to."}
@@ -409,7 +409,7 @@ export function LocalClaude() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Ask Claude something"
             rows={3}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full rounded-md border border-line px-3 py-2 text-sm"
           />
           <Button onClick={submit} disabled={busy || !prompt.trim()}>
             {busy ? "Starting…" : "Ask Claude"}
@@ -423,13 +423,13 @@ export function LocalClaude() {
                 return (
                   <li
                     key={task.id}
-                    className="rounded-md border border-zinc-200 dark:border-zinc-800"
+                    className="rounded-md border border-line"
                   >
                     <button
                       onClick={() => setExpandedId(expanded ? null : task.id)}
                       className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left text-sm"
                     >
-                      <span className="truncate text-zinc-700 dark:text-zinc-300">
+                      <span className="truncate text-ink">
                         #{task.id} {task.prompt_text}
                       </span>
                       <span className={`shrink-0 text-xs ${statusColor(task.status)}`}>
@@ -438,7 +438,7 @@ export function LocalClaude() {
                     </button>
 
                     {expanded && (
-                      <div className="border-t border-zinc-200 p-3 text-sm dark:border-zinc-800">
+                      <div className="border-t border-line p-3 text-sm">
                         {renderBody(task)}
                       </div>
                     )}

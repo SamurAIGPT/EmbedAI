@@ -102,22 +102,22 @@ export function DecisionLog({ threadId = null }: { threadId?: number | null }) {
           Export CSV
         </button>
       </div>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Summaries are one line with anything that looks like a secret removed; a call&apos;s full input is never
         logged. The export is redacted again and safe to open in a spreadsheet.
       </p>
-      {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {items === null && !error && <p className="text-xs text-zinc-500">Loading…</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      {items === null && !error && <p className="text-xs text-muted">Loading…</p>}
       {items !== null && items.length === 0 && (
-        <p className="rounded-md bg-zinc-100 px-3 py-3 text-xs text-zinc-500 dark:bg-zinc-900">Nothing logged yet.</p>
+        <p className="rounded-md bg-inset px-3 py-3 text-xs text-muted">Nothing logged yet.</p>
       )}
       {items !== null && items.length > 0 && (
-        <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="divide-y divide-line rounded-md border border-line">
           {items.map((entry) => (
             <li key={entry.id} className="px-3 py-2">
               <p className="break-words text-xs">{decisionText(entry)}</p>
-              <p className="mt-0.5 text-xs text-zinc-500">
-                <span className="rounded bg-zinc-100 px-1.5 py-0.5 dark:bg-zinc-900">{decisionEventLabel(entry.event)}</span>{" "}
+              <p className="mt-0.5 text-xs text-muted">
+                <span className="rounded bg-inset px-1.5 py-0.5">{decisionEventLabel(entry.event)}</span>{" "}
                 {new Date(entry.at).toLocaleString()}
                 {entry.thread_id != null && <> · conversation {entry.thread_id}</>}
                 {entry.mode && <> · {entry.mode.replace("_", " ")}</>}

@@ -11,7 +11,7 @@ export const metadata = {
 // the Suspense boundary for that.
 export default function ChatPage() {
   return (
-    <Suspense fallback={<p className="p-6 text-center text-sm text-zinc-500">Loading…</p>}>
+    <Suspense fallback={<p className="p-6 text-center text-sm text-muted">Loading…</p>}>
       <AuthGate>
         <ChatApp />
       </AuthGate>

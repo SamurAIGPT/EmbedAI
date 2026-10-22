@@ -54,6 +54,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setSession((previous) => (previous ? { ...previous, user_id: userId } : previous));
   }, []);
 
-  if (!ready) return <p className="p-6 text-center text-sm text-zinc-500">Loading…</p>;
+  if (!ready) return <p className="p-6 text-center text-sm text-muted">Loading…</p>;
   return <SessionContext.Provider value={{ session, setUserId }}>{children}</SessionContext.Provider>;
 }

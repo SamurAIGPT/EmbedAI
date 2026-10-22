@@ -7,7 +7,7 @@ import { currentMonth, formatCost, formatTokens, shiftMonth } from "@/lib/everyd
 
 function Row({ group, link }: { group: UsageTotals; link?: string }) {
   return (
-    <tr className="border-t border-zinc-100 dark:border-zinc-900">
+    <tr className="border-t border-line">
       <td className="max-w-56 truncate py-1.5 pr-3">
         {link ? <Link href={link} className="hover:underline">{group.label}</Link> : group.label}
       </td>
@@ -26,9 +26,9 @@ function Table({ title, groups, linkFor }: { title: string; groups: UsageTotals[
   if (groups.length === 0) return null;
   return (
     <section>
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</h3>
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h3>
       <table className="w-full text-xs">
-        <thead className="text-zinc-500">
+        <thead className="text-muted">
           <tr>
             <th className="py-1 text-left font-normal">Name</th>
             <th className="py-1 text-right font-normal">Turns</th>
@@ -95,26 +95,26 @@ export function UsageView() {
         <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= currentMonth()} aria-label="Next month" className="cursor-pointer rounded px-3 py-1 text-sm hover:bg-hover disabled:opacity-40">›</button>
       </div>
       <div className="space-y-5">
-          {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          {!error && !shown && <p className="text-sm text-zinc-500">Loading…</p>}
-          {total && total.turns === 0 && <p className="text-sm text-zinc-500">No finished turns in {month}.</p>}
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          {!error && !shown && <p className="text-sm text-muted">Loading…</p>}
+          {total && total.turns === 0 && <p className="text-sm text-muted">No finished turns in {month}.</p>}
           {total && total.turns > 0 && (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div><p className="text-xs text-zinc-500">Turns</p><p className="text-lg tabular-nums">{total.turns}</p></div>
+                <div><p className="text-xs text-muted">Turns</p><p className="text-lg tabular-nums">{total.turns}</p></div>
                 <div>
-                  <p className="text-xs text-zinc-500">Input tokens</p>
+                  <p className="text-xs text-muted">Input tokens</p>
                   <p className="text-lg tabular-nums">{formatTokens(total.input_tokens)}</p>
                   {total.cache_read_input_tokens + total.cache_creation_input_tokens > 0 && (
-                    <p className="text-[11px] text-zinc-500">
+                    <p className="text-[11px] text-muted">
                       + {formatTokens(total.cache_read_input_tokens + total.cache_creation_input_tokens)} cached
                     </p>
                   )}
                 </div>
-                <div><p className="text-xs text-zinc-500">Output tokens</p><p className="text-lg tabular-nums">{formatTokens(total.output_tokens)}</p></div>
-                <div><p className="text-xs text-zinc-500">Cost</p><p className="text-lg tabular-nums">{formatCost(total.cost_usd)}</p></div>
+                <div><p className="text-xs text-muted">Output tokens</p><p className="text-lg tabular-nums">{formatTokens(total.output_tokens)}</p></div>
+                <div><p className="text-xs text-muted">Cost</p><p className="text-lg tabular-nums">{formatCost(total.cost_usd)}</p></div>
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted">
                 Numbers are what each engine reported; nothing is estimated. Days and months are in UTC.
                 {total.unreported_turns > 0 &&
                   ` ${total.unreported_turns} of ${total.turns} turns reported no usage, so they are not in these totals (marked * where a cost is shown).`}
@@ -125,10 +125,10 @@ export function UsageView() {
             </>
           )}
           <div className="flex items-center gap-3">
-            <button onClick={() => void exportCsv()} className="cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-xs dark:border-zinc-700">
+            <button onClick={() => void exportCsv()} className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-xs">
               Export {month} as CSV
             </button>
-            {csvError && <span className="text-xs text-red-600 dark:text-red-400">{csvError}</span>}
+            {csvError && <span className="text-xs text-danger">{csvError}</span>}
           </div>
       </div>
     </div>

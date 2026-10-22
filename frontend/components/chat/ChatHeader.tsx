@@ -90,15 +90,15 @@ export function ChatHeader({
         )}
       </div>
 
-      {status ? <span className={cn("hidden shrink-0 text-xs md:inline", status.warn ? "text-warning" : "text-muted")}>{status.text}</span> : null}
+      {status ? <span className={cn("shrink-0 text-xs", status.warn ? "text-warning" : "hidden text-muted xl:inline")}>{status.text}</span> : null}
 
       {computer && (
-        <button type="button" onClick={computer.onClick} title={computer.hint} className={cn(CHIP, "hidden border-accent/40 text-accent sm:inline-flex")}>
+        <button type="button" onClick={computer.onClick} title={computer.hint} className={cn(CHIP, "hidden border-accent/40 text-accent lg:inline-flex")}>
           {computer.text}
         </button>
       )}
       {approvalMode && (
-        <span title={approvalMode.hint} className="hidden h-8 shrink-0 items-center rounded-full bg-inset px-3 text-[13px] text-muted lg:inline-flex">
+        <span title={approvalMode.hint} className="hidden h-8 shrink-0 items-center rounded-full bg-inset px-3 text-[13px] text-muted xl:inline-flex">
           {approvalMode.label}
         </span>
       )}
@@ -108,7 +108,7 @@ export function ChatHeader({
         </button>
       )}
 
-      <div className="hidden items-center sm:flex">
+      <div className="hidden items-center lg:flex">
         {secondary.map((item) => (
           <IconButton key={item.key} label={item.label} title={item.hint} onClick={item.run}>
             {item.icon}
@@ -116,7 +116,7 @@ export function ChatHeader({
         ))}
       </div>
       {secondary.length > 0 || computer ? (
-        <div className="sm:hidden">
+        <div className="lg:hidden">
           <Menu
             trigger={
               <IconButton label={t("header.more")}>

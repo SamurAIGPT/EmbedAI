@@ -7,9 +7,9 @@ import { issueKindLabel } from "@/lib/approvals";
 import { BUTTON, FIELD_BOX } from "./styles";
 
 const SEVERITY = {
-  high: "text-red-700 dark:text-red-400",
-  medium: "text-amber-700 dark:text-amber-400",
-  low: "text-zinc-500",
+  high: "text-danger",
+  medium: "text-warning",
+  low: "text-muted",
 };
 
 // A read-only scan of recent conversations: retry loops, requests asked again
@@ -49,25 +49,25 @@ export function HealthScan() {
           {busy ? "Scanning…" : "Scan"}
         </button>
       </div>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Issues show the error with paths, numbers and quoted text taken out, never the tool&apos;s output.
       </p>
-      {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       {report && report.issues.length === 0 && (
-        <p className="rounded-md bg-zinc-100 px-3 py-3 text-xs text-zinc-500 dark:bg-zinc-900">
+        <p className="rounded-md bg-inset px-3 py-3 text-xs text-muted">
           No issues. Read {report.scanned_events} events and {report.scanned_decisions} denials.
         </p>
       )}
       {report && report.issues.length > 0 && (
-        <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+        <ul className="divide-y divide-line rounded-md border border-line">
           {report.issues.map((issue) => (
             <li key={`${issue.sig}-${issue.thread_id}-${issue.turn_id}`} className="px-3 py-2">
               <p className="text-xs">
                 <span className={`font-medium ${SEVERITY[issue.severity]}`}>{issueKindLabel(issue.kind)}</span>
                 {issue.tool && <span className="font-mono"> · {issue.tool}</span>} · {issue.count}×
               </p>
-              <p className="mt-0.5 break-words font-mono text-xs text-zinc-600 dark:text-zinc-400">{issue.title}</p>
-              <p className="mt-0.5 text-xs text-zinc-500">
+              <p className="mt-0.5 break-words font-mono text-xs text-muted">{issue.title}</p>
+              <p className="mt-0.5 text-xs text-muted">
                 Last {new Date(issue.last_at).toLocaleString()}
                 {issue.thread_id != null && (
                   <>

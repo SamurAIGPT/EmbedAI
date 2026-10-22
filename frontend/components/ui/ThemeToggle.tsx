@@ -56,7 +56,7 @@ export function ThemeToggle({ className, iconOnly = false }: { className?: strin
             onClick={() => pick(value)}
             className={cn(
               "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg text-[13px] transition-colors duration-(--dur-fast) touch:h-11",
-              iconOnly ? "px-2.5" : "px-3",
+              iconOnly ? "px-2.5 touch:min-w-11" : "px-3",
               selected ? "bg-raised text-ink shadow-sm" : "text-muted hover:text-ink",
             )}
           >

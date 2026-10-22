@@ -608,6 +608,12 @@ export function ChatApp() {
 
   return (
     <div className="relative flex h-dvh">
+      <a
+        href="#conversation"
+        className="sr-only z-50 rounded-field bg-raised px-3 py-2 text-sm font-medium text-ink shadow-lg focus:not-sr-only focus:absolute focus:left-3 focus:top-3"
+      >
+        {t("shell.skip")}
+      </a>
       {sidebarInline ? (
         <aside className="w-72 shrink-0 border-r border-line">{sidebar}</aside>
       ) : (
@@ -650,7 +656,7 @@ export function ChatApp() {
           onChanged={() => setAgentTick((n) => n + 1)}
         />
       )}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main id="conversation" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
           {stream.connection === "failed" ? (
             <Notice title="Cannot open this conversation">{stream.error}</Notice>
           ) : (

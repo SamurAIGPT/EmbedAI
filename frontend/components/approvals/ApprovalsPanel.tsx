@@ -24,7 +24,7 @@ export function ApprovalsTabs({
   const [tab, setTab] = useState<Tab>("rules");
   return (
     <div>
-      <div role="tablist" className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+      <div role="tablist" className="mb-4 flex gap-1 border-b border-line">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -33,8 +33,8 @@ export function ApprovalsTabs({
             onClick={() => setTab(t.id)}
             className={`-mb-px cursor-pointer border-b-2 px-3 py-1.5 text-xs font-medium ${
               tab === t.id
-                ? "border-zinc-900 dark:border-zinc-100"
-                : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                ? "border-accent"
+                : "border-transparent text-muted hover:text-ink"
             }`}
           >
             {t.label}

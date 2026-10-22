@@ -11,6 +11,7 @@ export const en = {
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "shell.newChat": "New chat",
+  "shell.skip": "Skip to the conversation",
   "shell.openSidebar": "Open conversations",
   "shell.conversations": "Conversations",
   "sidebar.agents": "Agents",

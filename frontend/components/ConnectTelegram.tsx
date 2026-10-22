@@ -66,17 +66,17 @@ export function ConnectTelegram({
     return (
       <Card step={1} title="Get started" done>
         {isGuestId(userId) ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             Continuing without Telegram.
           </p>
         ) : (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             Linked as Telegram user <code className="font-mono">{userId}</code>.
           </p>
         )}
         <button
           onClick={onReset}
-          className="mt-2 text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200"
+          className="mt-2 text-sm text-muted underline hover:text-ink"
         >
           Start over
         </button>
@@ -91,7 +91,7 @@ export function ConnectTelegram({
   if (mode === "choice") {
     return (
       <Card step={1} title="Get started">
-        <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mb-3 text-sm text-muted">
           You don&apos;t need Telegram to use this — continue as a guest, or
           link Telegram if you want the same account/history there too.
         </p>
@@ -101,7 +101,7 @@ export function ConnectTelegram({
           </Button>
           <button
             onClick={() => setMode("telegram")}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            className="rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-hover"
           >
             Link Telegram instead
           </button>
@@ -112,7 +112,7 @@ export function ConnectTelegram({
 
   return (
     <Card step={1} title="Get started">
-      <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mb-3 text-sm text-muted">
         Generates a one-time code. Send it to the bot in Telegram to link your
         account — no token or password needed here.
       </p>
@@ -124,7 +124,7 @@ export function ConnectTelegram({
           </Button>
           <button
             onClick={() => setMode("choice")}
-            className="text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200"
+            className="text-sm text-muted underline hover:text-ink"
           >
             Back
           </button>
@@ -135,7 +135,7 @@ export function ConnectTelegram({
         <div className="space-y-2">
           <p className="text-sm">
             Send this to the bot:{" "}
-            <code className="rounded bg-zinc-100 px-2 py-1 font-mono text-base font-semibold dark:bg-zinc-800">
+            <code className="rounded bg-inset px-2 py-1 font-mono text-base font-semibold">
               /link {linkCode.code}
             </code>
           </p>
@@ -144,12 +144,12 @@ export function ConnectTelegram({
               href={botLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block text-sm font-medium text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+              className="inline-block text-sm font-medium text-accent underline hover:opacity-80"
             >
               Open Telegram →
             </a>
           )}
-          <p className="text-xs text-zinc-500">Waiting for you to send it…</p>
+          <p className="text-xs text-muted">Waiting for you to send it…</p>
         </div>
       )}
 

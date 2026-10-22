@@ -6,8 +6,8 @@ import { ApiError } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { safeNextPath, type AuthStatus } from "@/lib/session";
 
-const inputClass = "block w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700";
-const buttonClass = "w-full cursor-pointer rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300";
+const inputClass = "block w-full rounded-md border border-line bg-transparent px-3 py-2 text-sm";
+const buttonClass = "w-full cursor-pointer rounded-md px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 bg-accent text-accent-fg hover:opacity-90";
 
 function nextPath(): string {
   return safeNextPath(new URLSearchParams(window.location.search).get("next"));
@@ -60,21 +60,21 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-zinc-50 px-4 dark:bg-black">
-      <main className="w-full max-w-sm space-y-5 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex min-h-dvh items-center justify-center bg-inset px-4">
+      <main className="w-full max-w-sm space-y-5 rounded-lg border border-line bg-raised p-6">
         <h1 className="text-lg font-semibold">{settingUp ? "Set the owner passphrase" : "Sign in to Open Duet"}</h1>
-        {problem && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{problem}</p>}
-        {!status && !problem && <p className="text-sm text-zinc-500">Loading…</p>}
+        {problem && <p role="alert" className="text-sm text-danger">{problem}</p>}
+        {!status && !problem && <p className="text-sm text-muted">Loading…</p>}
         {settingUp && !status.setup_allowed && (
-          <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <div className="space-y-2 text-sm text-muted">
             <p>No owner passphrase is set yet, and it can only be set from the server itself. On the server, run:</p>
-            <pre className="overflow-x-auto rounded bg-zinc-100 p-3 text-xs dark:bg-zinc-900">cd backend{"\n"}uv run python -m app.auth.cli set-passphrase</pre>
+            <pre className="overflow-x-auto rounded bg-inset p-3 text-xs">cd backend{"\n"}uv run python -m app.auth.cli set-passphrase</pre>
             <p>Then reload this page and sign in.</p>
           </div>
         )}
         {status && (!settingUp || status.setup_allowed) && (
           <form onSubmit={submit} className="space-y-4">
-            {settingUp && <p className="text-sm text-zinc-600 dark:text-zinc-400">This passphrase protects this server. Use at least 10 characters; you will sign in with it on every new browser.</p>}
+            {settingUp && <p className="text-sm text-muted">This passphrase protects this server. Use at least 10 characters; you will sign in with it on every new browser.</p>}
             <div className="space-y-1">
               <label htmlFor="passphrase" className="block text-sm font-medium">Passphrase</label>
               <input id="passphrase" type="password" className={inputClass} value={passphrase} onChange={(e) => setPassphrase(e.target.value)}
@@ -86,12 +86,12 @@ export function LoginScreen() {
                 <input id="repeat" type="password" className={inputClass} value={repeat} onChange={(e) => setRepeat(e.target.value)} autoComplete="new-password" required />
               </div>
             )}
-            {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+            {error && <p role="alert" className="text-sm text-danger">{error}</p>}
             <button type="submit" className={buttonClass} disabled={busy}>{busy ? "Working…" : settingUp ? "Set passphrase and sign in" : "Sign in"}</button>
           </form>
         )}
         {status && !settingUp && (
-          <p className="text-xs text-zinc-500">Have a pairing code from Settings → Devices? <Link href="/pair/" className="underline">Pair this browser</Link>.</p>
+          <p className="text-xs text-muted">Have a pairing code from Settings → Devices? <Link href="/pair/" className="underline">Pair this browser</Link>.</p>
         )}
       </main>
     </div>

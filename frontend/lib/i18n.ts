@@ -15,6 +15,8 @@ export const en = {
   "shell.conversations": "Conversations",
   "sidebar.agents": "Agents",
   "sidebar.manageAgents": "Manage agents",
+  "sidebar.newAgent": "New agent",
+  "sidebar.noAgents": "No agents yet. An agent has its own instructions, notes and computer.",
   "sidebar.recent": "Recent",
   "sidebar.search": "Search conversations",
   "sidebar.loading": "Loading…",

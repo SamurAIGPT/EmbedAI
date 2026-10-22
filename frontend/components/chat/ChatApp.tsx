@@ -122,6 +122,8 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  // The Agents panel opened from New agent starts on the form.
+  const [agentsCreate, setAgentsCreate] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
   const [computerOpen, setComputerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
@@ -540,7 +542,8 @@ export function ChatApp() {
         setModelDraft(null);
         router.push("/chat");
       }}
-      onManageAgents={agents !== null ? () => setAgentsOpen(true) : undefined}
+      onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
+      onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
       onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
       onNavigate={() => { setDrawerOpen(false); setModelDraft(null); }}
     />
@@ -662,6 +665,7 @@ export function ChatApp() {
       {agentsOpen && agents !== null && (
         <AgentsPanel
           agents={agents}
+          startCreating={agentsCreate}
           onClose={() => setAgentsOpen(false)}
           onChanged={() => setAgentTick((n) => n + 1)}
         />

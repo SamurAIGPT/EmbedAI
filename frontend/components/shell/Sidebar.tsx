@@ -49,6 +49,7 @@ export function Sidebar({
   error,
   onNewChat,
   onManageAgents,
+  onNewAgent,
   onOpenRoutines,
   onNavigate,
 }: {
@@ -68,6 +69,8 @@ export function Sidebar({
   // Start a conversation: with the given agent, or (no argument) with whatever is chosen now.
   onNewChat: (agentId?: number) => void;
   onManageAgents?: () => void;
+  // Open the new-agent form. Offered even when there are no agents yet.
+  onNewAgent?: () => void;
   onOpenRoutines?: () => void;
   // Lets a drawer close itself after a choice.
   onNavigate?: () => void;
@@ -91,15 +94,30 @@ export function Sidebar({
       <ConversationSearch agentNames={names} onActive={setSearching} onNavigate={onNavigate} />
 
       <div className={cn("min-h-0 flex-1 overflow-y-auto px-2 pb-2", searching && "hidden")}>
-        {listed.length > 0 && (
+        {agents !== null && (
           <section aria-label={t("sidebar.agents")}>
             <SectionHeader title={t("sidebar.agents")}>
-              {onManageAgents && (
-                <IconButton label={t("sidebar.manageAgents")} onClick={onManageAgents} className="size-7 touch:size-10">
+              {onNewAgent && (
+                <IconButton label={t("sidebar.newAgent")} onClick={() => { onNewAgent(); onNavigate?.(); }} className="size-7 touch:size-10">
+                  <Plus size={14} />
+                </IconButton>
+              )}
+              {onManageAgents && listed.length > 0 && (
+                <IconButton label={t("sidebar.manageAgents")} onClick={() => { onManageAgents(); onNavigate?.(); }} className="size-7 touch:size-10">
                   <SlidersHorizontal size={14} />
                 </IconButton>
               )}
             </SectionHeader>
+            {listed.length === 0 && (
+              <div className="px-3 pb-2 pt-1">
+                <p className="text-xs text-muted">{t("sidebar.noAgents")}</p>
+                {onNewAgent && (
+                  <Button size="sm" className="mt-2" icon={<Plus size={14} aria-hidden="true" />} onClick={() => { onNewAgent(); onNavigate?.(); }}>
+                    {t("sidebar.newAgent")}
+                  </Button>
+                )}
+              </div>
+            )}
             <ul className="space-y-0.5">
               {listed.map((agent) => {
                 const target = agentTarget(threads, agent.id);

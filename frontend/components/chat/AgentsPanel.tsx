@@ -126,13 +126,16 @@ export function AgentsPanel({
   agents,
   onClose,
   onChanged,
+  startCreating = false,
 }: {
   agents: Agent[];
   onClose: () => void;
+  // Open straight on the new-agent form (the sidebar's New agent button).
+  startCreating?: boolean;
   // Called after any change, so the page reads the agent list again.
   onChanged: () => void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(startCreating ? EMPTY : null);
   const [notes, setNotes] = useState<NotesState | null>(null);
   const [exporting, setExporting] = useState<ExportState | null>(null);
   const [importing, setImporting] = useState<ImportState | null>(null);

@@ -73,6 +73,7 @@ test("an unexpected exit says what happened to a running answer", () => {
   const message = describeUnexpectedExit({ code: 1, logFile, reason: "boom" });
   assert.match(message.body, /interrupted and will not be repeated/);
   assert.ok(message.body.includes(logFile) && message.body.includes("boom") && message.body.includes("exit 1"));
+  assert.equal(message.title, "Open Duet's backend stopped");
 });
 
 test("the exit codes are the ones the backend uses", () => {

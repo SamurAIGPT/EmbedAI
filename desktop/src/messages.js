@@ -71,7 +71,7 @@ function describeFailure({ code, logFile, reason, kind }) {
 
 function describeUnexpectedExit({ code, logFile, reason }) {
   return {
-    title: "Open Duet' backend stopped",
+    title: "Open Duet's backend stopped",
     body:
       `The backend stopped unexpectedly${code === null || code === undefined ? "" : ` (exit ${code})`}. ` +
       `Anything Claude was answering was interrupted and will not be repeated.` +

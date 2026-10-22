@@ -438,3 +438,21 @@ async def test_an_imported_routine_is_paused_and_has_no_webhook(sessions, owner,
         imported = await service.import_document(db, owner, agent.id, document, now=clock())
     assert imported.paused and imported.next_run_at is None and imported.webhook_secret_hash is None
     assert imported.schedule_spec == {"expression": "* * * * *"}
+
+
+@pytest.mark.parametrize("after, expected", [
+    ("2026-03-29T00:55:00+00:00", "2026-03-29T01:30:00+00:00"),
+    ("2026-03-29T01:00:00+00:00", "2026-03-29T01:30:00+00:00"),
+    ("2026-03-29T01:29:00+00:00", "2026-03-29T01:30:00+00:00"),
+    ("2026-03-29T01:30:00+00:00", "2026-03-30T00:30:00+00:00"),
+    ("2026-03-30T01:00:00+00:00", "2026-03-31T00:30:00+00:00"),
+], ids=["before-transition", "transition-complete", "before-carried-time", "strict-after-carried-time", "ordinary-day"])
+async def test_review_gap_creation_keeps_documented_shifted_occurrence(sessions, owner, agent, clock, after, expected):
+    from zoneinfo import ZoneInfo
+    clock.now = datetime.fromisoformat(after)
+    routine = await make_routine(sessions, owner, agent, clock, schedule_kind="weekdays", schedule_spec={"days": list(range(7)), "time": "02:30"}, timezone="Europe/Berlin")
+    refreshed = await reload(sessions, Routine, routine.id)
+    expected_at = datetime.fromisoformat(expected)
+    if expected_at.date().isoformat() == "2026-03-29":
+        assert expected_at.astimezone(ZoneInfo("Europe/Berlin")).strftime("%H:%M") == "03:30"
+    assert refreshed.next_run_at == expected_at

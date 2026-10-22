@@ -40,6 +40,19 @@ test('bad, overlapping and out-of-range highlights are clipped, never thrown', (
   assert.deepEqual(snippetSegments('<b>hi</b>', []), [{ text: '<b>hi</b>', mark: false }]);
 });
 
+test('highlights count characters, so an emoji before a match does not shift the mark', () => {
+  // The server's offsets are Python string indexes: one per character, not per UTF-16 unit.
+  assert.deepEqual(snippetSegments('Done 🎉 the report is ready', [[11, 6]]), [
+    { text: 'Done 🎉 the ', mark: false },
+    { text: 'report', mark: true },
+    { text: ' is ready', mark: false },
+  ]);
+  assert.deepEqual(snippetSegments('🎉🎉', [[1, 5]]), [
+    { text: '🎉', mark: false },
+    { text: '🎉', mark: true },
+  ]);
+});
+
 test('usage text says "not reported" instead of inventing numbers', () => {
   assert.equal(turnUsageText(null), 'Usage not reported');
   assert.equal(turnUsageText({}), 'Usage not reported');

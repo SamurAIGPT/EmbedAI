@@ -1,7 +1,9 @@
 """Workspace file browser (F08, docs/EVERYDAY.md): listing, previews and
 downloads strictly inside the conversation's workspace."""
 
+import io
 import os
+import zipfile
 
 import httpx
 import pytest
@@ -170,3 +172,122 @@ async def test_a_missing_workspace_says_so(api, layout):
 def test_download_names_are_safe():
     value = workspace_files.download_name('rep"ort\u202e.txt')
     assert value.startswith('attachment; filename="rep_ort_.txt"') and "filename*=UTF-8''" in value
+
+
+def zip_names(response) -> set[str]:
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        return set(archive.namelist())
+
+
+async def test_a_folder_downloads_as_a_zip_without_secrets_or_escapes(api, layout):
+    (layout / "src" / "deep").mkdir()
+    (layout / "src" / "deep" / "notes.txt").write_text("deep")
+    (layout / "src" / ".env").write_text("API_KEY=sk-live")
+    (layout / "src" / "id_rsa").write_text("PRIVATE")
+    os.symlink(layout / "src", layout / "src-link")  # a folder link is not followed
+    os.symlink(layout / "chart.png", layout / "src" / "chart-link.png")  # a file link inside is fine
+
+    response = await api.get(f"{api.base}/zip")
+    root = layout.name
+    assert zip_names(response) == {
+        f"{root}/README.md",
+        f"{root}/chart.png",
+        f"{root}/blob.bin",
+        f"{root}/readme-link.md",
+        f"{root}/src/main.py",
+        f"{root}/src/chart-link.png",
+        f"{root}/src/deep/notes.txt",
+    }
+    assert b"sk-live" not in response.content and b"outside the workspace" not in response.content
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"].startswith(f'attachment; filename="{root}.zip"')
+    assert response.headers["x-content-type-options"] == "nosniff"
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read(f"{root}/src/deep/notes.txt") == b"deep"
+        assert archive.read(f"{root}/src/chart-link.png") == PNG
+
+    sub = await api.get(f"{api.base}/zip", params={"path": "src"})
+    assert zip_names(sub) == {"src/main.py", "src/chart-link.png", "src/deep/notes.txt"}
+    assert sub.headers["content-disposition"].startswith('attachment; filename="src.zip"')
+
+
+async def test_a_zip_refuses_escapes_secrets_and_files(api):
+    for path in ("../outside", "/etc", "src/../.."):
+        assert (await api.get(f"{api.base}/zip", params={"path": path})).status_code == 400, path
+    escaped = await api.get(f"{api.base}/zip", params={"path": "escape-dir"})
+    assert escaped.status_code == 403 and code(escaped) == "outside_workspace"
+    secret = await api.get(f"{api.base}/zip", params={"path": ".git"})
+    assert secret.status_code == 403 and code(secret) == "secret_file"
+    a_file = await api.get(f"{api.base}/zip", params={"path": "README.md"})
+    assert a_file.status_code == 400 and code(a_file) == "not_a_folder"
+
+
+async def test_a_zip_over_the_caps_is_refused(api, monkeypatch):
+    monkeypatch.setattr(workspace_files, "ZIP_MAX_FILES", 1)
+    many = await api.get(f"{api.base}/zip")
+    assert many.status_code == 413 and code(many) == "too_large"
+    assert (await api.get(f"{api.base}/zip", params={"path": "src"})).status_code == 200  # one file fits
+
+    monkeypatch.setattr(workspace_files, "ZIP_MAX_FILES", 100)
+    monkeypatch.setattr(workspace_files, "ZIP_MAX_BYTES", 10)
+    big = await api.get(f"{api.base}/zip")
+    assert big.status_code == 413 and code(big) == "too_large"
+
+
+async def test_a_zip_leaves_no_temporary_file(api, monkeypatch, tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(workspace_files.tempfile, "tempdir", str(scratch))
+    assert (await api.get(f"{api.base}/zip", params={"path": "src"})).status_code == 200
+    assert list(scratch.iterdir()) == []
+    # A file that grows past the cap after the walk: the half-written zip is removed.
+    monkeypatch.setattr(workspace_files, "ZIP_MAX_BYTES", 5)
+    monkeypatch.setattr(workspace_files, "_zip_members", lambda root, folder: ([("src/main.py", folder / "main.py")], 0))
+    grown = await api.get(f"{api.base}/zip", params={"path": "src"})
+    assert grown.status_code == 413 and code(grown) == "too_large"
+    assert list(scratch.iterdir()) == []
+
+
+async def test_a_zip_leaves_out_names_that_are_unsafe_in_a_zip(api, layout):
+    unsafe = ["..\\..\\evil.bat", "C:evil.txt", "bell\x07.txt", "rep\u202etxt.exe", "zero\u200bwidth.txt"]
+    for name in unsafe:
+        (layout / "src" / name).write_text("bad")
+    (layout / "src" / "sub\\dir").mkdir()
+    (layout / "src" / "sub\\dir" / "inner.txt").write_text("bad")
+    (layout / "src" / "ok name é.txt").write_text("fine")
+
+    response = await api.get(f"{api.base}/zip", params={"path": "src"})
+    assert zip_names(response) == {"src/main.py", "src/ok name é.txt"}
+    assert response.headers["x-skipped-unsafe-names"] == str(len(unsafe) + 1)
+    assert b"bad" not in response.content
+
+
+async def test_a_zip_leaves_out_names_that_are_not_utf8(api, layout):
+    try:
+        fd = os.open(os.fsencode(layout / "src") + b"/latin-\xe9.txt", os.O_WRONLY | os.O_CREAT, 0o644)
+    except OSError:
+        pytest.skip("this filesystem refuses names that are not UTF-8")
+    os.write(fd, b"bad")
+    os.close(fd)
+    response = await api.get(f"{api.base}/zip", params={"path": "src"})
+    assert zip_names(response) == {"src/main.py"}
+    assert response.headers["x-skipped-unsafe-names"] == "1"
+
+
+async def test_a_folder_swapped_for_a_link_to_a_secret_folder_is_refused(api, layout, monkeypatch):
+    (layout / "cfg").mkdir()
+    (layout / "cfg" / "config").write_text("[harmless]")
+    walk = workspace_files._zip_members
+
+    def walk_then_swap(root, folder):
+        found = walk(root, folder)
+        (layout / "cfg" / "config").unlink()
+        (layout / "cfg").rmdir()
+        os.symlink(layout / ".git", layout / "cfg")  # .git/config holds "[core]"
+        return found
+
+    monkeypatch.setattr(workspace_files, "_zip_members", walk_then_swap)
+    response = await api.get(f"{api.base}/zip", params={"path": "cfg"})
+    assert response.status_code == 403 and code(response) == "secret_file"
+    assert b"[core]" not in response.content

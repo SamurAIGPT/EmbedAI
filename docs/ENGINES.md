@@ -11,6 +11,7 @@ UI do not know which engine they are talking to.
 | `codex` | Codex | cli | your own `codex` CLI over `codex app-server` (JSON-RPC on stdio) |
 | `acp` | ACP agent | acp | any agent CLI that speaks the Agent Client Protocol, from a saved command |
 | `openai_compat` | OpenAI-compatible | api | `POST {base_url}/chat/completions`, streamed (Ollama, LM Studio, vLLM, hosted APIs) |
+| `openrouter` | OpenRouter | api | the OpenAI-compatible engine preset for `https://openrouter.ai/api/v1` |
 
 ## Choose and configure an engine
 
@@ -24,6 +25,7 @@ endpoint, save its base URL (including `/v1` when required), optional default
 model and optional API key. Configuration is encrypted at rest. A blank key
 keeps the saved key for the same URL; changing the URL drops it unless you
 enter a key again. **Forget settings** deletes the configuration and credential.
+For OpenRouter, the API key is enough: the address defaults to OpenRouter's.
 
 Choose an engine and model in the Agents panel or before sending a new chat.
 The model field offers catalog suggestions and accepts a custom ID only when
@@ -66,7 +68,7 @@ the engine default. Changing an agent's engine affects new conversations.
 Every one of these except the turn API is optional; the registry fills in safe
 defaults (no capabilities, any model, a probe derived from `status()`).
 
-|  | Claude | Codex | ACP agent | OpenAI-compatible |
+|  | Claude | Codex | ACP agent | OpenAI-compatible (and OpenRouter) |
 |---|---|---|---|---|
 | tools | yes | yes | yes | no |
 | approvals | yes | yes | yes | no |
@@ -153,6 +155,34 @@ only, and is never returned, logged or stored in events or the decision log;
 endpoint errors have it removed. Each turn sends the stored history (newest
 kept, 120,000 characters) with the agent's instructions as the system message.
 
+## OpenRouter
+
+A preset of the OpenAI-compatible engine (`OpenRouterAdapter` in
+`backend/app/services/openai_chat_adapter.py`), registered as its own engine
+`openrouter` with its own saved configuration (`engine:openrouter`), so it can
+be set up beside a local endpoint. Everything above applies, with these
+differences:
+
+- `base_url` is optional and defaults to `https://openrouter.ai/api/v1`; give
+  another address only for a proxy that speaks OpenRouter's API. The usual
+  rule holds: a new address drops the saved key unless it is given again.
+- A key is required: saving without one answers 422 `invalid_engine_config`,
+  and the engine is unavailable until one is saved.
+- Model ids are OpenRouter's, `vendor/model` with an optional variant such as
+  `:free` (`openai/gpt-4o-mini`, `meta-llama/llama-3.3-70b-instruct:free`).
+  Refresh status lists OpenRouter's catalog from `GET /models`.
+- Requests to openrouter.ai also carry OpenRouter's optional app-attribution
+  headers, `HTTP-Referer: https://github.com/Anil-matcha/open-duet` and
+  `X-Title: Open Duet`. They tell OpenRouter that this account's traffic comes
+  from Open Duet (OpenRouter uses them for its public app rankings), and they
+  are sent only to openrouter.ai.
+- Chat only, like any OpenAI-compatible endpoint: no tools, images or
+  computers. A 429 or `insufficient_quota` from OpenRouter is a limit like
+  any other (below).
+
+Tested against a mock endpoint only; no turn has been run against the real
+OpenRouter service yet.
+
 ## Limits and the fallback engine
 
 When an engine refuses a turn for a usage limit, a rate limit or a lack of
@@ -211,6 +241,8 @@ Limits are per backend process (a restart forgets them until the next refusal).
 
 ## Not built yet
 
+- Presets for other services (Gemini, OpenCode, Cursor); OpenRouter is the
+  only preset so far.
 - Several instances of one engine (two ACP agents, two endpoints), per-engine
   icons, installing or signing in to an engine from the app.
 - Moving a continuing conversation to a session engine (Claude, Codex) when its

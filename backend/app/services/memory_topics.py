@@ -69,7 +69,7 @@ class TopicDoc:
 
 
 def check_name(name: str) -> str:
-    if not isinstance(name, str) or not _NAME.match(name) or name.lower() == agent_memory.MEMORY_FILE.lower():
+    if not isinstance(name, str) or not _NAME.fullmatch(name) or name.lower() == agent_memory.MEMORY_FILE.lower():
         raise InvalidTopicName(
             "A topic is one file name ending in .md: letters, digits, dashes and underscores, "
             "at most 63 characters, for example travel.md."
@@ -171,7 +171,7 @@ def list_topics(agent_id: int) -> list[TopicInfo]:
     except OSError:
         return []
     for entry in entries:
-        if not _NAME.match(entry.name) or entry.name.lower() == agent_memory.MEMORY_FILE.lower():
+        if not _NAME.fullmatch(entry.name) or entry.name.lower() == agent_memory.MEMORY_FILE.lower():
             continue
         try:
             if entry.is_symlink() or not entry.is_file():

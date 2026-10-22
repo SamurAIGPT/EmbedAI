@@ -39,6 +39,7 @@ def test_chatting_routes_are_in_the_chat_scope(method, path):
         ("GET", "/api/v1/threads/3/files/content"),
         ("GET", "/api/v1/threads/3/files/raw"),
         ("GET", "/api/v1/threads/3/files/download"),
+        ("GET", "/api/v1/threads/3/files/zip"),
         ("GET", "/api/v1/usage"),
         ("GET", "/api/v1/usage.csv"),
         ("GET", "/api/v1/threads/3/attachments/../../files"),
@@ -77,6 +78,11 @@ async def test_a_chat_device_cannot_browse_files_or_usage(app, factory):
     async with client(app, peer=("198.51.100.40", 1)) as phone:
         token = (await phone.post("/api/v1/auth/pair", json={"code": code})).json()["token"]
         bearer = {"Authorization": f"Bearer {token}"}
-        for path in ("/api/v1/threads/1/files", "/api/v1/threads/1/files/download?path=a", "/api/v1/usage"):
+        for path in (
+            "/api/v1/threads/1/files",
+            "/api/v1/threads/1/files/download?path=a",
+            "/api/v1/threads/1/files/zip",
+            "/api/v1/usage",
+        ):
             denied = await phone.get(path, headers=bearer)
             assert denied.status_code == 403 and error_code(denied) == "scope_denied", path

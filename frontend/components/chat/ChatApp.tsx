@@ -667,7 +667,7 @@ export function ChatApp() {
               agent={threadAgent ? { id: threadAgent.id, name: threadAgent.name } : startingAgent ? { id: startingAgent.id, name: startingAgent.name } : null}
               emptyHint={
                 selectedEngine && !selectedEngine.available
-                  ? `${selectedEngine.label} is not ready: ${selectedEngine.reason ?? "check it in Settings"}.`
+                  ? `${selectedEngine.label} is not ready: ${(selectedEngine.reason ?? "check it in Settings").replace(/\.+$/, "")}.`
                   : undefined
               }
               transcript={transcript}

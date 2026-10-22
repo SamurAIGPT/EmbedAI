@@ -123,6 +123,20 @@ async def test_lifecycle_through_the_api(api, docker):  # noqa: F811
     assert (await api.get(f"/api/v1/agents/{agent['id']}")).json()["computer"] is None
 
 
+async def test_a_folder_docker_cannot_mount_is_refused_and_not_left_creating(api, docker, tmp_path):  # noqa: F811
+    docker.add_image()
+    folder = tmp_path / "client a,b"
+    folder.mkdir()
+    made = await api.post("/api/v1/agents", json={"name": "Agent " + uuid4().hex[:6], "workspace_path": str(folder)})
+    assert made.status_code == 201, made.text
+    computer = (await api.post(f"/api/v1/agents/{made.json()['id']}/computer", json={})).json()
+    started = await api.post(f"/api/v1/computers/{computer['id']}/start")
+    assert started.status_code == 422 and started.json()["detail"]["error_code"] == "invalid_computer"
+    assert "comma" in started.json()["detail"]["message"]
+    shown = (await api.get(f"/api/v1/computers/{computer['id']}", params={"live": False})).json()
+    assert shown["state"] == "error"
+
+
 async def test_docker_down_answers_503_and_a_pending_removal_hides_the_computer(api, docker):  # noqa: F811
     docker.add_image()
     agent = await new_agent(api)

@@ -13,7 +13,8 @@ ROUTINE_RUN_STATES = (
     "queued", "running", "needs_input", "completed", "failed", "missed", "skipped", "interrupted",
 )
 ACTIVE_RUN_STATES = ("queued", "running", "needs_input")
-ROUTINE_TRIGGERS = ("schedule", "manual", "webhook")
+# "retry" is a new attempt of a failed run (Routine.retry_limit).
+ROUTINE_TRIGGERS = ("schedule", "manual", "webhook", "retry")
 
 
 class Routine(Base):
@@ -55,6 +56,12 @@ class Routine(Base):
     catch_up_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, default=60, server_default="60"
     )
+    # How many times a failed run is tried again (0 = never), and how long
+    # after the failure each new attempt starts.
+    retry_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    retry_delay_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
     # SHA-256 hex of the webhook secret; null means the webhook is off. The
     # secret itself is never stored.
     webhook_secret_hash: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -85,6 +92,9 @@ class RoutineRun(Base):
             sqlite_where=text("trigger = 'schedule'"),
             postgresql_where=text("trigger = 'schedule'"),
         ),
+        # A failed run gets at most one new attempt, so two schedulers that
+        # both settle it cannot both queue a retry.
+        Index("uq_routine_run_retry_of", "retry_of", unique=True),
         {"sqlite_autoincrement": True},
     )
 
@@ -107,6 +117,9 @@ class RoutineRun(Base):
     # the run limit does not count.
     waiting_since: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     waited_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # 1 for a first try; a retry has the failed run's attempt + 1 and its id.
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    retry_of: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

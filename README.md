@@ -16,8 +16,8 @@ Codex, any Agent Client Protocol CLI, or an OpenAI-compatible endpoint). Teams o
 agents that delegate to each other, rooms, and connectors to other apps are
 planned, not built; see [docs/ROADMAP.md](docs/ROADMAP.md).
 
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0" title="Watch the Open Duet demo on YouTube"><img src="https://i.ytimg.com/vi/b4ZTfs0KwR0/maxresdefault.jpg" alt="Open Duet demo video thumbnail — click to watch on YouTube" width="720"></a></p>
-<p align="center"><a href="https://youtu.be/b4ZTfs0KwR0"><b>▶ Watch the Open Duet demo on YouTube</b></a></p>
+<p align="center"><a href="https://youtu.be/MzgrNQXgVX4" title="Watch the Open Duet demo on YouTube"><img src="https://i.ytimg.com/vi/MzgrNQXgVX4/maxresdefault.jpg" alt="Open Duet demo video thumbnail — click to watch on YouTube" width="720"></a></p>
+<p align="center"><a href="https://youtu.be/MzgrNQXgVX4"><b>▶ Watch the Open Duet demo on YouTube</b></a></p>
 
 > **Status:** Active development. See [Known limitations](#known-limitations) before running it for others.
 
@@ -443,9 +443,9 @@ clean machine apart from a Windows smoke test, and there is no auto-update. See
   sandbox services have only partial coverage, and there are no frontend
   tests. The GitHub Actions workflows have not yet run on GitHub, so treat
   them as untested until the first run.
-- Engines are Claude, Codex, ACP agents and OpenAI-compatible endpoints; other
-  engine presets are planned. Named agents and memory exist, but agents cannot
-  delegate to each other yet, there are no rooms or teams, and connectors beyond
+- Engines are Claude, Codex, ACP agents, OpenAI-compatible endpoints and an
+  OpenRouter preset of them; other engine presets are planned. Named agents
+  and memory exist, but agents cannot delegate to each other yet, there are no rooms or teams, and connectors beyond
   an optional search MCP are not built.
 - Desktop installers are unsigned; macOS and Linux have not been run.
 - The `git` command classifier only covers the verbs it explicitly knows

@@ -3,12 +3,14 @@
 Admin scope only (app/auth/policy.py does not list these routes for `chat`).
 """
 
+import os
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from app.routers.threads import _thread_or_404, get_runtime
 from app.services import workspace_files as files
@@ -152,4 +154,32 @@ async def download_file(
         content=opened.data,
         media_type="application/octet-stream",
         headers={**_SAFE_HEADERS, "Content-Disposition": files.download_name(opened.name)},
+    )
+
+
+@router.get("/{thread_id}/files/zip")
+async def download_folder(
+    thread_id: int,
+    path: str = Query("", max_length=files.PATH_MAX_CHARS),
+    rt: ThreadRuntime = Depends(get_runtime),
+):
+    """A folder (the whole workspace when `path` is empty) as a zip download.
+    Secret files, links out of the workspace and names unsafe in a zip are
+    left out (`X-Skipped-Unsafe-Names` counts the last); links to folders are
+    not followed; over 2000 files or 200 MB in total is 413."""
+    workspace = await _workspace(rt, thread_id)
+    try:
+        name, archive, skipped = await run_in_threadpool(files.zip_folder, workspace, path)
+    except files.FileAccessError as error:
+        raise _refuse(error) from None
+    return FileResponse(
+        archive,
+        media_type="application/zip",
+        headers={
+            **_SAFE_HEADERS,
+            "Content-Disposition": files.download_name(name),
+            # Files and folders left out because their names are unsafe in a zip.
+            "X-Skipped-Unsafe-Names": str(skipped),
+        },
+        background=BackgroundTask(os.unlink, archive),
     )

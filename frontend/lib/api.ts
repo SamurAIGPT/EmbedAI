@@ -698,7 +698,7 @@ export type RoutineRunState =
 export type RoutineRun = {
   id: number;
   routine_id: number;
-  trigger: "schedule" | "manual" | "webhook";
+  trigger: "schedule" | "manual" | "webhook" | "retry";
   state: RoutineRunState;
   scheduled_for: string | null;
   thread_id: number | null;
@@ -707,6 +707,8 @@ export type RoutineRun = {
   error: string | null;
   waiting_since: string | null;
   waited_seconds: number;
+  attempt: number;
+  retry_of: number | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -727,6 +729,8 @@ export type Routine = {
   approval_mode: ApprovalMode;
   approval_timeout_minutes: number;
   catch_up_minutes: number;
+  retry_limit: number;
+  retry_delay_minutes: number;
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
@@ -747,6 +751,8 @@ export type RoutineInput = {
   approval_mode: ApprovalMode;
   approval_timeout_minutes: number;
   catch_up_minutes: number;
+  retry_limit: number;
+  retry_delay_minutes: number;
 };
 
 export type SchedulePreview = { summary: string; next_dates: string[] };
@@ -1160,6 +1166,9 @@ export const api = {
     requestBlobUrl(`/threads/${threadId}/files/raw?path=${encodeURIComponent(path)}`),
   workspaceDownloadUrl: (threadId: number, path: string) =>
     requestBlobUrl(`/threads/${threadId}/files/download?path=${encodeURIComponent(path)}`),
+  // A folder (the whole workspace for "") as a zip; secrets and links out are left out.
+  workspaceZipUrl: (threadId: number, path: string) =>
+    requestBlobUrl(`/threads/${threadId}/files/zip?path=${encodeURIComponent(path)}`),
   getUsage: (month?: string) => request<UsageSummary>(`/usage${month ? `?month=${encodeURIComponent(month)}` : ""}`),
   usageCsv: (month: string) => requestText(`/usage.csv?month=${encodeURIComponent(month)}`),
 };

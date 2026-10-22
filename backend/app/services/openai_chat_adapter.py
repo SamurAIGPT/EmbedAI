@@ -12,6 +12,10 @@ configuration (app/services/engine_config.py). The key goes only into the
 `Authorization` header of requests to that address: it is never logged,
 returned by the API, written to an event or put in the decision log, and an
 error message from the endpoint has it removed before it is shown.
+
+`OpenRouterAdapter` at the end is a preset of the same engine: OpenRouter's
+address filled in, its key required, and OpenRouter's optional app-attribution
+headers (sent to openrouter.ai only).
 """
 
 import asyncio
@@ -40,6 +44,11 @@ MAX_ERROR_CHARS = 500
 MAX_MODELS = 200
 
 NOT_CONFIGURED = "Set the endpoint's address (and key, if it needs one) in Settings → Engines."
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_HOST = "openrouter.ai"
+# OpenRouter's optional app attribution (its public app rankings).
+OPENROUTER_ATTRIBUTION = {"HTTP-Referer": "https://github.com/Anil-matcha/open-duet", "X-Title": "Open Duet"}
 
 
 class InvalidConfig(ValueError):
@@ -104,6 +113,8 @@ class OpenAIChatAdapter:
     # saved configuration (the model's context window) sets the budget.
     replays_history = True
     compact_at_tokens = 24_000
+    # What status, probe and a turn say while nothing usable is saved.
+    not_configured = NOT_CONFIGURED
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.config: dict | None = None
@@ -173,14 +184,14 @@ class OpenAIChatAdapter:
     async def status(self) -> ProviderStatus:
         config = self.config or {}
         if not config.get("base_url"):
-            return ProviderStatus(ready=False, error=NOT_CONFIGURED, installed=False)
+            return ProviderStatus(ready=False, error=self.not_configured, installed=False)
         return ProviderStatus(ready=True, installed=True)
 
     async def probe(self) -> EngineProbe:
         config = self.config or {}
         base = config.get("base_url")
         if not base:
-            return EngineProbe(installed=False, ready=False, reason=NOT_CONFIGURED)
+            return EngineProbe(installed=False, ready=False, reason=self.not_configured)
         default = config.get("model")
         try:
             async with self._client(httpx.Timeout(PROBE_TIMEOUT_SECONDS)) as client:
@@ -214,7 +225,7 @@ class OpenAIChatAdapter:
         config = ctx.engine_config or self.config or {}
         base = config.get("base_url")
         if not base:
-            return TurnOutcome("failed", error=NOT_CONFIGURED, error_code="engine_not_configured")
+            return TurnOutcome("failed", error=self.not_configured, error_code="engine_not_configured")
         if ctx.computer is not None:
             return TurnOutcome(
                 "failed", error="This engine cannot use an agent computer.", error_code="engine_without_computers"
@@ -338,3 +349,43 @@ def _error_text(status: int, body: str, secret: str | None) -> str:
         pass
     message = redact(" ".join(message.split()), secret)[:MAX_ERROR_CHARS]
     return f"The endpoint answered {status}: {message}" if message else f"The endpoint answered {status}."
+
+
+class OpenRouterAdapter(OpenAIChatAdapter):
+    """OpenRouter (https://openrouter.ai) as a preset of the OpenAI-compatible
+    engine: its own saved configuration (`engine:openrouter`), so it can sit
+    beside a local endpoint. The address defaults to OpenRouter's, a key is
+    required, and models are OpenRouter ids such as `openai/gpt-4o-mini` or
+    `meta-llama/llama-3.3-70b-instruct:free`. Requests to openrouter.ai
+    itself also carry OpenRouter's optional app-attribution headers, which tell
+    OpenRouter this account's traffic comes from Open Duet; another address (a
+    proxy) never gets them."""
+
+    key = "openrouter"
+    label = "OpenRouter"
+    not_configured = "Add your OpenRouter API key in Settings → Engines."
+
+    def validate_config(self, payload: dict, current: dict | None) -> dict:
+        base = payload.get("base_url")
+        if not isinstance(base, str) or not base.strip():
+            payload = {**payload, "base_url": OPENROUTER_BASE_URL}
+        config = super().validate_config(payload, current)
+        if not config.get("api_key"):
+            raise InvalidConfig("Give your OpenRouter API key (openrouter.ai → Keys).")
+        return config
+
+    def _headers(self, config: dict) -> dict:
+        headers = super()._headers(config)
+        if urlsplit(config.get("base_url") or "").hostname == OPENROUTER_HOST:
+            headers.update(OPENROUTER_ATTRIBUTION)
+        return headers
+
+    async def status(self) -> ProviderStatus:
+        if not (self.config or {}).get("api_key"):
+            return ProviderStatus(ready=False, error=self.not_configured, installed=False)
+        return await super().status()
+
+    async def probe(self) -> EngineProbe:
+        if not (self.config or {}).get("api_key"):
+            return EngineProbe(installed=False, ready=False, reason=self.not_configured)
+        return await super().probe()

@@ -61,10 +61,19 @@ test("the key message says nothing was changed", () => {
   assert.match(describeFailure({ code: EXIT.KEY_MISMATCH, logFile }).body, /without changing anything/);
 });
 
+test("a backend that could not be run is not described as one that stopped", () => {
+  const message = describeFailure({ kind: "spawn", code: null, logFile, reason: "spawn /app/backend/python EACCES" });
+  assert.equal(message.title, "Open Duet could not start its backend");
+  assert.doesNotMatch(message.body, /stopped/);
+  assert.match(message.body, /could not be run/);
+  assert.ok(message.body.includes("spawn /app/backend/python EACCES") && message.body.includes(logFile));
+});
+
 test("an unexpected exit says what happened to a running answer", () => {
   const message = describeUnexpectedExit({ code: 1, logFile, reason: "boom" });
   assert.match(message.body, /interrupted and will not be repeated/);
   assert.ok(message.body.includes(logFile) && message.body.includes("boom") && message.body.includes("exit 1"));
+  assert.equal(message.title, "Open Duet's backend stopped");
 });
 
 test("the exit codes are the ones the backend uses", () => {

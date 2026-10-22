@@ -68,13 +68,15 @@ export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engin
   };
 
   return <section className="space-y-4 rounded-lg border border-line p-5">
-    <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold">Engines</h3><p className="mt-1 text-xs text-muted">Choose an installed engine on each agent, or configure an ACP command or OpenAI-compatible endpoint.</p></div><button className={BUTTON} disabled={busy !== null} onClick={() => { setBusy("refresh"); setRefresh((n) => n + 1); }}>{busy === "refresh" ? "Checking…" : "Refresh status"}</button></div>
+    <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold">Engines</h3><p className="mt-1 text-xs text-muted">Choose an installed engine on each agent, or configure an ACP command, an OpenAI-compatible endpoint or OpenRouter.</p></div><button className={BUTTON} disabled={busy !== null} onClick={() => { setBusy("refresh"); setRefresh((n) => n + 1); }}>{busy === "refresh" ? "Checking…" : "Refresh status"}</button></div>
     {error && <p role="alert" className="rounded-md border border-danger/50 p-3 text-sm text-danger">{error}</p>}
     {notice && <p role="status" className="rounded-md border border-line p-3 text-sm">{notice}</p>}
     {!engines && !error && <p role="status" className="text-sm text-muted">Checking engines…</p>}
     {engines?.map((engine) => {
       const draft = drafts[engine.id];
-      const editable = engine.id === "acp" || engine.id === "openai_compat";
+      const editable = engine.id === "acp" || engine.id === "openai_compat" || engine.id === "openrouter";
+      const openrouter = engine.id === "openrouter";
+      const hasKey = typeof engine.config?.has_api_key === "boolean" && engine.config.has_api_key;
       return <article key={engine.id} className="space-y-3 rounded-md border border-line p-4">
         <div className="flex flex-wrap items-center gap-2"><h4 className="font-medium">{engine.label}</h4><span className={`rounded px-2 py-0.5 text-xs ${engine.available ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{engine.available ? "Ready" : "Unavailable"}</span>{engine.version && <span className="text-xs text-muted">{engine.version}</span>}</div>
         {!engine.available && <p className="text-xs text-muted">{engine.reason}</p>}
@@ -83,13 +85,14 @@ export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engin
           <label className="text-xs text-muted">ACP command<input className={`${FIELD} mt-1`} value={draft.command} required maxLength={1000} placeholder="agent-cli --acp" onChange={(e) => setDrafts((old) => ({ ...old, acp: { ...old.acp, command: e.target.value } }))} autoComplete="off" /></label>
           <label className="text-xs text-muted">Display name<input className={`${FIELD} mt-1`} value={draft.label} placeholder="ACP agent" onChange={(e) => setDrafts((old) => ({ ...old, acp: { ...old.acp, label: e.target.value } }))} /></label>
         </div> : <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-xs text-muted">Base URL<input className={`${FIELD} mt-1`} type="url" required maxLength={500} value={draft.base_url} placeholder="https://api.example.com/v1" onChange={(e) => setDrafts((old) => ({ ...old, openai_compat: { ...old.openai_compat, base_url: e.target.value } }))} autoComplete="url" /></label>
-          <label className="text-xs text-muted">Default model (optional)<input className={`${FIELD} mt-1`} value={draft.model} placeholder="Use endpoint default" onChange={(e) => setDrafts((old) => ({ ...old, openai_compat: { ...old.openai_compat, model: e.target.value } }))} /></label>
-          <label className="text-xs text-muted sm:col-span-2">API key{typeof engine.config?.has_api_key === "boolean" && engine.config.has_api_key ? " (saved; leave empty to keep it)" : ""}<input className={`${FIELD} mt-1`} type="password" value={draft.api_key} onChange={(e) => setDrafts((old) => ({ ...old, openai_compat: { ...old.openai_compat, api_key: e.target.value } }))} autoComplete="new-password" /></label>
+          <label className="text-xs text-muted">Base URL{openrouter ? " (optional)" : ""}<input className={`${FIELD} mt-1`} type="url" required={!openrouter} maxLength={500} value={draft.base_url} placeholder={openrouter ? "https://openrouter.ai/api/v1" : "https://api.example.com/v1"} onChange={(e) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], base_url: e.target.value } }))} autoComplete="url" /></label>
+          <label className="text-xs text-muted">Default model (optional)<input className={`${FIELD} mt-1`} value={draft.model} placeholder={openrouter ? "openai/gpt-4o-mini" : "Use endpoint default"} onChange={(e) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], model: e.target.value } }))} /></label>
+          <label className="text-xs text-muted sm:col-span-2">API key{hasKey ? " (saved; leave empty to keep it)" : ""}<input className={`${FIELD} mt-1`} type="password" required={openrouter && !hasKey} value={draft.api_key} onChange={(e) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], api_key: e.target.value } }))} autoComplete="new-password" /></label>
         </div>}
         <div className="flex gap-2"><button type="submit" className={BUTTON}>{busy === engine.id ? "Saving…" : "Save engine"}</button>{engine.config && <button type="button" className={BUTTON} onClick={() => void forget(engine)}>Forget settings</button>}</div>
         {engine.id === "acp" && <p className="text-xs text-muted">Sign in to this command in a terminal first. It runs its own configured model and asks for tools through ACP.</p>}
         {engine.id === "openai_compat" && <p className="text-xs text-muted">The key is encrypted at rest. Changing the address drops the saved key unless you enter it again.</p>}
+        {openrouter && <p className="text-xs text-muted">Create a key at openrouter.ai; it is encrypted at rest. Model IDs look like openai/gpt-4o-mini. Chat only, like any OpenAI-compatible endpoint.</p>}
         </fieldset></form>}
         {engine.id === "claude" && <p className="text-xs text-muted">Install and sign in to Claude Code in a terminal, then refresh status. The desktop settings above can override its executable.</p>}
         {engine.id === "codex" && <p className="text-xs text-muted">Install and sign in to Codex in a terminal, then refresh status. It uses the executable on your PATH.</p>}

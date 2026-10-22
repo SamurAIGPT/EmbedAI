@@ -194,7 +194,10 @@ class DockerProvider:
         self._must(["pull", docker_cli.check_image(image)], "download the image", self.PULL_TIMEOUT)
 
     def create(self, spec: Spec) -> Status:
-        docker_cli.validate(spec)
+        try:
+            docker_cli.validate(spec)
+        except docker_cli.InvalidSpec as exc:
+            raise ComputerError(f"The computer cannot be made: {exc}.", "invalid_computer") from None
         current = self.status(spec)
         if current.state in ("foreign", "unsafe"):
             raise ComputerError(current.problem or "The computer cannot be used.", "computer_" + current.state)

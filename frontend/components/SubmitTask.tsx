@@ -360,6 +360,7 @@ export function SubmitTask({
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
           placeholder='e.g. "create a webpage that says hello"'
+          aria-label="New task"
           rows={3}
           disabled={!canSubmit}
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
@@ -377,6 +378,7 @@ export function SubmitTask({
         {scheduleEnabled && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
             <select
+              aria-label="How often"
               value={frequency}
               onChange={(e) => setFrequency(e.target.value as Frequency)}
               className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -390,6 +392,7 @@ export function SubmitTask({
 
             {frequency === "weekly" && (
               <select
+                aria-label="Day of the week"
                 value={scheduleWeekday}
                 onChange={(e) => setScheduleWeekday(Number(e.target.value))}
                 className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -405,6 +408,7 @@ export function SubmitTask({
             {frequency !== "hourly" && (
               <input
                 type="time"
+                aria-label={`Time (${timezone})`}
                 value={scheduleTime}
                 onChange={(e) => setScheduleTime(e.target.value)}
                 className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"

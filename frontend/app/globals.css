@@ -144,9 +144,13 @@ body {
   font-family: var(--font-sans);
 }
 
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+/* In the base layer so a component can opt out with a utility (outline-none) and draw its own
+   focus ring, as the message box does. Unlayered rules would beat every utility. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
 }
 
 /* Keep native fields at a size iOS does not zoom into. */

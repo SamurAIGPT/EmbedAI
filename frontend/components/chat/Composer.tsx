@@ -1,12 +1,15 @@
 "use client";
 
+import { ArrowUp, Paperclip, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/cn";
 import { PendingAttachments } from "./Attachments";
 
 const MAX_HEIGHT_PX = 200;
 
-// The message box. Enter sends, Shift+Enter adds a line. While it cannot send it
-// says why, instead of just going grey.
+// The message box: one rounded field with the paperclip on the left and Send (or Stop while an
+// answer is being written) on the right. Enter sends, Shift+Enter adds a line, and Enter during
+// IME composition does neither. While it cannot send it says why, instead of just going grey.
 export function Composer({
   value,
   onChange,
@@ -60,9 +63,7 @@ export function Composer({
 
   return (
     <div
-      className={`border-t bg-background px-4 py-3 ${
-        dragging ? "border-sky-400 bg-sky-50 dark:bg-sky-950/30" : "border-zinc-200 dark:border-zinc-800"
-      }`}
+      className="shrink-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6"
       onDragOver={(e) => {
         if (!onAddFiles || !carriesFiles(Array.from(e.dataTransfer.types))) return;
         e.preventDefault();
@@ -77,80 +78,91 @@ export function Composer({
       }}
     >
       <div className="mx-auto max-w-3xl">
-        {error && <p role="alert" className="mb-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
-        {attachNotice && <p role="status" className="mb-2 text-sm text-amber-700 dark:text-amber-400">{attachNotice}</p>}
-        {onRemoveFile && <PendingAttachments files={files} onRemove={onRemoveFile} disabled={sending} />}
-        {dragging && <p className="mb-2 text-xs text-sky-700 dark:text-sky-300">Drop to attach</p>}
-        <div className="flex items-end gap-2">
-          {onAddFiles && (
-            <>
-              <input
-                ref={picker}
-                type="file"
-                multiple
-                hidden
-                aria-hidden
-                tabIndex={-1}
-                accept="image/png,image/jpeg,image/gif,image/webp,.txt,.md,.csv,.tsv,.json,.log,.yaml,.yml,.xml,.html,.css,.js,.ts,.tsx,.py,.sh,.sql,.toml,.ini"
-                onChange={(e) => {
-                  onAddFiles(Array.from(e.target.files ?? []));
-                  e.target.value = "";
-                }}
-              />
+        {error && <p role="alert" className="mb-2 text-sm text-danger">{error}</p>}
+        {attachNotice && <p role="status" className="mb-2 text-sm text-warning">{attachNotice}</p>}
+        <div
+          className={cn(
+            "rounded-3xl border bg-raised px-2 py-2 shadow-sm transition-colors duration-(--dur-fast) focus-within:border-accent/60",
+            dragging ? "border-accent bg-accent/10" : "border-line",
+          )}
+        >
+          {onRemoveFile && files.length > 0 && (
+            <div className="px-2 pt-1"><PendingAttachments files={files} onRemove={onRemoveFile} disabled={sending} /></div>
+          )}
+          {dragging && <p className="px-3 pb-1 text-xs text-accent">Drop to attach</p>}
+          <div className="flex items-end gap-1">
+            {onAddFiles && (
+              <>
+                <input
+                  ref={picker}
+                  type="file"
+                  multiple
+                  hidden
+                  aria-hidden
+                  tabIndex={-1}
+                  accept="image/png,image/jpeg,image/gif,image/webp,.txt,.md,.csv,.tsv,.json,.log,.yaml,.yml,.xml,.html,.css,.js,.ts,.tsx,.py,.sh,.sql,.toml,.ini"
+                  onChange={(e) => {
+                    onAddFiles(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => picker.current?.click()}
+                  disabled={sending}
+                  aria-label="Attach files"
+                  title="Attach images or text files (or paste, or drop them here)"
+                  className="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors duration-(--dur-fast) hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 touch:size-11"
+                >
+                  <Paperclip size={18} aria-hidden="true" />
+                </button>
+              </>
+            )}
+            <textarea
+              ref={box}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onPaste={(e) => {
+                const pasted = Array.from(e.clipboardData.files);
+                if (!onAddFiles || pasted.length === 0) return;
+                e.preventDefault();
+                onAddFiles(pasted);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  if (canSend) onSend();
+                }
+              }}
+              rows={1}
+              placeholder={blockedReason ?? "Message your agent"}
+              aria-label="Message"
+              className="max-h-52 min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2.5 text-[15px] leading-5 outline-none placeholder:text-faint focus-visible:outline-none"
+            />
+            {running ? (
               <button
                 type="button"
-                onClick={() => picker.current?.click()}
-                disabled={sending}
-                aria-label="Attach files"
-                title="Attach images or text files (or paste, or drop them here)"
-                className="h-10 cursor-pointer rounded-md border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                onClick={onStop}
+                disabled={stopping}
+                className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-line bg-raised px-4 text-sm font-medium text-ink transition-colors duration-(--dur-fast) hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 touch:h-11"
               >
-                📎
+                <Square size={13} aria-hidden="true" />
+                {stopping ? "Stopping…" : "Stop"}
               </button>
-            </>
-          )}
-          <textarea
-            ref={box}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onPaste={(e) => {
-              const pasted = Array.from(e.clipboardData.files);
-              if (!onAddFiles || pasted.length === 0) return;
-              e.preventDefault();
-              onAddFiles(pasted);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                if (canSend) onSend();
-              }
-            }}
-            rows={1}
-            placeholder={blockedReason ?? "Message your agent"}
-            aria-label="Message"
-            className="min-h-10 flex-1 resize-none rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm placeholder:text-zinc-500 dark:border-zinc-700"
-          />
-          {running ? (
-            <button
-              onClick={onStop}
-              disabled={stopping}
-              className="h-10 cursor-pointer rounded-md border border-zinc-400 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-            >
-              {stopping ? "Stopping…" : "Stop"}
-            </button>
-          ) : (
-            <button
-              onClick={onSend}
-              disabled={!canSend}
-              className="h-10 cursor-pointer rounded-md bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              {sending ? "Sending…" : "Send"}
-            </button>
-          )}
+            ) : (
+              <button
+                type="button"
+                onClick={onSend}
+                disabled={!canSend}
+                className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-accent px-4 text-sm font-medium text-accent-fg transition-opacity duration-(--dur-fast) hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 touch:h-11"
+              >
+                <ArrowUp size={16} aria-hidden="true" />
+                {sending ? "Sending…" : "Send"}
+              </button>
+            )}
+          </div>
         </div>
-        {blockedReason && value.trim() !== "" && (
-          <p className="mt-1 text-xs text-zinc-500">{blockedReason}</p>
-        )}
+        {blockedReason && value.trim() !== "" && <p className="mt-1.5 px-3 text-xs text-muted">{blockedReason}</p>}
       </div>
     </div>
   );

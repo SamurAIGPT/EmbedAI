@@ -1,11 +1,15 @@
 "use client";
 
+import { Check, ChevronRight, Loader2, Square, X } from "lucide-react";
 import { useState } from "react";
 import { canAlwaysAllow } from "@/lib/approvals";
 import { isComputerTool, toolLabel } from "@/lib/computers";
+import { cn } from "@/lib/cn";
 import { failureNextStep, interruptedText, turnUsageText } from "@/lib/everyday";
 import { compactedLabel, recalledLabel } from "@/lib/memory";
 import type { TranscriptItem } from "@/lib/transcript";
+import { toolRunSummary } from "@/lib/transcript-view";
+import { Button } from "@/components/ui/Button";
 import { Markdown } from "./Markdown";
 import { MessageAttachments } from "./Attachments";
 
@@ -25,14 +29,11 @@ function LongText({ value }: { value: string }) {
   const cut = !all && value.length > PREVIEW_CHARS;
   return (
     <>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-zinc-100 p-2 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-field bg-code p-2.5 font-mono text-xs text-ink">
         {cut ? value.slice(0, PREVIEW_CHARS) : value}
       </pre>
       {cut && (
-        <button
-          onClick={() => setAll(true)}
-          className="mt-1 cursor-pointer text-xs text-zinc-500 underline"
-        >
+        <button onClick={() => setAll(true)} className="mt-1 cursor-pointer text-xs text-muted underline">
           Show all ({value.length.toLocaleString()} characters)
         </button>
       )}
@@ -44,7 +45,7 @@ export function UserMessage({ item, threadId = null }: { item: Item<"user">; thr
   return (
     <div className="flex flex-col items-end gap-2">
       <MessageAttachments threadId={threadId} items={item.attachments ?? []} />
-      <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-zinc-900 px-4 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
+      <p className="max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-bubble px-4 py-2.5 text-[15px] leading-relaxed text-ink sm:max-w-[80%]">
         {item.text}
       </p>
     </div>
@@ -61,59 +62,72 @@ export function AssistantMessage({
   live?: boolean;
 }) {
   return (
-    <div className="max-w-[85%] text-sm">
+    <div className="max-w-full text-[15px] leading-relaxed">
       <Markdown text={text} />
-      {live && <span className="animate-pulse">▍</span>}
-      {incomplete && (
-        <p className="mt-1 text-xs text-zinc-500">
-          This message stopped before it was finished.
-        </p>
-      )}
+      {live && <span aria-hidden="true" className="animate-pulse text-muted">▍</span>}
+      {incomplete && <p className="mt-1 text-xs text-muted">This message stopped before it was finished.</p>}
     </div>
   );
 }
 
-const STEP_MARK = {
-  running: { mark: "…", color: "text-amber-600 dark:text-amber-400" },
-  done: { mark: "✓", color: "text-emerald-600 dark:text-emerald-400" },
-  error: { mark: "✗", color: "text-red-600 dark:text-red-400" },
+const STEP_ICON = {
+  running: { icon: <Loader2 size={13} className="animate-spin" />, color: "text-warning", label: "Running" },
+  done: { icon: <Check size={13} />, color: "text-success", label: "Done" },
+  error: { icon: <X size={13} />, color: "text-danger", label: "Failed" },
   // Never finished: the answer was stopped, failed or was interrupted first.
-  stopped: { mark: "■", color: "text-zinc-400" },
+  stopped: { icon: <Square size={11} />, color: "text-faint", label: "Stopped" },
 } as const;
 
 export function ToolStep({ item }: { item: Item<"tool"> }) {
-  const { mark, color } = STEP_MARK[item.state];
+  const step = STEP_ICON[item.state];
   const input = formatValue(item.input);
   return (
-    <details className="group rounded-md border border-zinc-200 text-xs dark:border-zinc-800">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
-        <span className={color}>{mark}</span>
+    <details className="group rounded-field border border-line bg-raised/60 text-xs">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 touch:py-3 [&::-webkit-details-marker]:hidden">
+        <span className={cn("inline-flex w-4 shrink-0 justify-center", step.color)} role="img" aria-label={step.label}>
+          {step.icon}
+        </span>
         {isComputerTool(item.name) && <ComputerBadge />}
-        <span className="font-mono text-zinc-700 dark:text-zinc-300">{item.name}</span>
-        <span className="min-w-0 flex-1 truncate text-zinc-500">{item.summary}</span>
-        <span className="text-zinc-400 group-open:rotate-90">›</span>
+        <span className="font-mono text-ink">{item.name}</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{item.summary}</span>
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-faint transition-transform group-open:rotate-90" />
       </summary>
-      <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="space-y-2 border-t border-line p-3">
         <div>
-          <p className="mb-1 text-zinc-500">Input</p>
+          <p className="mb-1 text-muted">Input</p>
           <LongText value={input} />
         </div>
-        {item.state === "stopped" && (
-          <p className="text-zinc-500">This call did not finish: the answer ended first.</p>
-        )}
+        {item.state === "stopped" && <p className="text-muted">This call did not finish: the answer ended first.</p>}
         {(item.state === "done" || item.state === "error") && (
           <div>
-            <p className="mb-1 text-zinc-500">
+            <p className="mb-1 text-muted">
               {item.state === "error" ? "Error" : "Output"}
               {item.truncated && " (cut at the stored limit)"}
             </p>
-            {item.output ? (
-              <LongText value={item.output} />
-            ) : (
-              <p className="text-zinc-500">No output.</p>
-            )}
+            {item.output ? <LongText value={item.output} /> : <p className="text-muted">No output.</p>}
           </div>
         )}
+      </div>
+    </details>
+  );
+}
+
+// Three or more tool calls in a row, folded into one line while they are done.
+export function ToolRun({ tools }: { tools: Item<"tool">[] }) {
+  const { total, running, failed } = toolRunSummary(tools);
+  const summary = running > 0 ? `Working · ${total} tool calls so far` : `Used ${total} tools`;
+  return (
+    <details open={running > 0 || failed > 0} className="group rounded-card border border-line bg-raised/40">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-muted touch:py-3 [&::-webkit-details-marker]:hidden">
+        {running > 0 ? <Loader2 size={13} aria-hidden="true" className="animate-spin text-warning" /> : <Check size={13} aria-hidden="true" className="text-success" />}
+        <span className="flex-1 font-medium text-ink">{summary}</span>
+        {failed > 0 && <span className="text-danger">{failed} failed</span>}
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-faint transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="space-y-1.5 border-t border-line p-2">
+        {tools.map((tool) => (
+          <ToolStep key={tool.key} item={tool} />
+        ))}
       </div>
     </details>
   );
@@ -157,17 +171,12 @@ export function ApprovalCard({
   const undone = savedRuleId != null && undoneRules.includes(savedRuleId);
   return (
     <div
-      className={`space-y-2 rounded-md border p-3 text-sm ${
-        pending
-          ? "border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30"
-          : "border-zinc-200 dark:border-zinc-800"
-      }`}
+      className={cn(
+        "space-y-2.5 rounded-card border p-3.5 text-sm",
+        pending ? "border-warning/60 bg-warning/10" : "border-line bg-raised/40",
+      )}
     >
-      <p
-        className={`text-xs font-medium ${
-          pending ? "text-amber-800 dark:text-amber-300" : "text-zinc-500"
-        }`}
-      >
+      <p className={cn("text-xs font-medium", pending ? "text-ink" : "text-muted")}>
         {isComputerTool(item.tool) && <ComputerBadge />}
         {pending ? (
           isComputerTool(item.tool) ? (
@@ -193,15 +202,15 @@ export function ApprovalCard({
                   : item.resolvedBy === "plan_mode"
                     ? "Refused: plan only changes nothing"
                     : APPROVAL_LABEL[item.status]}
-            {!pending && item.summary && <span className="font-mono text-zinc-400"> · {item.summary}</span>}
+            {!pending && item.summary && <span className="font-mono text-faint"> · {item.summary}</span>}
           </>
         )}
       </p>
       {pending && (
-        <dl className="space-y-1">
+        <dl className="space-y-1.5">
           {Object.entries(item.input).map(([key, value]) => (
             <div key={key}>
-              <dt className="text-xs text-zinc-500">{key}</dt>
+              <dt className="text-xs text-muted">{key}</dt>
               <dd>
                 <LongText value={formatValue(value)} />
               </dd>
@@ -210,51 +219,35 @@ export function ApprovalCard({
         </dl>
       )}
       {pending && (
-        <div className="flex gap-2">
-          <button
-            onClick={() => onAnswer("allow")}
-            disabled={answering}
-            className="cursor-pointer rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => onAnswer("allow")} disabled={answering}>
             Allow
-          </button>
+          </Button>
           {rememberable && (
-            <button
+            <Button
               onClick={() => onAnswer("allow", true)}
               disabled={answering}
               title="Allow it now, and run exactly this command in this folder without asking from now on"
-              className="cursor-pointer rounded-md border border-zinc-300 px-4 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
             >
               Always allow this command
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => onAnswer("deny")}
-            disabled={answering}
-            className="cursor-pointer rounded-md border border-zinc-300 px-4 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-          >
+          <Button onClick={() => onAnswer("deny")} disabled={answering}>
             Deny
-          </button>
+          </Button>
         </div>
       )}
-      {!pending && remembered?.error && (
-        <p className="text-xs text-zinc-500">Allowed this once only: {remembered.error}.</p>
-      )}
-      {!pending && undone && (
-        <p className="text-xs text-zinc-500">No longer always allowed. Next time it asks again.</p>
-      )}
+      {!pending && remembered?.error && <p className="text-xs text-muted">Allowed this once only: {remembered.error}.</p>}
+      {!pending && undone && <p className="text-xs text-muted">No longer always allowed. Next time it asks again.</p>}
       {!pending && savedRuleId != null && !undone && onUndo && (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {remembered?.ruleId != null ? "Always allowed in this folder from now on." : "A saved rule allows this command."}
-          <button
-            onClick={() => onUndo(savedRuleId)}
-            className="cursor-pointer underline hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
+          <button onClick={() => onUndo(savedRuleId)} className="cursor-pointer underline hover:text-ink">
             {remembered?.ruleId != null ? "Undo" : "Stop always allowing"}
           </button>
         </p>
       )}
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -276,18 +269,14 @@ export function TurnEnd({ item }: { item: Item<"turn_end"> }) {
       {message && (
         <div
           role={bad ? "alert" : undefined}
-          className={`rounded-md border px-3 py-2 text-xs ${
-            bad
-              ? "border-red-300 text-red-700 dark:border-red-900 dark:text-red-400"
-              : "border-zinc-200 text-zinc-500 dark:border-zinc-800"
-          }`}
+          className={cn("rounded-card border px-3.5 py-2.5 text-sm", bad ? "border-danger/50 bg-danger/10 text-ink" : "border-line text-muted")}
         >
-          <p className="whitespace-pre-wrap break-words">{message}</p>
-          {next && <p className="mt-1 text-zinc-600 dark:text-zinc-400">{next}</p>}
+          <p className={cn("whitespace-pre-wrap break-words", bad && "text-danger")}>{message}</p>
+          {next && <p className="mt-1 text-xs text-muted">{next}</p>}
         </div>
       )}
       {usage && (
-        <p className="text-right text-[11px] text-zinc-400 dark:text-zinc-500" title="As reported by the engine">
+        <p className="text-right text-[11px] text-faint" title="As reported by the engine">
           {usage}
         </p>
       )}
@@ -297,7 +286,7 @@ export function TurnEnd({ item }: { item: Item<"turn_end"> }) {
 
 export function SessionReset({ item }: { item: Item<"session_reset"> }) {
   return (
-    <p className="border-y border-dashed border-zinc-300 py-2 text-center text-xs text-zinc-500 dark:border-zinc-700">
+    <p className="border-y border-dashed border-line py-2 text-center text-xs text-muted">
       {item.message ||
         "The engine's session for this conversation was reset. The messages above are shown for reference only."}
     </p>
@@ -308,7 +297,7 @@ export function SessionReset({ item }: { item: Item<"session_reset"> }) {
 function ComputerBadge() {
   return (
     <span
-      className="mr-1 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-sky-800 uppercase dark:bg-sky-950 dark:text-sky-300"
+      className="mr-1 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent"
       title="Runs in the agent's computer (an isolated container), not on this machine"
     >
       computer
@@ -321,17 +310,17 @@ function ComputerBadge() {
 export function RecalledChip({ item }: { item: Item<"recalled"> }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="self-end text-xs text-zinc-500">
+    <div className="self-end text-xs text-muted">
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="rounded-full border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        className="cursor-pointer rounded-full border border-line px-2.5 py-0.5 hover:bg-hover"
       >
         🧠 {recalledLabel(item.notes.length, item.conversations.length)}
       </button>
       {open && (
-        <ul className="mt-1 max-w-xl space-y-1 rounded-md border border-zinc-200 p-2 text-left dark:border-zinc-800">
-          <li className="text-zinc-500">Background for the agent, not instructions. It grants no permission.</li>
+        <ul className="mt-1 max-w-xl space-y-1 rounded-field border border-line bg-raised p-2 text-left">
+          <li className="text-muted">Background for the agent, not instructions. It grants no permission.</li>
           {item.notes.map((n, i) => (
             <li key={`n${i}`}>
               <span className="font-mono">memory/{n.name}</span>: {n.snippet}
@@ -352,12 +341,12 @@ export function RecalledChip({ item }: { item: Item<"recalled"> }) {
 // The turn moved to the agent's fallback engine: always shown, never silent.
 export function EngineSwitched({ item }: { item: Item<"engine_switched"> }) {
   return (
-    <div role="status" className="rounded-md border border-amber-300 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:text-amber-300">
-      <p className="font-medium">
+    <div role="status" className="rounded-card border border-warning/50 bg-warning/10 px-3.5 py-2.5 text-xs">
+      <p className="font-medium text-ink">
         Switched engine: {item.from} → {item.to}
         {item.model ? ` (${item.model})` : ""}
       </p>
-      {item.message && <p className="mt-1 whitespace-pre-wrap break-words">{item.message}</p>}
+      {item.message && <p className="mt-1 whitespace-pre-wrap break-words text-muted">{item.message}</p>}
     </div>
   );
 }
@@ -366,10 +355,10 @@ export function EngineSwitched({ item }: { item: Item<"engine_switched"> }) {
 export function CompactedMarker({ item }: { item: Item<"compacted"> }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="border-y border-dashed border-zinc-300 py-2 text-center text-xs text-zinc-500 dark:border-zinc-700">
+    <div className="border-y border-dashed border-line py-2 text-center text-xs text-muted">
       <p>{compactedLabel(item.folded)}</p>
       {item.summary && (
-        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 underline">
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 cursor-pointer underline">
           {open ? "Hide the summary" : "Show the summary"}
         </button>
       )}

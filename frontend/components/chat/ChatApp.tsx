@@ -75,13 +75,13 @@ function Notice({
 }) {
   return (
     <div className="flex flex-1 items-center justify-center p-6">
-      <section className="max-w-md rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+      <section className="max-w-md rounded-card border border-line bg-raised p-5">
         <h2 className="text-base font-semibold">{title}</h2>
-        <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{children}</div>
+        <div className="mt-1 text-sm text-muted">{children}</div>
         {action && (
           <button
             onClick={action.onClick}
-            className="mt-3 cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+            className="mt-3 cursor-pointer rounded-field border border-line px-3 py-1.5 text-sm font-medium hover:bg-hover"
           >
             {action.label}
           </button>
@@ -559,7 +559,7 @@ export function ChatApp() {
     return (
       <div className="flex h-dvh flex-col">
         {header}
-        <p className="p-6 text-center text-sm text-zinc-500">Loading…</p>
+        <p className="p-6 text-center text-sm text-muted">Loading…</p>
       </div>
     );
   }
@@ -656,6 +656,7 @@ export function ChatApp() {
           ) : (
             <Conversation
               threadId={threadId}
+              agent={threadAgent ? { id: threadAgent.id, name: threadAgent.name } : startingAgent ? { id: startingAgent.id, name: startingAgent.name } : null}
               emptyHint={
                 selectedEngine && !selectedEngine.available
                   ? `${selectedEngine.label} is not ready: ${selectedEngine.reason ?? "check it in Settings"}.`
@@ -672,23 +673,17 @@ export function ChatApp() {
           )}
 
           {thread?.session_state === "broken" && (
-            <div className="border-t border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <div className="border-t border-warning/50 bg-warning/10 px-4 py-3 text-sm">
               <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
-                <p className="min-w-0 flex-1 text-amber-900 dark:text-amber-200">
+                <p className="min-w-0 flex-1 text-ink">
                   The engine can no longer find this conversation&apos;s session, so it cannot continue it. A new
                   session keeps the messages above but starts without them as context.
                 </p>
-                <button
-                  onClick={resetSession}
-                  disabled={resetting}
-                  className="cursor-pointer rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-                >
+                <Button variant="primary" onClick={resetSession} loading={resetting}>
                   {resetting ? "Starting…" : "Start a new session"}
-                </button>
+                </Button>
               </div>
-              {resetError && (
-                <p className="mx-auto mt-2 max-w-3xl text-xs text-red-600 dark:text-red-400">{resetError}</p>
-              )}
+              {resetError && <p className="mx-auto mt-2 max-w-3xl text-xs text-danger">{resetError}</p>}
             </div>
           )}
 

@@ -8,6 +8,9 @@ import pytest
 from app.computers import browser, grants, screen
 from app.computers.mcp_server import Server
 from app.computers.policy import automatic
+from tests.computers.harness import docker  # noqa: F401
+from tests.computers.test_service import service, agent, workspace, computer_cleanup  # noqa: F401
+from tests.services.thread_harness import sessions, owner, cleanup  # noqa: F401
 
 
 @pytest.mark.parametrize("name,args", [
@@ -45,6 +48,35 @@ def test_all_browser_inputs_need_permission_and_plan_refuses_them():
         assert automatic(tool, "plan", True) == ("denied", "plan_mode")
     for name in browser.READ_NAMES:
         assert automatic("mcp__computer__" + name, "plan") == ("allowed", "computer_browser_read")
+
+
+async def test_browser_opt_in_survives_reload_and_is_bound_to_the_next_turn(service, agent, workspace, docker):  # noqa: F811
+    from app.computers import docker_cli
+    computer, _ = await service.create_for_agent(agent, workspace=workspace, kind="desktop")
+    assert computer.browser_enabled is False
+    docker.add_image(docker_cli.DESKTOP_IMAGE)
+    await service.start(computer.id)
+    binding = await service.attach_for_turn(agent.id, 8001, workspace)
+    try:
+        assert "--browser" not in binding.launch.args and "browser_open" not in binding.prompt_note()
+    finally:
+        await service.release_turn(binding, 8001)
+    await service.update_config(computer.id, browser_enabled=True)
+    assert (await service.get(computer.id)).browser_enabled is True
+    binding = await service.attach_for_turn(agent.id, 8002, workspace)
+    try:
+        assert "--browser" in binding.launch.args and "browser_open" in binding.prompt_note()
+        from app.computers.provider import ComputerError
+        with pytest.raises(ComputerError, match="Stop the active turn"):
+            await service.update_config(computer.id, browser_enabled=False)
+    finally:
+        await service.release_turn(binding, 8002)
+    await service.update_config(computer.id, browser_enabled=False)
+    binding = await service.attach_for_turn(agent.id, 8003, workspace)
+    try:
+        assert "--browser" not in binding.launch.args
+    finally:
+        await service.release_turn(binding, 8003)
 
 
 def test_permits_are_exact_and_one_use_and_takeover_is_enforced(monkeypatch, tmp_path):

@@ -61,6 +61,26 @@ CREATE TABLE team_event (
 	PRIMARY KEY (id)
 );
 
+CREATE TABLE team_setup_request (
+	id BIGINT GENERATED ALWAYS AS IDENTITY, 
+	owner_id VARCHAR NOT NULL, 
+	team_id BIGINT NOT NULL, 
+	lead_agent_id BIGINT NOT NULL, 
+	thread_id BIGINT, 
+	turn_id BIGINT, 
+	request_id VARCHAR NOT NULL, 
+	kind VARCHAR DEFAULT 'setup' NOT NULL, 
+	plan JSON NOT NULL, 
+	state VARCHAR DEFAULT 'applied' NOT NULL, 
+	result JSON NOT NULL, 
+	undo JSON NOT NULL, 
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	decided_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id)
+);
+
+CREATE UNIQUE INDEX uq_team_setup_request_owner_request ON team_setup_request (owner_id, request_id);
+
 CREATE TABLE agent_job_event (
 	id BIGINT GENERATED ALWAYS AS IDENTITY, 
 	job_id BIGINT NOT NULL, 

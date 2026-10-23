@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, update
 from app.db.models import Approval, Turn, Agent
 from app.db.transactions import begin_write
-from app.team import fence, policy, service
+from app.team import fence, policy, service, setup
 
 
 def canonical(value):
@@ -117,6 +117,8 @@ class TeamBridge:
                 agent = await service.create_specialist(db, rt.owner_id, run.agent_id, run.turn_id, args)
                 await run.recorder.emit('team.agent.created', {'agent_id': agent.id, 'name': agent.name, 'title': agent.title, 'created_by_agent_id': run.agent_id, 'undo_until_used': True})
                 return {'agent_id': agent.id, 'name': agent.name, 'approval_mode': 'ask'}
+        if name in setup.TOOLS:
+            return await setup.call(rt, run, name, args)
         if name == 'ask_agent':
             return await rt.team_jobs.ask(run, args)
         if name in ('list_rooms', 'create_room', 'say_in_room'):

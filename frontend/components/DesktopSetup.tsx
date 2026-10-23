@@ -27,6 +27,8 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   const [createAgent, setCreateAgent] = useState<boolean | null>(null);
   const [agentName, setAgentName] = useState("Assistant");
   const [leadsTeam, setLeadsTeam] = useState(true);
+  const [existing, setExisting] = useState<{ id: number; name: string; provider: string }[]>([]);
+  const [leadPick, setLeadPick] = useState("");
   const [createdAgentId, setCreatedAgentId] = useState<number | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,9 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   useEffect(() => {
     let cancelled = false;
     api.listAgents().then((agents) => {
-      if (!cancelled) setCreateAgent((previous) => previous ?? agents.length === 0);
+      if (cancelled) return;
+      setExisting(agents.filter((agent) => agent.provider === "claude").map((agent) => ({ id: agent.id, name: agent.name, provider: agent.provider })));
+      setCreateAgent((previous) => previous ?? agents.length === 0);
     }).catch(() => { if (!cancelled) setError("Could not load agents. Reload Settings to try again, or set up later."); });
     return () => { cancelled = true; };
   }, []);
@@ -71,6 +75,8 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
           agentId = saved.id;
           setCreatedAgentId(saved.id);
           if (leadsTeam && provider === "claude") await api.requestTeamLead(saved.id);
+        } else if (leadPick) {
+          await api.requestTeamLead(Number(leadPick));
         }
       }
       const completed = row("DESKTOP_ONBOARDING_COMPLETED");
@@ -103,6 +109,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
       <p className="text-xs text-muted">When off, local CLIs stay read only. API endpoints are chat only. Tool-capable engines use their own permissions and the app&apos;s approval cards.</p>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={createAgent === true} disabled={busy || createAgent === null} onChange={(event) => setCreateAgent(event.target.checked)} />Create a starter agent with the selected engine</label>
       {createAgent && provider === "claude" && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={leadsTeam} disabled={busy} onChange={(event) => setLeadsTeam(event.target.checked)} />Leads a team: can create specialists and delegate with the team approval settings</label>}
+      {createAgent === false && existing.length > 0 && <label className="block text-sm">Team lead (optional)<select aria-label="Team lead" className={FIELD} value={leadPick} disabled={busy} onChange={(event) => setLeadPick(event.target.value)}><option value="">No lead yet</option>{existing.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select><span className="mt-1 block text-xs text-muted">The lead can add specialists and hand work to them. You can change this later in Team.</span></label>}
       {createAgent && <label className="block text-sm">Agent name<input aria-label="Starter agent name" className={FIELD} maxLength={80} value={agentName} disabled={busy} onChange={(event) => setAgentName(event.target.value)} /></label>}
       <fieldset className="space-y-2" disabled={busy || !createAgent}><legend className="mb-2 text-sm font-medium">Starter agent approval mode</legend>{APPROVAL_MODES.map((option) => <label key={option.value} className="flex items-start gap-2 text-sm"><input type="radio" name="setup-approval" value={option.value} checked={mode === option.value} onChange={() => setMode(option.value)} /><span>{option.label}<span className="mt-1 block text-xs text-muted">{option.description}</span></span></label>)}</fieldset>
       {!createAgent && <p className="text-xs text-muted">Your existing agents keep their approval modes. Change them in Agents.</p>}

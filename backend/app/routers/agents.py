@@ -31,6 +31,7 @@ from app.schemas.agent import (
 )
 from app.services import agent_memory, agent_package, memory_entries, memory_journal, memory_log, memory_proposals, memory_topics
 from app.services import agent_store as store
+from app.services.agent_removal import remove_agent
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import EngineModelInvalid, ThreadRuntime, UnknownProvider
 from app.services.thread_runtime import runtime as default_runtime
@@ -285,19 +286,9 @@ async def delete_agent(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
     keep them linked."""
     await _agent_or_404(rt, agent_id)
     try:
-        async with rt.session() as db:
-            await store.delete_agent(db, agent_id)
+        await remove_agent(rt, agent_id)
     except store.AgentNotFound:
         raise HTTPException(status_code=404, detail="Agent not found") from None
-    # Its notes go with it; the folder stays, as its conversations may use it.
-    rt.capture.drop_agent(agent_id)
-    agent_memory.remove_memory(agent_id)
-    # So does its computer (the machine; never the folder). If Docker is not
-    # answering, the removal finishes later.
-    try:
-        await rt.computers.mark_agent_deleted(agent_id)
-    except Exception:  # noqa: BLE001
-        pass
 
 
 # --- notes (MEMORY.md) ---------------------------------------------------------------

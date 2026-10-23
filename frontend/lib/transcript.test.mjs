@@ -348,3 +348,10 @@ test('model-created specialist events have durable identity and malformed events
   const state=run([ev('team.agent.created',{agent_id:3,name:'Reviewer'}),ev('team.job.started',{job_id:'invalid'})]);
   assert.equal(state.items.length,1); assert.equal(state.items[0].agentId,3); assert.equal(state.lastSeq,2);
 });
+test('a team setup event becomes one settled card with its request id and rows', () => {
+  reset();
+  const state=run([ev('team.setup.applied',{request_id:'r1',undo_available:true,results:[{action:'created',agent_id:4,name:'Scribe'},{action:'updated',agent_id:2,name:'Worker'},{bad:1}]}),ev('team.setup.applied',{results:[]})]);
+  assert.equal(state.items.length,1);
+  assert.equal(state.items[0].kind,'team_setup'); assert.equal(state.items[0].requestId,'r1'); assert.equal(state.items[0].undoAvailable,true);
+  assert.deepEqual(state.items[0].rows.map(r=>[r.action,r.name]),[['created','Scribe'],['updated','Worker']]);
+});

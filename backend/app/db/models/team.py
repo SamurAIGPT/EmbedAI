@@ -143,3 +143,29 @@ class RoomDispatch(Base):
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
 
+
+
+class TeamSetupRequest(Base):
+    """One applied or decided change to the team's agents (a setup plan or a
+    deletion). The row is the receipt: a repeated request id replays its result,
+    and undo reads what it needs from `undo`."""
+
+    __tablename__ = "team_setup_request"
+    __table_args__ = (
+        Index("uq_team_setup_request_owner_request", 'owner_id', 'request_id', unique=True),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    lead_agent_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    thread_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    turn_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    request_id: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default='setup', server_default='setup')
+    plan: Mapped[dict] = mapped_column(JSONValue, nullable=False, default=dict)
+    state: Mapped[str] = mapped_column(String, nullable=False, default='applied', server_default='applied')
+    result: Mapped[dict] = mapped_column(JSONValue, nullable=False, default=dict)
+    undo: Mapped[dict] = mapped_column(JSONValue, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, server_default=func.now())
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

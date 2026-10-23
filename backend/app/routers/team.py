@@ -6,7 +6,7 @@ from app.db.models import Agent, Team, TeamEvent, AgentJob, AgentJobEvent, Appro
 from app.db.transactions import begin_write
 from app.services.local_access_policy import require_local_access
 from app.routers.threads import get_runtime
-from app.team import service, jobs
+from app.team import service, jobs, setup
 from app.services.engine_registry import capabilities_of
 from app.core.config import settings
 
@@ -122,6 +122,25 @@ async def undo_create(agent_id: int, rt=Depends(get_runtime)):
     try:
         async with rt.session() as db:
             return {'removed': await service.undo_create(db, rt.owner_id, agent_id)}
+    except service.TeamError as exc:
+        raise error(exc) from None
+
+
+@router.get('/setup')
+async def list_setup(limit: int = Query(20, ge=1, le=100), rt=Depends(get_runtime)):
+    """Recent team changes the lead made, newest first, with whether Undo still applies."""
+    from app.db.models import TeamSetupRequest
+    async with rt.session() as db:
+        rows = list((await db.execute(select(TeamSetupRequest).where(TeamSetupRequest.owner_id == rt.owner_id).order_by(TeamSetupRequest.id.desc()).limit(limit))).scalars())
+        return [{'request_id': r.request_id, 'kind': r.kind, 'state': r.state, 'results': r.result.get('results', []), 'thread_id': r.thread_id,
+                 'undo_available': r.kind == 'setup' and r.state == 'applied', 'created_at': r.created_at} for r in rows]
+
+
+@router.post('/setup/{request_id}/undo')
+async def undo_setup(request_id: str, rt=Depends(get_runtime)):
+    try:
+        async with rt.session() as db:
+            return await setup.undo(db, rt.owner_id, request_id)
     except service.TeamError as exc:
         raise error(exc) from None
 

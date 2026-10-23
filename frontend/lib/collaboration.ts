@@ -19,6 +19,7 @@ export const collaboration = {
   removeMember: (id: number) => request<void>(`/team/members/${id}`, { method: "DELETE" }),
   delegation: (id: number, delegation_enabled: boolean) => request<unknown>(`/team/members/${id}`, patch({ delegation_enabled })),
   undoCreate: (id: number) => request<{ removed: string }>(`/team/agents/${id}/undo-create`, post({})),
+  undoSetup: (requestId: string) => request<{ state: string }>(`/team/setup/${encodeURIComponent(requestId)}/undo`, post({})),
   jobs: () => request<TeamJob[]>("/team/jobs"),
   job: (id: number) => request<TeamJob>(`/team/jobs/${id}`),
   cancelJob: (id: number) => request<void>(`/team/jobs/${id}/cancel`, post({})),

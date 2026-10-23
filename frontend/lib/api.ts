@@ -965,6 +965,14 @@ export const api = {
       method: "POST",
     }),
 
+  // Organize, expire, de-duplicate and reconcile contradictions now (409 while
+  // the agent is working or upkeep is off).
+  tidyAgentMemory: (agentId: number) =>
+    request<{ organized: number; expired: number; duplicates: number; superseded: number; note: string | null }>(
+      `/agents/${agentId}/memory/tidy`,
+      { method: "POST" }
+    ),
+
   memoryProposals: (agentId: number) => request<MemoryProposal[]>(`/agents/${agentId}/memory/proposals`),
 
   acceptProposal: (agentId: number, proposalId: string, line?: string) =>

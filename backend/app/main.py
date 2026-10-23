@@ -88,6 +88,8 @@ async def _serving(app: FastAPI):
         # Agent computers: finish interrupted removals, remove orphans once
         # Docker answers, stop idle ones. Does nothing while Docker is down.
         asyncio.create_task(run_every(BACKGROUND_INTERVAL_SECONDS, thread_runtime.computers.upkeep)),
+        # The nightly memory tidy-up for agents that are due and idle (memory_capture.py).
+        asyncio.create_task(run_every(600, thread_runtime.capture.tick)),
         # Local routines: due occurrences, starts, approvals, run limits, endings.
         asyncio.create_task(run_every(settings.ROUTINE_POLL_SECONDS, routines.tick)),
     ]

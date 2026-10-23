@@ -64,6 +64,17 @@ function formatKB(bytes: number): string {
   return bytes < 1000 ? `${bytes} B` : `${(bytes / 1000).toFixed(bytes < 10_000 ? 1 : 0)} KB`;
 }
 
+// One line for what a tidy-up did.
+export function tidyLine(r: { organized: number; expired: number; duplicates: number; superseded: number; note: string | null }): string {
+  const parts = [
+    r.organized ? `${r.organized} filed into topic notes` : "",
+    r.expired ? `${r.expired} expired moved to the archive` : "",
+    r.duplicates ? `${r.duplicates} repeat${r.duplicates === 1 ? "" : "s"} removed` : "",
+    r.superseded ? `${r.superseded} contradicted note${r.superseded === 1 ? "" : "s"} struck through` : "",
+  ].filter(Boolean);
+  return (parts.length ? `Tidied: ${parts.join(", ")}.` : "Nothing to tidy.") + (r.note ? ` ${r.note}` : "");
+}
+
 // The text of an agent file as saved to disk.
 export function agentFileText(document: unknown): string {
   return JSON.stringify(document, null, 2) + "\n";

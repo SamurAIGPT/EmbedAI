@@ -533,7 +533,21 @@ async def memory_upkeep_status(agent_id: int, rt: ThreadRuntime = Depends(get_ru
         "engine_can_call": hasattr(adapter, "generate_text"),
         "quiet_seconds": settings.MEMORY_CAPTURE_QUIET_SECONDS,
         "last_capture": memory_capture.read_status(agent.id).get("last_capture"),
+        "last_tidy": memory_capture.read_status(agent.id).get("last_tidy"),
+        "tidy_hour": settings.MEMORY_TIDY_HOUR,
     }
+
+
+@router.post("/{agent_id}/memory/tidy")
+async def tidy_now(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """Run the tidy-up now (organize, expire, de-duplicate, reconcile
+    contradictions). 409 while the agent is working or upkeep is off."""
+    agent = await _agent_or_404(rt, agent_id)
+    if not (agent.memory_enabled and agent.memory_upkeep):
+        raise _error(409, "upkeep_off", "Memory upkeep is off for this agent.")
+    if rt.capture.busy(agent.id):
+        raise _error(409, "agent_busy", "The agent is working; try again when it is done.")
+    return await rt.capture.tidy(agent.id)
 
 
 @router.get("/{agent_id}/memory/proposals", response_model=list[MemoryProposalResponse])

@@ -12,6 +12,7 @@ import {
   modelLabel,
   parseAgentFile,
   redactionNotice,
+  tidyLine,
 } from "@/lib/agents";
 import { computerStateLabel } from "@/lib/computers";
 import { ComputerView } from "./ComputerPanel";
@@ -228,6 +229,21 @@ export function AgentsPanel({
       () => api.updateAgent(agent.id, { recall_enabled: on }),
       () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, recall_enabled: on } } : open))
     );
+
+  const tidyNow = async () => {
+    if (!notes) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.tidyAgentMemory(notes.agent.id);
+      const memory = await api.getAgentMemory(notes.agent.id);
+      setNotes({ ...notes, memory, text: memory.text, conflict: false, saved: tidyLine(r) });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const toggleUpkeepOn = (agent: Agent, on: boolean) =>
     run(
@@ -472,6 +488,7 @@ export function AgentsPanel({
               onToggle={(on) => toggleNotesOn(notes.agent, on)}
               onToggleRecall={(on) => toggleRecallOn(notes.agent, on)}
               onToggleUpkeep={(on) => toggleUpkeepOn(notes.agent, on)}
+              onTidy={tidyNow}
               onReload={loadTheirs}
               onBack={back}
             />
@@ -639,6 +656,7 @@ function NotesEditor({
   onToggle,
   onToggleRecall,
   onToggleUpkeep,
+  onTidy,
   onReload,
   onBack,
 }: {
@@ -651,6 +669,7 @@ function NotesEditor({
   onToggle: (on: boolean) => void;
   onToggleRecall: (on: boolean) => void;
   onToggleUpkeep: (on: boolean) => void;
+  onTidy: () => void;
   onReload: () => void;
   onBack: () => void;
 }) {
@@ -710,6 +729,12 @@ function NotesEditor({
         Memory upkeep: when a conversation goes quiet, one quick call to this agent&apos;s own engine files facts worth
         keeping (marked &ldquo;noticed&rdquo;, in the History tab, undoable)
       </label>
+      <div className="flex items-center gap-2 text-xs text-muted">
+        <button onClick={onTidy} disabled={busy || !enabled || !upkeep} className={SMALL}>
+          Tidy up now
+        </button>
+        <span>Also runs once a night: expired notes move to the archive, repeats go, contradicted notes are struck through.</span>
+      </div>
       <div className="flex gap-2">
         <button onClick={onSave} disabled={busy || !dirty} className={PRIMARY}>
           {busy ? "Saving…" : "Save notes"}

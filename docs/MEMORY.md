@@ -100,8 +100,8 @@ would never be seen. `MEMORY.md` therefore never overflows through the app:
 - **Superseded entries.** A replaced fact is struck through, not deleted:
   `- 2026-10-01 · ~~The office is in Pune~~ · superseded 2026-10-23`. Struck
   entries stay in the file (and in the line count) but topic recall skips them.
-  The agent is told this convention in its notes guidance; no code strikes
-  anything through yet (a nightly tidy-up is not implemented).
+  The agent is told this convention in its notes guidance, and the nightly
+  tidy-up strikes contradicted entries through.
 - **The archive is never recalled.** It is older or no longer true; it is
   listed last in the topic index and can be read like any topic note.
 
@@ -331,6 +331,41 @@ chat with you*). Engines without MCP here (Codex, ACP agents, OpenAI-compatible
 endpoints) do not get the tools; they still get the recent-work brief and
 automatic recall. The agent is told about the tools in its system prompt.
 
+## Organizing and the nightly tidy-up
+
+With upkeep on, two more model steps keep the files in shape (the same quick
+call as noticed facts, on the agent's own engine; where the engine has none,
+only the two steps that need no model run):
+
+- **Organizing.** One call looks at the dated lines of `MEMORY.md` it has not
+  judged before and moves the ones that are detail about a subject (another
+  person, a client, a trip, likes in one domain) into that subject's topic note,
+  unchanged, creating it with a header (`title`, `aliases`). Core facts stay: the
+  person's name, where they live, their work, how they like replies. A line about
+  diet, allergies or health is never even offered (a fixed rule, not the model's
+  choice), nor is a hand-written line, an expired or a struck one; a line judged
+  core is not asked about again. At most 20 move in a pass; an answer that names a
+  line that is not there is dropped whole, and so is one made stale by an edit
+  during the call. Each file's change is a journal row by **Memory upkeep**.
+- **Tidy-up.** Once a day after 3 am local time (`MEMORY_TIDY_HOUR`, 24 = never),
+  at the next check if the computer was asleep, never while the agent is working,
+  and on **Tidy up now** (`POST /memory/tidy`): expired entries move to
+  `memory/archive.md` (marked `· expired <date>`; from `MEMORY.md` and topic
+  notes); of two entries with exactly the same fact the newer stays; and in
+  `MEMORY.md` and a few topic notes per pass a model call looks for pairs that
+  cannot both be true, striking the older through (`~~…~~ · superseded <date>`)
+  rather than deleting it. When that line also held something still true, that
+  part is kept as its own entry `from tidy-up`. At most a fifth of the live
+  entries are struck in one pass in `MEMORY.md` and none in a file of fewer than
+  five; a topic note may reconcile one pair even with two entries. Four files are
+  checked per pass, rotating through the topics. The archive is written before
+  the file it came from. "Exactly the same fact" is narrow on purpose: spacing, a
+  bullet and a final full stop are ignored, nothing else (`-10` and `10`, `C++`
+  and `C` are different facts).
+
+The status route reports the last tidy-up; the editor has a **Tidy up now**
+button. Every upkeep change is undoable from the History tab.
+
 ## The journal
 
 Every change made through the app to `MEMORY.md` or a topic note (an editor
@@ -361,6 +396,7 @@ chat-scope device), with sign-in like every route.
 | `GET` | `/memory/logs` | The days that have a daily log. |
 | `GET` | `/memory/logs/{day}` | One day's log (read-only, redacted); 404 when none. |
 | `DELETE` | `/memory/logs/{day}` | Delete one day's log. |
+| `POST` | `/memory/tidy` | Run the tidy-up now; `409 upkeep_off` / `409 agent_busy`. |
 | `GET` | `/memory/upkeep` | Whether quiet upkeep is on, whether the engine can make its call, the last capture. |
 | `GET` | `/memory/proposals` | Proposed notes (reads quiet conversations first). |
 | `POST` | `/memory/proposals/{id}/accept` | `{line?, target?}`: save it, or your edited line, into `MEMORY.md` or a topic. |
@@ -373,6 +409,7 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 ## Not covered
 
 - No model-written summaries for compaction.
+- There is no person-level "About me" profile shared by every agent, and no capture from rooms ("Learn from group chats"): both are decisions for the owner.
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Noticed facts are not added to a person-level profile, and rooms are never read.

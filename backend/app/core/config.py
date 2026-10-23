@@ -146,6 +146,9 @@ class Settings(BaseSettings):
     # An engine not listed uses "haiku" on Claude, and the endpoint's own model elsewhere.
     # The call always goes to the engine the conversation already uses.
     MEMORY_HELPER_MODEL: str = ""
+    # The nightly tidy-up runs once a day after this local hour (0-23) for each
+    # agent with notes and upkeep on, never while it is working. 24 switches it off.
+    MEMORY_TIDY_HOUR: int = 3
 
     # Routines (docs/ROUTINES.md): how often the scheduler looks for due and
     # finished runs, the largest webhook body accepted, and an optional

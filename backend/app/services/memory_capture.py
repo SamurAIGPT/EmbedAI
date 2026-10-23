@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services import agent_memory, memory_budget, memory_entries, memory_journal, memory_status, memory_topics
+from app.services import agent_memory, memory_budget, memory_entries, memory_journal, memory_status, memory_tidy, memory_topics
 from app.services.agent_memory import MemoryConflict, MemoryTooLarge, redact_secrets
 
 logger = get_logger(__name__)
@@ -51,6 +51,10 @@ KINDS = ("preference", "fact", "decision", "outcome")
 RESERVED_TOPICS = {"archive.md", "log.md", "memory.md"}
 DEFAULT_HELPER_MODELS = {"claude": "haiku"}
 MAX_PENDING_CONVERSATIONS = 50
+# Contradictions are checked from this many live entries in MEMORY.md (topic notes: 2),
+# and at most this many files are checked in one tidy-up.
+MIN_ENTRIES_CORE = 5
+MAX_TIDY_CHECKS = 4
 
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -469,6 +473,212 @@ class MemoryCapture:
             self._flush((agent_id, thread_id))
             restored += len(turns)
         return restored
+
+    # -- organizing and the nightly tidy-up --
+
+    def busy(self, agent_id: int) -> bool:
+        return any(run.agent_id == agent_id for run in self.rt._runs.values())
+
+    async def ask(self, agent, prompt_text: str) -> str | None:
+        """One quick call for `agent` on its own engine (no conversation), or
+        None when the engine has none, it fails or it does not answer."""
+        adapter = self.rt.adapters.get(agent.provider)
+        generate = getattr(adapter, "generate_text", None)
+        if generate is None:
+            return None
+        config = await self.rt.prepare_adapter(agent.provider, adapter)
+        try:
+            return await asyncio.wait_for(
+                generate(prompt_text, config=config, model=helper_model(agent.provider, agent.model),
+                         timeout=CALL_TIMEOUT_SECONDS),
+                timeout=CALL_TIMEOUT_SECONDS + 10,
+            )
+        except (RuntimeError, TimeoutError, OSError) as exc:
+            logger.warning("memory upkeep call failed", agent_id=agent.id, error=str(exc)[:200])
+            return None
+
+    async def _agent(self, agent_id: int):
+        from app.services import agent_store
+
+        async with self.rt.session() as db:
+            agent = await agent_store.get_agent(db, agent_id)
+        return agent if agent is not None and agent.memory_enabled and agent.memory_upkeep else None
+
+    async def organize(self, agent_id: int) -> int:
+        """Move detail lines of MEMORY.md into topic notes, unchanged. Returns
+        how many moved. A line judged core is not asked about again."""
+        agent = await self._agent(agent_id)
+        if agent is None or not hasattr(self.rt.adapters.get(agent.provider), "generate_text"):
+            return 0
+        today = memory_entries.today()
+        status = memory_status.read(agent_id)
+        core = set(status.get("core") or [])
+        first = agent_memory.read_memory(agent_id).text
+        candidates = memory_tidy.organize_candidates(first, today, core)
+        if not candidates:
+            return 0
+        answer = await self.ask(agent, memory_tidy.organize_prompt(candidates, memory_topics.topic_index(agent_id)))
+        if answer is None or await self._agent(agent_id) is None:
+            return 0
+        doc = agent_memory.read_memory(agent_id)
+        if doc.text != first:
+            return 0  # the notes changed while the model read them: its line numbers are stale
+        moves = memory_tidy.parse_moves(answer, candidates)
+        if moves is None:
+            return 0
+        moved_lines = {m.entry.start for m in moves}
+        judged = [memory_entries.identity(e.body) for e in candidates if e.start not in moved_lines]
+        memory_status.update(agent_id, core=list(dict.fromkeys([*core, *judged]))[-500:])
+        moves = moves[: memory_tidy.MAX_MOVES]
+        if not moves:
+            return 0
+        written: set[str] = set()
+        count = 0
+        by_topic: dict[str, list[memory_tidy.Move]] = {}
+        for move in moves:
+            by_topic.setdefault(move.topic, []).append(move)
+        existing = {t.name.lower(): t.name for t in memory_topics.list_topics(agent_id)}
+        for wanted, group in by_topic.items():
+            name = existing.get(wanted, wanted)
+            current = memory_topics.read_topic(agent_id, name)
+            have = memory_entries.identities(current.text)
+            lines = [m.entry.raw for m in group if memory_entries.line_identity(m.entry.raw) not in have]
+            if lines:
+                text = memory_topics.merge_topic_text(
+                    current.text if current.exists else None,
+                    title=name.removesuffix(".md").replace("-", " ").strip().capitalize(),
+                    aliases=[a for m in group for a in m.aliases], lines=lines,
+                )
+                try:
+                    new, _, before = memory_topics.write_topic(agent_id, name, text, expected_hash=current.hash)
+                except (MemoryConflict, MemoryTooLarge, memory_topics.TooManyTopics):
+                    continue
+                memory_journal.record(agent_id, memory_journal.note_path(name), actor="upkeep", before=before, after=new.text)
+            written.add(wanted)
+            count += len(group)
+        if not written:
+            return 0
+        try:
+            new, _ = agent_memory.write_memory(
+                agent_id, memory_tidy.apply_moves(first, [m for m in moves if m.topic in written]), expected_hash=doc.hash
+            )
+        except MemoryConflict:
+            return 0
+        memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="upkeep", before=doc.text, after=new.text)
+        return count
+
+    def _archive(self, agent_id: int, lines: list[str]) -> None:
+        if not lines:
+            return
+        current = memory_topics.read_topic(agent_id, memory_budget.ARCHIVE)
+        before = current.text if current.exists else None
+        head = before if before is not None else f"---\ntitle: {memory_budget.ARCHIVE_TITLE}\n---\n\n"
+        body = head + ("" if head.endswith("\n") else "\n") + "\n".join(lines) + "\n"
+        new, _, _ = memory_topics.write_topic(agent_id, memory_budget.ARCHIVE, body)
+        memory_journal.record(agent_id, memory_journal.note_path(memory_budget.ARCHIVE), actor="upkeep", before=before, after=new.text)
+
+    async def tidy(self, agent_id: int) -> dict:
+        """The tidy-up: organize, then expire, de-duplicate and reconcile
+        contradictions in MEMORY.md and in each topic note (a few per pass)."""
+        today = memory_entries.today()
+        report = {"at": time.time(), "expired": 0, "duplicates": 0, "superseded": 0, "deferred": 0, "organized": 0, "note": None}
+        agent = await self._agent(agent_id)
+        if agent is None:
+            report["note"] = "Memory upkeep is off for this agent."
+            return report
+        can_ask = hasattr(self.rt.adapters.get(agent.provider), "generate_text")
+        report["organized"] = await self.organize(agent_id)
+        # MEMORY.md, then topic notes (never the archive), the oldest-checked first.
+        files = [(agent_memory.MEMORY_FILE, MIN_ENTRIES_CORE)] + [
+            (f"{memory_topics.TOPICS_DIR}/{t.name}", 2)
+            for t in sorted(memory_topics.list_topics(agent_id), key=lambda t: t.name)
+            if t.name != memory_topics.ARCHIVE_NAME
+        ]
+        cursor = memory_status.read(agent_id).get("topic_cursor")
+        topics = files[1:]
+        at = next((i + 1 for i, (p, _) in enumerate(topics) if p == cursor), 0)
+        ordered = [files[0], *topics[at:], *topics[:at]]
+        checks = 0
+        for path, minimum in ordered:
+            is_core = path == agent_memory.MEMORY_FILE
+            doc = (agent_memory.read_memory(agent_id) if is_core else memory_topics.read_topic(agent_id, path.split("/", 1)[1]))
+            if not is_core and not doc.exists:
+                continue
+            text = doc.text
+            candidates = memory_tidy.contradiction_candidates(text, today)
+            pairs: list[memory_tidy.Pair] = []
+            if can_ask and len(candidates) >= minimum and checks < MAX_TIDY_CHECKS:
+                checks += 1
+                if not is_core:
+                    memory_status.update(agent_id, topic_cursor=path)
+                answer = await self.ask(agent, memory_tidy.contradiction_prompt(candidates))
+                if await self._agent(agent_id) is None:
+                    report["note"] = "Memory upkeep was switched off during the tidy-up."
+                    break
+                current = agent_memory.read_memory(agent_id) if is_core else memory_topics.read_topic(agent_id, path.split("/", 1)[1])
+                if current.text != text:
+                    report["note"] = "A note changed during the check; its contradictions wait for the next tidy-up."
+                elif answer is not None:
+                    pairs = memory_tidy.parse_pairs(answer, len(candidates))
+            elif not can_ask:
+                report["note"] = "This agent's engine cannot make the quick call, so only expired and duplicate entries are tidied."
+            plan = memory_tidy.plan(text, today, pairs, minimum_budget=0 if is_core else 1)
+            report["deferred"] += plan.deferred
+            if not plan.changes:
+                continue
+            new_text, archived = memory_tidy.apply(text, plan, today)
+            try:
+                self._archive(agent_id, archived)  # the archive first: a line is never out of both
+                if is_core:
+                    new, _ = agent_memory.write_memory(agent_id, new_text, expected_hash=doc.hash)
+                    memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="upkeep", before=text, after=new.text)
+                else:
+                    name = path.split("/", 1)[1]
+                    new, _, before = memory_topics.write_topic(agent_id, name, new_text, expected_hash=doc.hash)
+                    memory_journal.record(agent_id, path, actor="upkeep", before=before, after=new.text)
+            except (MemoryConflict, MemoryTooLarge):
+                continue
+            report["expired"] += len(plan.expired)
+            report["duplicates"] += len(plan.duplicates)
+            report["superseded"] += len(plan.superseded)
+        memory_status.update(agent_id, last_tidy=report)
+        return report
+
+    def due(self, agent_id: int, now=None) -> bool:
+        now = now or datetime.now()
+        hour = settings.MEMORY_TIDY_HOUR
+        if hour >= 24 or now.hour < hour:
+            return False
+        last = (memory_status.read(agent_id).get("last_tidy") or {}).get("at")
+        return not last or datetime.fromtimestamp(last).strftime("%Y-%m-%d") < now.strftime("%Y-%m-%d")
+
+    async def tick(self) -> int:
+        """Run the tidy-up for every agent that is due and idle. Returns how
+        many ran. Never raises."""
+        from sqlalchemy import select
+
+        from app.db.models import Agent
+
+        ran = 0
+        try:
+            async with self.rt.session() as db:
+                ids = list((await db.execute(select(Agent.id).where(
+                    Agent.owner_id == self.rt.owner_id, Agent.archived_at.is_(None),
+                    Agent.memory_enabled.is_(True), Agent.memory_upkeep.is_(True)))).scalars())
+        except Exception:  # noqa: BLE001
+            logger.exception("memory tidy-up could not list agents")
+            return 0
+        for agent_id in ids:
+            if self._closed or self.busy(agent_id) or not self.due(agent_id):
+                continue
+            lock = self._locks.setdefault(agent_id, asyncio.Lock())
+            async with lock:
+                try:
+                    await self.tidy(agent_id)
+                    ran += 1
+                except Exception:  # noqa: BLE001
+                    logger.exception("memory tidy-up failed", agent_id=agent_id)
+        return ran
 
     # -- the call --
 

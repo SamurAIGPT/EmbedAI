@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { api, ApiError } from './api.ts';
-import { activeAgents, agentFileHasNotes, agentFileText, agentNames, memoryGauge, modelFromInput, modelLabel, approvalModeLabel, parseAgentFile, redactionNotice } from './agents.ts';
+import { activeAgents, agentFileHasNotes, agentFileText, agentNames, memoryGauge, tidyLine, modelFromInput, modelLabel, approvalModeLabel, parseAgentFile, redactionNotice } from './agents.ts';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -130,4 +130,12 @@ test('agent files are read with a sentence when they are not one', () => {
 test('the export notice names the redacted parts', () => {
   assert.equal(redactionNotice([]), null);
   assert.match(redactionNotice(['instructions', 'notes']), /instructions, notes/);
+});
+
+test('a tidy-up is described in one line', () => {
+  assert.equal(tidyLine({ organized: 0, expired: 0, duplicates: 0, superseded: 0, note: null }), 'Nothing to tidy.');
+  assert.equal(
+    tidyLine({ organized: 2, expired: 1, duplicates: 3, superseded: 1, note: null }),
+    'Tidied: 2 filed into topic notes, 1 expired moved to the archive, 3 repeats removed, 1 contradicted note struck through.'
+  );
 });

@@ -142,6 +142,16 @@ async def test_daily_logs_are_listed_read_and_deleted(api):
     assert (await api.delete(f"{base}/{item['day']}")).status_code == 404
 
 
+async def test_tidy_now_reports_and_is_refused_when_upkeep_is_off(api):
+    agent = await make(api)
+    done = await api.post(f"/api/v1/agents/{agent['id']}/memory/tidy")
+    assert done.status_code == 200 and {"expired", "duplicates", "superseded", "organized"} <= set(done.json())
+    assert (await api.get(f"/api/v1/agents/{agent['id']}/memory/upkeep")).json()["last_tidy"] is not None
+    off = await make(api, memory_upkeep=False)
+    refused = await api.post(f"/api/v1/agents/{off['id']}/memory/tidy")
+    assert refused.status_code == 409 and code_of(refused) == "upkeep_off"
+
+
 def test_memory_routes_are_admin_only():
     for method, path in (
         ("GET", "/api/v1/agents/1/memory/topics"),
@@ -150,6 +160,7 @@ def test_memory_routes_are_admin_only():
         ("POST", "/api/v1/agents/1/memory/journal/x/undo"),
         ("GET", "/api/v1/agents/1/memory/proposals"),
         ("GET", "/api/v1/agents/1/memory/upkeep"),
+        ("POST", "/api/v1/agents/1/memory/tidy"),
         ("GET", "/api/v1/agents/1/memory/logs"),
         ("GET", "/api/v1/agents/1/memory/logs/2026-10-01"),
         ("DELETE", "/api/v1/agents/1/memory/logs/2026-10-01"),

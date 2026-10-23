@@ -36,6 +36,13 @@ def public(job):
     return {name: getattr(job, name) for name in ('id', 'root_id', 'parent_id', 'depth', 'kind', 'reply', 'requester_agent_id', 'requester_thread_id', 'assignee_agent_id', 'assignee_thread_id', 'assignee_turn_id', 'mode', 'brief', 'status', 'outcome', 'outcome_detail', 'question', 'result', 'approval_mode', 'created_at', 'started_at', 'finished_at')}
 
 
+def _failure_outcome(turn):
+    """How a requester sees a failed turn: a stall is its own outcome, not a provider error."""
+    if turn.status == 'interrupted':
+        return 'interrupted'
+    return 'stalled' if turn.error_code == 'engine_stalled' else 'provider_error'
+
+
 def event(db, job, kind, detail=None):
     db.add(AgentJobEvent(job_id=job.id, kind=kind, detail=detail or {}))
     job.last_activity_at = service.now()
@@ -240,7 +247,7 @@ class Jobs:
         elif turn.status == 'cancelled':
             await self.settle(job.id, 'cancelled', 'stopped')
         else:
-            await self.settle(job.id, 'failed', 'interrupted' if turn.status == 'interrupted' else 'provider_error', detail=turn.error)
+            await self.settle(job.id, 'failed', _failure_outcome(turn), detail=turn.error)
 
     async def settle(self, job_id, status, outcome, *, result=None, detail=None):
         async with self.rt.session() as db:
@@ -465,7 +472,7 @@ class Jobs:
         elif turn.status == 'interrupted':
             await self.settle(job_id, 'failed', 'interrupted', detail='The run was cut off and may be partly done.')
         else:
-            await self.settle(job_id, 'failed', 'provider_error', detail=turn.error)
+            await self.settle(job_id, 'failed', _failure_outcome(turn), detail=turn.error)
 
     async def tick(self):
         async with self._tick_lock:

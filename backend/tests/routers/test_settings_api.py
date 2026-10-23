@@ -37,7 +37,7 @@ async def test_read_and_write_require_the_launch_token(client):
 
 async def test_api_versions_validation_and_audit(client, configured):
     before = await client.get("/api/v1/settings", headers=TOKEN)
-    assert len(before.json()["settings"]) == 9
+    assert len(before.json()["settings"]) == 10
     assert "encryption_key" in before.json()["storage"]
     path = "/api/v1/settings/LOCAL_TOOLS_ENABLED"
     change = {"value": False, "expected_version": 0}

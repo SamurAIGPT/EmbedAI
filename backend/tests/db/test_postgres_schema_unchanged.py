@@ -27,6 +27,7 @@ TEAM_TABLES = {"team", "team_event", "agent_job", "agent_job_event", "agent_job_
 ROOM_TABLES = {"room", "room_member", "room_dispatch"}
 ROUTINE_TABLES = {"routine", "routine_run", "notification"}
 NEEDS_YOU_TABLES = {"needs_you_state"}
+NOTICE_TABLES = {"team_notice"}
 
 
 def postgres_ddl(table_names: set[str]) -> str:
@@ -58,7 +59,7 @@ def test_thread_tables_compile_to_their_reviewed_postgres_schema():
 
 
 def test_every_table_is_covered_by_one_of_the_snapshots():
-    assert original_tables() | F04_TABLES | SETTINGS_TABLES | AGENT_TABLES | COMPUTER_TABLES | AUTH_TABLES | ROUTINE_TABLES | TEAM_TABLES | ROOM_TABLES | NEEDS_YOU_TABLES == set(Base.metadata.tables)
+    assert original_tables() | F04_TABLES | SETTINGS_TABLES | AGENT_TABLES | COMPUTER_TABLES | AUTH_TABLES | ROUTINE_TABLES | TEAM_TABLES | ROOM_TABLES | NEEDS_YOU_TABLES | NOTICE_TABLES == set(Base.metadata.tables)
     assert not original_tables() & F04_TABLES
 
 
@@ -92,3 +93,7 @@ def test_room_tables_compile_to_their_reviewed_postgres_schema():
 
 def test_needs_you_table_compiles_to_its_reviewed_postgres_schema():
     assert postgres_ddl(NEEDS_YOU_TABLES) == snapshot_text(HERE / "postgres_schema_needs_you.sql")
+
+
+def test_team_notice_table_compiles_to_its_reviewed_postgres_schema():
+    assert postgres_ddl(NOTICE_TABLES) == snapshot_text(HERE / "postgres_schema_team_notice.sql")

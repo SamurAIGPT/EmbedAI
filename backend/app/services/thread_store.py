@@ -92,7 +92,10 @@ async def list_threads(
     db: AsyncSession, owner_id: str, *, include_archived: bool = False, limit: int = 100, kind: str = "chat"
 ) -> list[Thread]:
     query = select(Thread).where(Thread.owner_id == owner_id)
-    if kind != "all":
+    if kind == "chat":
+        # The lead's report threads ("Team incidents") sit with the person's chats.
+        query = query.where(Thread.kind.in_(("chat", "team_notices")))
+    elif kind != "all":
         query = query.where(Thread.kind == kind)
     if not include_archived:
         query = query.where(Thread.archived_at.is_(None))

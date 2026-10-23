@@ -183,3 +183,40 @@ class TeamSetupRequest(Base):
     undo: Mapped[dict] = mapped_column(JSONValue, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, server_default=func.now())
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class TeamNotice(Base):
+    """One report to the lead about a teammate's thread, or one retry the lead
+    made. The rows are the ledger: how many reports a thread filed within the
+    hour, when it was last reported, and what is still waiting for the lead.
+
+    `family` is incident, escalation or retry. `status` is pending (waiting for
+    the lead), delivered, person (the person was told instead), refused (the lead
+    could not take it) or muted."""
+
+    __tablename__ = "team_notice"
+    __table_args__ = (
+        Index("ix_team_notice_thread", 'owner_id', 'subject_thread_id', 'family', 'created_at', unique=False),
+        Index("ix_team_notice_status", 'owner_id', 'status', unique=False),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    family: Mapped[str] = mapped_column(String, nullable=False, default='incident', server_default='incident')
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    subject_agent_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    subject_thread_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    room_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    key: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_request: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    replay: Mapped[str | None] = mapped_column(String, nullable=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
+    already_notified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    chipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    status: Mapped[str] = mapped_column(String, nullable=False, default='pending', server_default='pending')
+    lead_turn_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, server_default=func.now())
+    delivered_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

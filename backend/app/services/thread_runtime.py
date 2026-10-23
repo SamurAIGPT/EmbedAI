@@ -50,6 +50,7 @@ from app.services import tool_policy
 from app.team.policy import TurnTeam
 from app.team.bridge import TeamBridge
 from app.team.jobs import Jobs
+from app.team.notices import Notices
 from app.computers import service as computer_service
 from app.services import approval_allowlist, approval_modes, decision_log, engine_errors, safety_floor
 from app.services.provider_adapter import (
@@ -468,6 +469,7 @@ class ThreadRuntime:
         from app.rooms.service import Rooms
         self.team_jobs = Jobs(self)
         self.rooms = Rooms(self)
+        self.notices = Notices(self)
         self.capture = MemoryCapture(self)
         if self.computers is None:
             self.computers = computer_service.ComputerService(
@@ -1088,6 +1090,8 @@ class ThreadRuntime:
             self._runs.pop(run.turn_id, None)
             self.hub.message_done(run.thread_id)
             self.hub.notify(run.thread_id)
+            # After the run is gone, so a retry is never refused as running.
+            self.notices.spawn(self.notices.after_turn(run, outcome))
 
     async def _run_adapter(self, run: ActiveRun, adapter: ProviderAdapter) -> TurnOutcome:
         with app_settings.use(run.settings_snapshot):
@@ -1410,6 +1414,8 @@ class ThreadRuntime:
             logger.warning("interrupted turns whose owner stopped", turn_ids=interrupted)
         await self.team_jobs.recover()
         await self.rooms.recover()
+        if interrupted:
+            await self.notices.after_interrupt(interrupted)
         try:
             await self.capture.restore()
         except Exception:  # noqa: BLE001

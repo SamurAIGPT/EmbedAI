@@ -120,7 +120,7 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
 @router.get("", response_model=list[ThreadResponse])
 async def list_threads(
     include_archived: bool = False,
-    kind: Literal["chat", "all", "job", "room", "room_member"] = "chat",
+    kind: Literal["chat", "all", "job", "room", "room_member", "team_notices"] = "chat",
     limit: int = Query(100, ge=1, le=500),
     rt: ThreadRuntime = Depends(get_runtime),
 ):

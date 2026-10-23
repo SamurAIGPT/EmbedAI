@@ -154,6 +154,7 @@ class _GuardedRoutines:
             from app.services.thread_runtime import runtime
             await runtime.rooms.tick()
             await runtime.team_jobs.tick()
+            await runtime.notices.tick()
 
 
 app = FastAPI(lifespan=lifespan)

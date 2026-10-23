@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 
 # Origins that no person is watching: they may not create agents or rooms.
-UNATTENDED = ('outside', 'webhook', 'routine')
+UNATTENDED = ('outside', 'webhook', 'routine', 'harness')
 # Least to most trusted-away; a room turn takes the strictest origin it read.
-_RANK = ('person', 'routine', 'webhook', 'outside')
+_RANK = ('person', 'harness', 'routine', 'webhook', 'outside')
 
 
 def strictest(origins):
@@ -52,6 +52,18 @@ def automatic(tool, mode, team, arguments):
             return None  # Removing an agent is always the person's card, never automatic.
         if name == 'close_thread':
             return 'allowed', 'team_housekeeping'
+    elif name == 'retry_thread':
+        # Resumes work the person already started; allowed to the lead even in an
+        # unattended notices turn, where no one could answer a card.
+        if mode == 'plan':
+            return 'denied', 'plan_mode'
+        if team.origin in ('outside', 'webhook', 'routine'):
+            return 'denied', 'outside_origin'
+        if not team.is_lead:
+            return 'denied', 'lead_only'
+        return 'allowed', 'team_retry'
+    elif name == 'raise_escalation':
+        return 'allowed', 'team_escalation'  # a lead's own flag goes to the person
     elif name == 'say_in_room':
         return 'allowed', 'team_room_post'
     else:

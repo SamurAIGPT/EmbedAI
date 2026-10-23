@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     LOCAL_WORKSPACE_ROOT: str = ""
     TEAM_ENABLED: bool = True
     TEAM_LEAD_AUTO: bool = True
+    # Teammates may flag a gate only the person can lift (app/team/notices.py). Off by default.
+    TEAM_ESCALATIONS: bool = False
     TEAM_MAX_CREATED_PER_TURN: int = 4
     TEAM_MAX_AGENTS: int = 50
     TEAM_MAX_DEPTH: int = 3

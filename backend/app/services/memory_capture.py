@@ -73,6 +73,9 @@ class Turn:
     id: int
     person: str
     reply: str
+    # False when the words are not the owner's own (another person in a room):
+    # a fact from them may be kept, but never reaches About me.
+    owner: bool = True
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,10 @@ class Fact:
     until: str | None = None
     topic: str | None = None  # a topic file name, or None for a core fact
     aliases: tuple[str, ...] = ()
+    # A lasting fact about the person themselves (About me), and a fact the
+    # notebook already holds that is listed only for About me.
+    about_user: bool = False
+    noted: bool = False
 
 
 @dataclass
@@ -89,10 +96,11 @@ class Report:
     at: float
     added: int = 0
     topics: int = 0
+    about_me: int = 0
     note: str | None = None
 
     def as_dict(self) -> dict:
-        return {"at": self.at, "added": self.added, "topics": self.topics, "note": self.note}
+        return {"at": self.at, "added": self.added, "topics": self.topics, "about_me": self.about_me, "note": self.note}
 
 
 def _clip(text: str) -> str:
@@ -159,6 +167,10 @@ def prompt(*, agent_name: str, turns: list[Turn], notebook: str, topics: str, da
             "- A fact that is true only until a known day (an appointment on Friday, a trip next week) is worth "
             "keeping: give that day as \"until\", worked out from today, and it is forgotten automatically after. "
             "A date that comes back every year (a birthday) or a lasting fact never gets \"until\".",
+            "- aboutUser is true only for a durable fact about the Person themselves, taken from the Person's own "
+            "words, that any of their assistants should know (a diet, where they live, their company, how they like "
+            "to be spoken to). Never for a fact about someone else, a decision about one project, or anything only "
+            f"{agent_name} said.",
             "",
             "Where each fact goes:",
             "- No topic: a core fact the assistant needs in every conversation (who the Person is, core "
@@ -170,12 +182,15 @@ def prompt(*, agent_name: str, turns: list[Turn], notebook: str, topics: str, da
             "",
             f"Existing topics:\n{topics.strip() or '(none yet)'}",
             "",
-            "The notebook already holds these lines. Propose nothing already there, and nothing that only restates one:",
+            "The notebook already holds these lines. Propose nothing already there, and nothing that only restates "
+            "one, except a durable aboutUser fact, which you list anyway with \"noted\": true when the notebook "
+            "already holds it:",
             notes,
             "",
             f"Answer with a JSON list and nothing else, at most {MAX_FACTS} items; [] when nothing is worth keeping:",
             '[{"text": "...", "kind": "preference|fact|decision|outcome", "until": "YYYY-MM-DD or omit", '
-            '"topic": "name or omit", "topicAliases": ["..."], "confidence": 0..1}]',
+            '"aboutUser": true|false, "noted": true|false, "topic": "name or omit", "topicAliases": ["..."], '
+            '"confidence": 0..1}]',
         ]
     )
 
@@ -242,6 +257,9 @@ def parse_facts(answer: str, day: str) -> list[Fact]:
                 until=until,
                 topic=topic_file(item.get("topic")),
                 aliases=tuple(memory_topics.clean_aliases(aliases if isinstance(aliases, list) else [])),
+                # Only a lasting preference or fact can be about the person for good.
+                about_user=item.get("aboutUser") is True and kind in ("preference", "fact") and until is None,
+                noted=item.get("noted") is True,
             )
         )
         if len(out) >= MAX_FACTS:
@@ -260,7 +278,7 @@ def file_facts(agent_id: int, facts: list[Fact], *, source: str, day: str) -> tu
     clean: list[Fact] = []
     for fact in facts:
         text, redacted = redact_secrets(fact.text)
-        if not redacted:
+        if not redacted and not fact.noted:
             clean.append(Fact(text, fact.kind, fact.until, fact.topic, fact.aliases))
     notes_seen = memory_entries.identities(agent_memory.read_memory(agent_id).text)
     fresh: list[Fact] = []
@@ -282,6 +300,18 @@ def file_facts(agent_id: int, facts: list[Fact], *, source: str, day: str) -> tu
         topic_lines += _file_topic(agent_id, name, group, source, day)
         existing[name.lower()] = name
     return added, topic_lines
+
+
+def learn_about_person(agent, facts: list[Fact], turns: list[Turn]) -> int:
+    """Add the lasting facts about the person to About me (about_me.py).
+    Only when every turn read is the owner's own words: a batch holding another
+    person's lines adds nothing, whatever the model says."""
+    from app.services import about_me
+
+    if not all(turn.owner for turn in turns):
+        return 0
+    texts = [fact.text for fact in facts if fact.about_user]
+    return about_me.add_learned(agent.id, agent.name, texts) if texts else 0
 
 
 def _line(fact: Fact, source: str, day: str) -> str:
@@ -778,9 +808,10 @@ class MemoryCapture:
         facts = parse_facts(answer, day)
         source = memory_entries.source_label(thread.title, thread_id)
         added, topics = file_facts(agent_id, facts, source=source, day=day)
-        if added or topics:
-            logger.info("memory upkeep noticed facts", agent_id=agent_id, core=added, topics=topics)
-        return Report(now, added=added, topics=topics)
+        learned = learn_about_person(agent, facts, turns)
+        if added or topics or learned:
+            logger.info("memory upkeep noticed facts", agent_id=agent_id, core=added, topics=topics, about_me=learned)
+        return Report(now, added=added, topics=topics, about_me=learned)
 
 
 def _pending_path():

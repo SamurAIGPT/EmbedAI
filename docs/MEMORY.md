@@ -347,6 +347,35 @@ chat with you*). Engines without MCP here (Codex, ACP agents, OpenAI-compatible
 endpoints) do not get the tools; they still get the recent-work brief and
 automatic recall. The agent is told about the tools in its system prompt.
 
+## About me
+
+**About me** is one text about the person, shared by every agent (not one agent's
+notes, and read even by an agent whose notes are off). It is the first thing an
+agent is told after its instructions, as background that never grants permission,
+redacted when saved and again when loaded (the first 6,000 characters load).
+The person edits it (Memory panel, **About me**, or `PUT /api/v1/memory/about-me`
+with the hash they opened, so a concurrent change is a `409` and never lost).
+
+Agents add to it from the person's own words only. When a capture reads a
+conversation, the model marks a fact `aboutUser` only if it is a durable fact
+about the person themselves that any assistant should know (a diet, where they
+live, their company, how they like to be spoken to): never a fact about someone
+else, a decision about one project, anything only an agent said, or anything with
+an `until` day. It lists such a fact even when `MEMORY.md` already holds it
+(`noted`: kept only for About me, not filed twice). Each lands as a dated line
+naming the agent:
+
+    - 2026-10-23 · learned by Scout · The person is vegetarian
+
+and is also listed under **Added by your agents** with **Remove**. A removed
+fact is remembered by its text (spacing, a bullet and a final full stop ignored)
+and never added again; a fact already in About me, one that held something that
+looked like a secret, or one that would push it past 24,000 characters is not
+added. A batch that holds any line that is not the owner's own words (another
+person in a room) adds nothing to About me, whatever the model says. This is the
+only place a noticed fact leaves an agent's own folder, and what an agent learns
+here reaches every agent on the next turn.
+
 ## Organizing and the nightly tidy-up
 
 With upkeep on, two more model steps keep the files in shape (the same quick
@@ -440,6 +469,9 @@ Installation-wide, under `/api/v1/memory` (admin scope):
 | Method | Path | What it does |
 | --- | --- | --- |
 | `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never) and `helper_models` (a model per engine). `422 invalid_setting`. |
+| `GET` | `/about-me` | `text`, `hash`, and the facts agents added (`learned`, newest first, each with `id`, `agent_name`, `at`). |
+| `PUT` | `/about-me` | `{text, expected_hash?}`; `409 memory_changed` (with `current`), `413 memory_too_large`. |
+| `DELETE` | `/about-me/learned/{id}` | Remove an agent-added fact for good; 404 when there is none. |
 
 `recall_enabled` and `memory_upkeep` are fields of the agent. Run `alembic upgrade head`:
 revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
@@ -448,10 +480,10 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 ## Not covered
 
 - Model-written compaction summaries are off by default and exist only for engines with a quick call.
-- There is no person-level "About me" profile shared by every agent, and no capture from rooms ("Learn from group chats"): both are decisions for the owner.
+- About me is one text for the whole installation; there is no per-person profile (the app has one owner).
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
-- Noticed facts are not added to a person-level profile, and rooms are never read.
+- Rooms are never read for facts.
 - Past-conversation search is a tool on Claude only; other engines have the brief and recall.
 - Recall ranks by shared words only (no stemming, no embeddings), so a
   question worded differently from the note can miss it.

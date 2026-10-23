@@ -296,10 +296,17 @@ def memory_prompt(agent_id: int) -> str:
 
 def turn_instructions(agent) -> str | None:
     """Everything an agent adds to a turn's system prompt: its instructions,
-    then its notes when they are switched on. None when there is nothing."""
+    then what the person wrote about themselves (About me, read by every
+    agent), then its notes when they are switched on. None when there is
+    nothing."""
+    from app.services import about_me
+
     parts = []
     if agent.instructions and agent.instructions.strip():
         parts.append(agent.instructions)
+    about = about_me.prompt_block()
+    if about:
+        parts.append(about)
     if agent.memory_enabled:
         parts.append(memory_prompt(agent.id))
     return "\n\n".join(parts) or None

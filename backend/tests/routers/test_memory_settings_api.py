@@ -23,6 +23,28 @@ async def api(tmp_path, monkeypatch):
         yield client
 
 
+async def test_about_me_is_read_saved_and_a_learned_fact_removed(api):
+    from app.services import about_me
+
+    empty = (await api.get("/api/v1/memory/about-me")).json()
+    assert empty["text"] == "" and empty["learned"] == [] and empty["max_chars"] == about_me.TEXT_MAX
+    saved = await api.put(
+        "/api/v1/memory/about-me", json={"text": "I live in Pune. token=abcdef123456", "expected_hash": empty["hash"]}
+    )
+    assert saved.status_code == 200 and saved.json()["redacted"] == 1 and "abcdef123456" not in saved.json()["text"]
+    stale = await api.put("/api/v1/memory/about-me", json={"text": "mine", "expected_hash": empty["hash"]})
+    assert stale.status_code == 409 and stale.json()["detail"]["error_code"] == "memory_changed"
+    assert stale.json()["detail"]["current"].startswith("I live in Pune.")
+    assert (await api.put("/api/v1/memory/about-me", json={"text": "x" * 25_000})).status_code == 413
+    about_me.add_learned(4, "Scout", ["The person is vegetarian"])
+    (fact,) = (await api.get("/api/v1/memory/about-me")).json()["learned"]
+    assert fact["agent_name"] == "Scout"
+    gone = await api.delete(f"/api/v1/memory/about-me/learned/{fact['id']}")
+    assert gone.status_code == 200 and gone.json()["learned"] == [] and "vegetarian" not in gone.json()["text"]
+    assert (await api.delete(f"/api/v1/memory/about-me/learned/{fact['id']}")).status_code == 404
+    assert policy.required_scope("PUT", "/api/v1/memory/about-me") == "admin"
+
+
 async def test_settings_are_read_and_changed(api):
     first = await api.get("/api/v1/memory/settings")
     assert first.status_code == 200 and first.json() == {"learn_from_rooms": False, "tidy_hour": 3, "helper_models": {}}

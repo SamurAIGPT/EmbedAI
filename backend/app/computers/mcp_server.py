@@ -1,7 +1,8 @@
 """The computer tools, as a stdio MCP server the Claude CLI starts for a turn.
 
-It exposes four tools bound to one container: `exec` (a shell command),
-`read_file`, `write_file` and `list_files`. Each call runs only after a
+It exposes four base tools bound to one container: `exec` (a shell command),
+`read_file`, `write_file` and `list_files`. Desktops add screen tools and,
+when explicitly enabled, structured browser tools. Each call runs only after a
 one-use permit written by the app's approval gate is found and removed
 (grants.py); without one the call is refused and nothing runs.
 

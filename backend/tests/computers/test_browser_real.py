@@ -25,6 +25,7 @@ HTML = """<!doctype html><title>Browser fixture</title>
 <input type="password" aria-label="Password">
 <button id="dialog" onclick="if(confirm('Confirm fixture?'))document.querySelector('h1').textContent='Confirmed'">Dialog</button>
 <a href="/second.html">Second page</a><a href="/second.html" target="_blank">Popup</a>
+<a href="/second.html" download="fixture.html">Download</a>
 <iframe src="/frame.html"></iframe>
 <script>window.n=0</script>"""
 
@@ -81,6 +82,7 @@ def test_real_semantic_actions_frames_dialogs_tabs_and_ref_invalidation(machine)
     assert "Frame clicked" in body(call(s, "browser_snapshot"))
     call(s, "browser_fill", {"selector": "#name", "text": "Ada"})
     call(s, "browser_type", {"selector": "#name", "text": " Lovelace"})
+    assert "Ada Lovelace" in body(call(s, "browser_snapshot"))
     assert "requires the person" in body(call(s, "browser_fill", {"selector": "input[type=password]", "text": "secret"}, error=True))
     call(s, "browser_wait", {"text": "Count 1"})
     image = call(s, "browser_screenshot")
@@ -95,6 +97,8 @@ def test_real_semantic_actions_frames_dialogs_tabs_and_ref_invalidation(machine)
     call(s, "browser_tabs", {"action": "switch", "tab": tabs[-1]["tab"]})
     assert "Second page" in body(call(s, "browser_read"))
     call(s, "browser_tabs", {"action": "close", "tab": tabs[-1]["tab"]})
+    call(s, "browser_click", {"selector": "a[download]"})
+    assert "fixture.html" in body(call(s, "browser_tabs", {"action": "list"}))
     snap = call(s, "browser_snapshot")
     ref = ref_for(snap, "Count 1")
     screen.write_state(s.state_dir / "browser-epoch.json", {"at": time.time_ns()})
@@ -126,3 +130,49 @@ def test_real_profile_survives_restart_and_stop_start(machine):
     assert "retained" in docker_cli.run(["exec", "-u", spec.run_as, spec.name, "python", "-c", check], timeout=20).stdout
     permissions = docker_cli.run(["exec", "-u", spec.run_as, spec.name, "stat", "-c", "%a", "/home/agent/browser-profile"], timeout=10).stdout
     assert permissions.strip() == "700"
+
+
+def test_real_profiles_are_private_to_their_computer_and_recreate_resets_them(machine, tmp_path):
+    provider, spec, s = machine
+    call(s, "browser_open", {"url": "http://127.0.0.1:8765"})
+    marker = docker_cli.run(["exec", "-u", spec.run_as, spec.name, "touch", "/home/agent/browser-profile/qa-marker"], timeout=10)
+    assert marker.code == 0
+    other_workspace = tmp_path / "other-workspace"
+    other_workspace.mkdir()
+    other = docker_cli.Spec(424244, spec.instance, IMAGE, str(other_workspace), kind="desktop", memory_mb=2048, pids_limit=1024)
+    try:
+        provider.create(other)
+        deadline = time.monotonic()+20
+        while time.monotonic() < deadline and not provider.status(other).desktop_ready:
+            time.sleep(.2)
+        other_server = Server(other.name, other.run_as, tmp_path / "other-grants", tmp_path / "other-state", None, "desktop", browser_enabled=True)
+        call(other_server, "browser_open", {"url": "about:blank"})
+        assert docker_cli.run(["exec", "-u", other.run_as, other.name, "test", "-e", "/home/agent/browser-profile/qa-marker"], timeout=10).code == 1
+        # Missing permits cannot navigate away from the current page.
+        assert s.call("browser_open", {"url": "about:blank"})["isError"]
+        assert "Local fixture" in body(call(s, "browser_read"))
+        screen.write_state(s.state_dir / "control.json", {"until": time.time()+35})
+        result = call(s, "browser_open", {"url": "about:blank"}, error=True)
+        assert "taken control" in body(result)
+        (s.state_dir / "control.json").unlink()
+        assert "Local fixture" in body(call(s, "browser_read"))
+    finally:
+        provider.delete(other)
+    call(s, "browser_close")
+    provider.delete(spec)
+    provider.create(spec)
+    assert docker_cli.run(["exec", "-u", spec.run_as, spec.name, "test", "-e", "/home/agent/browser-profile/qa-marker"], timeout=10).code == 1
+    assert (other_workspace.parent / "workspace" / "index.html").exists()
+
+
+def test_real_hung_page_is_bounded_and_browser_can_be_restarted(machine):
+    _, spec, s = machine
+    call(s, "browser_open", {"url": "http://127.0.0.1:8765"})
+    hang = "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.connect_over_cdp('http://127.0.0.1:9222'); b.contexts[0].pages[0].evaluate('setTimeout(() => {while(true) {}}, 100)'); p.stop()"
+    assert docker_cli.run(["exec", "-u", spec.run_as, spec.name, "python", "-c", hang], timeout=20).code == 0
+    time.sleep(.2)
+    started = time.monotonic()
+    call(s, "browser_read", error=True)
+    assert time.monotonic()-started < 44
+    call(s, "browser_restart")
+    assert "about:blank" in body(call(s, "browser_tabs", {"action": "list"}))

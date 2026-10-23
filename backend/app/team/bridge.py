@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, update
 from app.db.models import Approval, Turn, Agent
 from app.db.transactions import begin_write
-from app.team import service
+from app.team import fence, service
 
 
 def canonical(value):
@@ -109,7 +109,7 @@ class TeamBridge:
             caller = await service.member(db, rt.owner_id, run.agent_id, team_id=run.ctx.team.team_id)
             if name == 'list_agents':
                 rows = (await db.execute(select(Agent).where(Agent.team_id == caller.team_id, Agent.owner_id == rt.owner_id, Agent.archived_at.is_(None)).order_by(Agent.id))).scalars()
-                return {'agents': [{'id': a.id, 'name': a.name, 'title': a.title, 'can_delegate': a.delegation_enabled} for a in rows]}
+                return {'agents': [{'id': a.id, 'name': fence.line(a.name), 'title': fence.line(a.title), 'can_delegate': a.delegation_enabled} for a in rows]}
             if name == 'create_agent':
                 # A permission card cannot widen the immutable origin or plan floor.
                 if run.ctx.approval_mode == 'plan' or run.ctx.team.origin in ('outside', 'webhook'):

@@ -114,7 +114,7 @@ def test_a_noticed_fact_archives_the_oldest_instead_of_overflowing(monkeypatch):
     assert "moved to Pune" in doc.text and doc.text.startswith("# hand written")
     assert "fact number 0" not in doc.text
     archive = memory_topics.read_topic(1, "archive.md").text
-    assert f"fact number 0 · moved {memory_entries.today()}" in archive
+    assert f"fact number 0 · moved {DAY}" in archive
     # The archive is journaled before MEMORY.md, so undoing the newest row loses nothing.
     paths = [r["path"] for r in reversed(memory_journal.read(1))]
     assert paths == ["memory/archive.md", "MEMORY.md"]

@@ -78,7 +78,7 @@ _KINDS = {
 from app.computers.policy import SCREEN_INPUT, SCREEN_READ
 _KINDS.update({tool: "screen_input" for tool in SCREEN_INPUT})
 _KINDS.update({tool: "screen_read" for tool in SCREEN_READ})
-_KINDS.update({"mcp__team__ask_agent": "delegate", "mcp__team__create_agent": "create_agent", "mcp__team__say_in_room": "room_post"})
+_KINDS.update({"mcp__team__ask_agent": "delegate", "mcp__team__delegate": "delegate", "mcp__team__create_agent": "create_agent", "mcp__team__say_in_room": "room_post"})
 
 DENY_NO_PERMIT = "The approval could not be handed to the computer, so this action was not allowed."
 

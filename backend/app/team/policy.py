@@ -30,9 +30,9 @@ def automatic(tool, mode, team, arguments):
     if team is None:
         return 'denied', 'no_team'
     name = tool.removeprefix('mcp__team__')
-    if name in ('list_agents', 'list_rooms', 'list_team_setup', 'list_threads'):
+    if name in ('list_agents', 'list_rooms', 'list_team_setup', 'list_threads', 'job_status'):
         return 'allowed', 'team_read'
-    if name == 'ask_agent':
+    if name in ('ask_agent', 'delegate'):
         if not team.delegation_enabled:
             return 'denied', 'delegation_disabled'
         if arguments.get('mode') == 'consult':

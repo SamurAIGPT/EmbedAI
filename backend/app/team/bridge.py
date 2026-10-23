@@ -121,6 +121,10 @@ class TeamBridge:
             return await setup.call(rt, run, name, args)
         if name == 'ask_agent':
             return await rt.team_jobs.ask(run, args)
+        if name == 'delegate':
+            return await rt.team_jobs.delegate(run, args)
+        if name == 'job_status':
+            return await rt.team_jobs.job_status(run, args)
         if name in ('list_rooms', 'create_room', 'say_in_room'):
             return await rt.rooms.tool(run, name, args)
         raise service.TeamError('unknown_tool', 'Unknown team tool.')

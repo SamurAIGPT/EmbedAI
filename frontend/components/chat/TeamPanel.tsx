@@ -23,7 +23,7 @@ export function JobCard({ job: initial, compact = false }: { job: TeamJob; compa
     <p className="whitespace-pre-wrap break-words">{job.brief}</p>
     {job.result && <details><summary className="cursor-pointer text-xs underline">Result</summary><p className="mt-2 whitespace-pre-wrap break-words">{job.result}</p></details>}
     {job.outcome_detail && <p className="text-xs text-warning">{job.outcome_detail}</p>}
-    <div className="flex flex-wrap gap-2">{job.assignee_thread_id && <Link className={BUTTON} href={`/chat?thread=${job.assignee_thread_id}`}>Open work</Link>}{["queued", "running", "needs_input"].includes(job.status) && session?.scopes.includes("admin") && <button type="button" className={BUTTON} disabled={busy} onClick={() => void cancel()}>Stop this job</button>}</div>
+    <div className="flex flex-wrap gap-2">{job.assignee_thread_id && <Link className={BUTTON} href={`/chat?thread=${job.assignee_thread_id}`}>Open work</Link>}{["queued", "running", "needs_input", "waiting", "resume"].includes(job.status) && session?.scopes.includes("admin") && <button type="button" className={BUTTON} disabled={busy} onClick={() => void cancel()}>Stop this job</button>}</div>
     {job.approvals?.filter(item => item.status === "pending").map(approval => <SharedApproval key={approval.id} approval={approval} onChanged={() => void refresh()} />)}
     {error && <p role="alert" className="text-xs text-danger">{error}</p>}
   </article>;

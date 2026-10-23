@@ -1,6 +1,6 @@
 """Durable team work and shared conversations."""
 from datetime import datetime
-from sqlalchemy import BigInteger, Integer, String, Text, Identity, ForeignKey, Index, func, text
+from sqlalchemy import BigInteger, Boolean, Integer, String, Text, Identity, ForeignKey, Index, false, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.types import BigIntPK, UTCDateTime, JSONValue
@@ -40,6 +40,7 @@ class AgentJob(Base):
     __table_args__ = (
         Index("ix_agent_job_requester_turn", 'requester_turn_id', unique=False),
         Index("ix_agent_job_status", 'owner_id', 'status', unique=False),
+        Index("ix_agent_job_parent", 'parent_id', unique=False),
         {"sqlite_autoincrement": True},
     )
     id: Mapped[int] = mapped_column(BigIntPK, Identity(always=True), primary_key=True)
@@ -72,6 +73,19 @@ class AgentJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     last_activity_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # Non-blocking delegation. `kind` is 'root' for the row a turn's first
+    # hand-off creates, else 'job'. `reply` is 'wait' (the requester polls, the
+    # blocking ask), 'resume' (the requester is resumed with the result) or
+    # 'none'. `current_turn_id` is the turn running this row's own execution.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default='job', server_default='job')
+    reply: Mapped[str] = mapped_column(String, nullable=False, default='wait', server_default='wait')
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    restart: Mapped[str | None] = mapped_column(String, nullable=True)
+    restarts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+    current_turn_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rework: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    budget_wakes: Mapped[int] = mapped_column(Integer, nullable=False, default=48, server_default='48')
 
 
 class AgentJobEvent(Base):

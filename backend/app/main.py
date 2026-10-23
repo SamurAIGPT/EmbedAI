@@ -153,6 +153,7 @@ class _GuardedRoutines:
             await routine_service.scheduler.tick()
             from app.services.thread_runtime import runtime
             await runtime.rooms.tick()
+            await runtime.team_jobs.tick()
 
 
 app = FastAPI(lifespan=lifespan)

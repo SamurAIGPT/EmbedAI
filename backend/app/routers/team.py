@@ -156,7 +156,7 @@ async def owned_job(rt, db, job_id):
 async def list_jobs(root_id: int | None = None, thread_id: int | None = None, status: str | None = None,
                     limit: int = Query(100, ge=1, le=500), rt=Depends(get_runtime)):
     async with rt.session() as db:
-        query = select(AgentJob).where(AgentJob.owner_id == rt.owner_id)
+        query = select(AgentJob).where(AgentJob.owner_id == rt.owner_id, AgentJob.kind != 'root')
         if root_id is not None:
             query = query.where((AgentJob.root_id == root_id) | (AgentJob.id == root_id))
         if thread_id is not None:

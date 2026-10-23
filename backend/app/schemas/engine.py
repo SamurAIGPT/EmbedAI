@@ -57,6 +57,8 @@ class EngineResponse(BaseModel):
     capabilities: EngineCapabilities
     # The engine needs a saved configuration (PUT /engines/{id}/config).
     configurable: bool = False
+    # The engine has a quick text call, so it can be the helper model (docs/MEMORY.md).
+    can_write_text: bool = False
     # What is saved, without secrets: an ACP `command` and `label`, or an
     # endpoint's `base_url`, `model` and `has_api_key`.
     config: dict | None = None

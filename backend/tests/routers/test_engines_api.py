@@ -88,6 +88,9 @@ async def test_the_list_and_one_engine(api):
     assert acp["custom_models"] is False and acp["capabilities"]["computers"] is False
     assert [field["name"] for field in acp["config_fields"]] == ["command", "label"]
     assert acp["setup"]["credential"] == "terminal" and acp["preset"] is False
+    # Which engines can be the helper model: the ones with a quick text call.
+    assert by_id["claude"]["can_write_text"] is True and acp["can_write_text"] is False
+    assert by_id["openai_compat"]["can_write_text"] is True
     assert by_id["openai_compat"]["kind"] == "api" and by_id["openai_compat"]["capabilities"]["tools"] is False
     one = await api.get("/api/v1/engines/acp")
     assert one.status_code == 200 and one.json()["id"] == "acp"

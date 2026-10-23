@@ -202,8 +202,9 @@ export function UpkeepCard({
               </button>
             </div>
             <p className="text-muted">
-              {helperModelLine(status, helperAllowed)} A smaller model is enough. This model is on the engine this
-              agent already uses, so nothing goes to another provider.
+              {helperModelLine(status, helperAllowed)}
+              {status?.engine_can_call &&
+                " A smaller model is enough. This model is on the engine this agent already uses, so nothing goes to another provider."}
             </p>
           </div>
           <div className="space-y-1 rounded-md border border-line p-2">

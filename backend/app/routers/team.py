@@ -126,6 +126,12 @@ async def undo_create(agent_id: int, rt=Depends(get_runtime)):
         raise error(exc) from None
 
 
+@router.get('/agents/{agent_id}/undo-state')
+async def undo_state(agent_id: int, rt=Depends(get_runtime)):
+    async with rt.session() as db:
+        return {'available': await service.undo_available(db, rt.owner_id, agent_id)}
+
+
 @router.get('/setup')
 async def list_setup(limit: int = Query(20, ge=1, le=100), rt=Depends(get_runtime)):
     """Recent team changes the lead made, newest first, with whether Undo still applies."""

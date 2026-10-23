@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { collaboration } from "@/lib/collaboration";
 import type { TeamJobItem, TranscriptItem } from "@/lib/transcript";
@@ -13,13 +13,19 @@ export function DelegationCard({ item }: { item: TeamJobItem }) {
 export function AgentCreatedCard({ item }: { item: Extract<TranscriptItem, { kind: "agent_created" }> }) {
   const [state, setState] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [available, setAvailable] = useState(false);
   const { session } = useSession();
+  useEffect(() => {
+    let live = true;
+    collaboration.undoState(item.agentId).then(r => { if (live) setAvailable(r.available); }, () => { if (live) setAvailable(false); });
+    return () => { live = false; };
+  }, [item.agentId]);
   const undo = async () => {
     setState("busy"); setError(null);
     try { const result = await collaboration.undoCreate(item.agentId); setState(result.removed); }
     catch (err) { setState(""); setError(err instanceof ApiError ? err.message : "Could not undo this specialist."); }
   };
-  return <article className="space-y-2 rounded-field border border-line p-3 text-sm"><p><strong>Specialist created: {item.name || `Agent ${item.agentId}`}</strong>{item.title ? ` · ${item.title}` : ""}</p><p className="text-xs text-muted">Instructions were written by the lead. Review them in Agents.</p>{session?.scopes.includes("admin") && !state && <button type="button" className="text-xs underline" onClick={() => void undo()}>Undo creation</button>}{state && <p role="status" className="text-xs text-muted">{state === "busy" ? "Undoing…" : `Specialist ${state}.`}</p>}{error && <p role="alert" className="text-xs text-danger">{error}</p>}</article>;
+  return <article className="space-y-2 rounded-field border border-line p-3 text-sm"><p><strong>Specialist created: {item.name || `Agent ${item.agentId}`}</strong>{item.title ? ` · ${item.title}` : ""}</p><p className="text-xs text-muted">Instructions were written by the lead. Review them in Agents.</p>{session?.scopes.includes("admin") && available && !state && <button type="button" className="text-xs underline" onClick={() => void undo()}>Undo creation</button>}{state && <p role="status" className="text-xs text-muted">{state === "busy" ? "Undoing…" : `Specialist ${state}.`}</p>}{error && <p role="alert" className="text-xs text-danger">{error}</p>}</article>;
 }
 
 const STALE: Record<string, string> = {

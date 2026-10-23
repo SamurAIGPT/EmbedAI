@@ -128,21 +128,29 @@ async def create_specialist(db, owner, caller_id, turn_id, arguments):
     return agent
 
 
+async def _used(db, agent):
+    used = await db.scalar(select(Thread.id).where(Thread.agent_id == agent.id).limit(1))
+    return bool(used or await db.scalar(select(AgentJob.id).where(AgentJob.assignee_agent_id == agent.id).limit(1)))
+
+
+async def undo_available(db, owner, agent_id):
+    """Undo of a lead-made specialist holds until the specialist is first used."""
+    agent = await db.get(Agent, agent_id)
+    if agent is None or agent.owner_id != owner or agent.archived_at is not None or agent.created_by_agent_id is None:
+        return False
+    return not await _used(db, agent)
+
+
 async def undo_create(db, owner, agent_id):
     await begin_write(db)
     agent = await member(db, owner, agent_id)
     if agent.created_by_agent_id is None:
         raise TeamError('not_created_by_lead', 'This agent was added by the person.')
-    used = await db.scalar(select(Thread.id).where(Thread.agent_id == agent.id).limit(1))
-    used = used or await db.scalar(select(AgentJob.id).where(AgentJob.assignee_agent_id == agent.id).limit(1))
+    if await _used(db, agent):
+        raise TeamError('agent_used', 'This specialist has already been used. Archive it from Agents instead.')
     team = await db.get(Team, agent.team_id)
-    if used:
-        agent.archived_at = now()
-        removed = 'archived'
-    else:
-        await db.delete(agent)
-        removed = 'deleted'
+    await db.delete(agent)
     if team:
-        audit(db, team, 'agent_create_undone', agent_id=agent_id, data={'removed': removed})
+        audit(db, team, 'agent_create_undone', agent_id=agent_id, data={'removed': 'deleted'})
     await db.commit()
-    return removed
+    return 'deleted'

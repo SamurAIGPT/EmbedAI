@@ -234,6 +234,8 @@ async def update_computer(computer_id: int, payload: ComputerUpdateRequest, rt: 
         computer = await service.update_config(computer_id, **payload.model_dump(exclude_unset=True))
     except ValueError as exc:
         raise _error(422, "invalid_computer", str(exc)) from None
+    except ComputerError as exc:
+        raise _refused(exc) from None
     except ComputerNotFound:
         raise HTTPException(status_code=404, detail="Computer not found") from None
     return await _live(service, computer)

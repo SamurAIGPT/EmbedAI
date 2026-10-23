@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.services import conversation_search, memory_topics
+from app.services import conversation_search, memory_entries, memory_topics
 from app.services.agent_memory import redact_secrets
 
 MIN_MESSAGE_CHARS = 8
@@ -118,9 +118,14 @@ def note_passages(agent_id: int, terms: list[str]) -> list[dict]:
         return []
     want = needed(terms)
     scored: list[tuple[int, float, dict]] = []
+    today = memory_entries.today()
     for topic in memory_topics.list_topics(agent_id):
+        if topic.name == memory_topics.ARCHIVE_NAME:
+            continue  # older or no longer true: never recalled
         doc = memory_topics.read_topic(agent_id, topic.name)
-        body = memory_topics.body_of(doc.text)
+        # Expired and superseded entries stay in the file but are never recalled.
+        visible = memory_entries.without_superseded(memory_entries.without_expired(doc.text, today)[0])
+        body = memory_topics.body_of(visible)
         if not body:
             continue
         named = " ".join([topic.name[:-3].replace("-", " ").replace("_", " "), topic.title or "", *topic.aliases]).lower()

@@ -24,7 +24,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.logging import get_logger
-from app.services import agent_memory, memory_journal, memory_topics
+from app.services import agent_memory, memory_budget, memory_entries, memory_journal, memory_topics
 from app.services.agent_memory import redact_secrets
 
 logger = get_logger(__name__)
@@ -180,16 +180,15 @@ def reject(agent_id: int, proposal_id: str) -> None:
 def accept(agent_id: int, proposal_id: str, *, line: str | None = None, target: str | None = None) -> dict:
     """Append the proposal (or the person's edited `line`) to MEMORY.md, or to
     `target` (a topic file name). Journaled. Returns {"path", "hash"}.
-    Raises ProposalNotFound, InvalidTopicName, MemoryTooLarge."""
+    Raises ProposalNotFound, InvalidTopicName, MemoryTooLarge, EntryTooLarge."""
     data, proposal = _take(agent_id, proposal_id)
     text = " ".join((line if line is not None and line.strip() else proposal["line"]).split())
     name = target or proposal.get("target") or agent_memory.MEMORY_FILE
     if name == agent_memory.MEMORY_FILE:
-        before = agent_memory.read_memory(agent_id).text
-        after = f"{before.rstrip()}\n{text}\n" if before.strip() else f"{text}\n"
-        doc, _ = agent_memory.write_memory(agent_id, after)
-        memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="proposal", before=before, after=doc.text)
-        result = {"path": agent_memory.MEMORY_FILE, "hash": doc.hash}
+        memory_entries.check_entry(text)
+        # Kept within the budget: older dated entries move to the archive.
+        memory_budget.append_lines(agent_id, [text], actor="proposal", skip_known=False)
+        result = {"path": agent_memory.MEMORY_FILE, "hash": agent_memory.read_memory(agent_id).hash}
     else:
         memory_topics.check_name(name)
         current = memory_topics.read_topic(agent_id, name)

@@ -112,6 +112,10 @@ test('the notes gauge goes amber from 80% and red once anything is cut', () => {
   assert.equal(over.percent, 100);
   assert.match(over.text, /250 of 200 lines/);
   assert.match(over.text, /50 lines past the limit/);
+  // Expired notes are not loaded and are not counted as cut off.
+  const expired = memoryGauge({ ...base, lines: 12, bytes: 400, loaded_lines: 9, expired: 3, expired_lines: 3 });
+  assert.equal(expired.level, 'ok');
+  assert.match(expired.text, /3 expired notes are not loaded/);
 });
 
 test('agent files are read with a sentence when they are not one', () => {

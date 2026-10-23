@@ -29,7 +29,7 @@ from app.schemas.agent import (
     TopicListResponse,
     TopicWriteRequest,
 )
-from app.services import agent_memory, agent_package, memory_journal, memory_proposals, memory_topics
+from app.services import agent_memory, agent_package, memory_entries, memory_journal, memory_proposals, memory_topics
 from app.services import agent_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import EngineModelInvalid, ThreadRuntime, UnknownProvider
@@ -294,6 +294,8 @@ def _memory_response(agent, doc: agent_memory.MemoryDoc, redacted: int = 0) -> A
         max_bytes=agent_memory.MAX_BYTES,
         enabled=agent.memory_enabled,
         redacted=redacted,
+        expired=doc.expired,
+        expired_lines=doc.expired_lines,
     )
 
 
@@ -538,6 +540,8 @@ async def accept_proposal(
         raise HTTPException(status_code=404, detail="No such proposal") from None
     except agent_memory.MemoryTooLarge as exc:
         raise _error(413, "memory_too_large", str(exc)) from None
+    except memory_entries.EntryTooLarge as exc:
+        raise _error(422, "entry_too_large", str(exc)) from None
     except memory_topics.TooManyTopics as exc:
         raise _error(409, "too_many_topics", str(exc)) from None
 

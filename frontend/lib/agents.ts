@@ -49,13 +49,15 @@ export function activeAgents(agents: Agent[] | null): Agent[] {
 // whichever is closer to its limit. "near" from 80%, "over" once anything is cut.
 export type MemoryGauge = { percent: number; level: "ok" | "near" | "over"; text: string };
 
-export function memoryGauge(memory: Pick<AgentMemory, "lines" | "bytes" | "max_lines" | "max_bytes" | "truncated" | "loaded_lines">): MemoryGauge {
+export function memoryGauge(memory: Pick<AgentMemory, "lines" | "bytes" | "max_lines" | "max_bytes" | "truncated" | "loaded_lines" | "expired" | "expired_lines">): MemoryGauge {
   const share = Math.max(memory.lines / memory.max_lines, memory.bytes / memory.max_bytes);
   const percent = Math.min(100, Math.round(share * 100));
   const level = memory.truncated ? "over" : share >= 0.8 ? "near" : "ok";
   const size = `${memory.lines} of ${memory.max_lines} lines · ${formatKB(memory.bytes)} of ${formatKB(memory.max_bytes)}`;
-  const cut = memory.truncated ? ` · ${Math.max(0, memory.lines - memory.loaded_lines)} lines past the limit do not load` : "";
-  return { percent, level, text: size + cut };
+  const past = Math.max(0, memory.lines - (memory.expired_lines ?? 0) - memory.loaded_lines);
+  const cut = memory.truncated ? ` · ${past} lines past the limit do not load` : "";
+  const expired = memory.expired ? ` · ${memory.expired} expired ${memory.expired === 1 ? "note is" : "notes are"} not loaded` : "";
+  return { percent, level, text: size + cut + expired };
 }
 
 function formatKB(bytes: number): string {

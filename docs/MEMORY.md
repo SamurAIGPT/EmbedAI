@@ -11,7 +11,8 @@ has no notes, no recall and no proposals (compaction still applies).
 <LOCAL_WORKSPACE_ROOT>/agents/<agent id>/
 ├── MEMORY.md           loads into every turn (first 200 lines / 24 KB)
 └── memory/
-    └── <topic>.md      one subject each; never loaded whole
+    ├── <topic>.md      one subject each; never loaded whole
+    └── archive.md      older entries moved out of MEMORY.md to make room
 
 <data folder>/memory-state/            (beside the attachments folder)
 ├── journal/<agent id>.ndjson          every change made through the app
@@ -65,6 +66,43 @@ about one subject (a person, a client, a trip) go in `memory/<topic>.md`.
   without any. Agent files (export/import) carry `MEMORY.md` only, not topic
   notes.
 
+## The budget: archive, expire, supersede
+
+Only the first 200 lines / 24 KB of `MEMORY.md` load, so a line added past that
+would never be seen. `MEMORY.md` therefore never overflows through the app:
+
+- **Archive instead of overflow.** Every write the app makes on its own (a
+  noticed fact, an accepted proposal) keeps the file inside the budget in the
+  same step. When the new line would push it past, the oldest **dated** entries
+  move whole to `memory/archive.md`, each marked `· moved <date>`: struck-through
+  (superseded) ones first, then expired ones, then the oldest live ones. An entry
+  moves with the lines indented under it (or its code block). The archive is
+  written, and journaled, before `MEMORY.md`, so a line is never out of one
+  without being in the other, and undoing the newest change loses nothing.
+  Never moved: lines written by hand (no date), live health and safety facts
+  (allergies, diet, medication and the like), and the line just written. When
+  the lines that never move fill the budget by themselves (or the agent edited
+  the file with its own tools) the new entry is still saved and the gauge goes
+  red; trim the file by hand.
+- **The agent is told.** For three days after entries move, the system prompt
+  says how many moved to `memory/archive.md` and quotes the first three, so the
+  agent can add back anything that should stay loaded.
+- **Per-entry caps.** An entry the app writes is at most 1,000 characters and 20
+  lines (an accepted proposal over that is refused with `422 entry_too_large`
+  and stays in the queue), so one note cannot push the rest out. The editor and
+  the agent's own file tools are not capped here.
+- **Until dates.** A line ending `· until 2026-11-02` stops loading the day
+  after that date (and is not recalled from a topic note). The file keeps it,
+  and the gauge says how many expired notes are not loaded. Expiry is applied
+  before the 200-line cut, so expired lines never push live ones out of view.
+- **Superseded entries.** A replaced fact is struck through, not deleted:
+  `- 2026-10-01 · ~~The office is in Pune~~ · superseded 2026-10-23`. Struck
+  entries stay in the file (and in the line count) but topic recall skips them.
+  The agent is told this convention in its notes guidance; no code strikes
+  anything through yet (a nightly tidy-up is not implemented).
+- **The archive is never recalled.** It is older or no longer true; it is
+  listed last in the topic index and can be read like any topic note.
+
 ## Recall before each turn
 
 Before each turn of a conversation with an agent whose notes and recall are
@@ -75,7 +113,7 @@ its other conversations.
   words left out, at most 12 from the first 500 characters; a message under 8
   characters recalls nothing). Any matching word counts; a message with five
   or more content words needs two in a passage. Notes match on their name,
-  title, aliases and body; conversation passages are messages (yours and the
+  title, aliases and body (not their expired or superseded entries, and never `archive.md`); conversation passages are messages (yours and the
   agent's) in this agent's other, non-archived conversations, found with the
   same portable query as conversation search (OR instead of AND; works the same
   on SQLite and PostgreSQL, wildcards literal).

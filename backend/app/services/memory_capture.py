@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services import agent_memory, memory_entries, memory_journal, memory_topics
+from app.services import agent_memory, memory_budget, memory_entries, memory_journal, memory_status, memory_topics
 from app.services.agent_memory import MemoryConflict, MemoryTooLarge, redact_secrets
 
 logger = get_logger(__name__)
@@ -274,22 +274,13 @@ def _line(fact: Fact, source: str, day: str) -> str:
 
 
 def _file_core(agent_id: int, facts: list[Fact], source: str, day: str) -> int:
-    for _ in range(2):
-        doc = agent_memory.read_memory(agent_id)
-        have = memory_entries.identities(doc.text)
-        lines = [_line(f, source, day) for f in facts if memory_entries.identity(f.text) not in have]
-        if not lines:
-            return 0
-        text = (doc.text.rstrip("\n") + "\n" if doc.text.strip() else "") + "\n".join(lines) + "\n"
-        try:
-            new, _ = agent_memory.write_memory(agent_id, text, expected_hash=doc.hash)
-        except MemoryConflict:
-            continue  # the agent changed the file meanwhile: read it again
-        except MemoryTooLarge:
-            return 0
-        memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="upkeep", before=doc.text, after=new.text)
-        return len(lines)
-    return 0
+    """MEMORY.md stays inside its budget: older entries move to the archive."""
+    try:
+        return memory_budget.append_lines(
+            agent_id, [_line(f, source, day) for f in facts], actor="upkeep", day=day
+        ).added
+    except MemoryTooLarge:
+        return 0
 
 
 def _file_topic(agent_id: int, name: str, facts: list[Fact], source: str, day: str) -> int:
@@ -329,34 +320,16 @@ def _file_topic(agent_id: int, name: str, facts: list[Fact], source: str, day: s
 # --- status ------------------------------------------------------------------------------
 
 
-def _status_path(agent_id: int):
-    return memory_journal.state_root() / "upkeep" / f"{int(agent_id)}.json"
-
-
 def read_status(agent_id: int) -> dict:
-    try:
-        data = json.loads(_status_path(agent_id).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return memory_status.read(agent_id)
 
 
 def _write_status(agent_id: int, report: Report) -> None:
-    try:
-        path = _status_path(agent_id)
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        data = read_status(agent_id)
-        data["last_capture"] = report.as_dict()
-        agent_memory.write_atomic(path, json.dumps(data))
-    except OSError:
-        logger.exception("could not save the memory upkeep status", agent_id=agent_id)
+    memory_status.update(agent_id, last_capture=report.as_dict())
 
 
 def remove_status(agent_id: int) -> None:
-    try:
-        _status_path(agent_id).unlink()
-    except OSError:
-        pass
+    memory_status.remove(agent_id)
 
 
 # --- the service -------------------------------------------------------------------------

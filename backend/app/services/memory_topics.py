@@ -23,6 +23,8 @@ from app.services import agent_memory
 from app.services.agent_memory import MemoryConflict, MemoryTooLarge, redact_secrets, text_hash
 
 TOPICS_DIR = "memory"
+# Older notes moved out of MEMORY.md to make room (memory_budget.py).
+ARCHIVE_NAME = "archive.md"
 # One file name: letters, digits, dash and underscore, then ".md". No dots
 # inside, no folders, nothing hidden.
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,59}\.md$")
@@ -256,7 +258,8 @@ def remove_all(agent_id: int) -> None:
 def topic_index(agent_id: int) -> str:
     """The list of topic notes for the system prompt, alphabetical, bounded.
     Titles come from the files, so they are redacted too."""
-    topics = sorted(list_topics(agent_id), key=lambda t: t.name)
+    # The archive (older notes moved out of MEMORY.md) is listed last.
+    topics = sorted(list_topics(agent_id), key=lambda t: (t.name == ARCHIVE_NAME, t.name))
     lines: list[str] = []
     used = 0
     omitted = 0
@@ -264,7 +267,11 @@ def topic_index(agent_id: int) -> str:
         if len(lines) >= INDEX_MAX_TOPICS:
             omitted += 1
             continue
-        about = f" — {topic.title}" if topic.title else ""
+        about = (
+            " — older notes moved out of MEMORY.md, kept for the record"
+            if topic.name == ARCHIVE_NAME
+            else f" — {topic.title}" if topic.title else ""
+        )
         also = f" (also: {', '.join(topic.aliases)})" if topic.aliases else ""
         line = " ".join(f"- {TOPICS_DIR}/{topic.name}{about}{also}".split())
         line, _ = redact_secrets(line)

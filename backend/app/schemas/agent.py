@@ -179,6 +179,9 @@ class AgentMemoryResponse(BaseModel):
     max_lines: int
     max_bytes: int
     enabled: bool
+    # Entries whose `until` day has passed (not loaded, still in the file).
+    expired: int = 0
+    expired_lines: int = 0
     # Set on a save: how many things that looked like secrets were replaced.
     redacted: int = 0
 

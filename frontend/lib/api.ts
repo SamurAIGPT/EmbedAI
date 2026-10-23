@@ -598,6 +598,9 @@ export type AgentMemory = {
   max_lines: number;
   max_bytes: number;
   enabled: boolean;
+  // Entries past their `until` day: not loaded, still in the file (and their lines).
+  expired?: number;
+  expired_lines?: number;
   // After a save: how many things that looked like secrets were replaced.
   redacted: number;
 };

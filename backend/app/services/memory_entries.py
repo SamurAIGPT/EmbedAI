@@ -121,3 +121,97 @@ def entry_line(text: str, *, source: str, day: str, until: str | None = None, no
     mark = f"{source} (noticed)" if noticed else source
     tail = f" · until {until}" if until else ""
     return f"- {day} · from {mark} · {fact}{tail}"
+
+
+# --- expiry, superseded entries and the size budget ---------------------------------------
+
+ENTRY_MAX_CHARS = 1_000
+ENTRY_MAX_LINES = 20
+# A safety or health fact always loads: the size rule never moves a live one out of MEMORY.md.
+_ALWAYS_CORE = re.compile(
+    r"\b(?:allerg\w*|anaphyla\w*|intoleran\w*|vegetarian|vegan|halal|kosher|gluten|lactose|diet\w*|diabet\w*|"
+    r"asthma\w*|epilep\w*|pregnan\w*|medicat\w*|medicine|medical|disabilit\w*|wheelchair|blind|deaf|health)\b",
+    re.I,
+)
+
+
+class EntryTooLarge(ValueError):
+    pass
+
+
+def always_core(body: str) -> bool:
+    return bool(_ALWAYS_CORE.search(body))
+
+
+def check_entry(text: str) -> None:
+    """One entry is at most 1,000 characters and 20 lines, so a single note
+    cannot push the rest out. Raises EntryTooLarge."""
+    lines = len(text.rstrip("\n").split("\n"))
+    if len(text) > ENTRY_MAX_CHARS or lines > ENTRY_MAX_LINES:
+        raise EntryTooLarge(
+            f"An entry is one fact of at most {ENTRY_MAX_CHARS} characters and {ENTRY_MAX_LINES} lines "
+            f"(this one is {len(text)} characters over {lines} lines)."
+        )
+
+
+def _drop(text: str, entries: list[Entry]) -> str:
+    gone = {i for e in entries for i in range(e.start, e.end)}
+    return "\n".join(line for i, line in enumerate(text.split("\n")) if i not in gone)
+
+
+def without_expired(text: str, on: str) -> tuple[str, int]:
+    """The text without entries whose `until` day has passed, and how many
+    were left out. The file itself keeps them."""
+    expired = [e for e in parse(text) if is_expired(e, on)]
+    return (_drop(text, expired), len(expired)) if expired else (text, 0)
+
+
+def without_superseded(text: str) -> str:
+    """The text without struck-through (replaced) entries."""
+    return _drop(text, [e for e in parse(text) if e.struck])
+
+
+def _line_count(text: str) -> int:
+    return len(text.rstrip("\n").split("\n")) if text else 0
+
+
+def over_budget(text: str, max_lines: int, max_bytes: int) -> bool:
+    return _line_count(text) > max_lines or len(text.encode("utf-8")) > max_bytes
+
+
+def make_room(text: str, on: str, keep: set[str], *, max_lines: int, max_bytes: int) -> tuple[str, list[str]]:
+    """Keep `text` within the budget by moving whole dated entries out, oldest
+    first: struck-through ones, then expired ones, then live ones. Returns the
+    text that stays and the moved entries (each with its continuation lines).
+
+    Never moved: a line nobody dated (hand-written), a live health or safety
+    fact, and the entries whose first line is in `keep` (what was just written).
+    When moving everything that may move would still not fit, nothing moves:
+    the file is over budget because of lines that never move, and the person is
+    left to trim it."""
+    if not over_budget(text, max_lines, max_bytes):
+        return text, []
+    lines = text.split("\n")
+
+    def group(e: Entry) -> int:
+        return 0 if e.struck else 1 if is_expired(e, on) else 2
+
+    movable = [
+        e for e in parse(text)
+        if e.raw not in keep and (group(e) < 2 or not always_core(e.body))
+    ]
+    movable.sort(key=lambda e: (group(e), e.day, e.start))
+    size = lambda e: len("\n".join(lines[e.start : e.end]).encode("utf-8")) + 1  # noqa: E731
+    count = _line_count(text)
+    nbytes = len(text.encode("utf-8"))
+    if count - sum(e.end - e.start for e in movable) > max_lines or nbytes - sum(size(e) for e in movable) > max_bytes:
+        return text, []
+    chosen: list[Entry] = []
+    for e in movable:
+        if count <= max_lines and nbytes <= max_bytes:
+            break
+        chosen.append(e)
+        count -= e.end - e.start
+        nbytes -= size(e)
+    chosen.sort(key=lambda e: e.start)
+    return _drop(text, chosen), ["\n".join(lines[e.start : e.end]) for e in chosen]

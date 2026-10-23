@@ -8,9 +8,8 @@ agent hand work to specialists, keep useful context between conversations, or
 set a routine to run later. Choose how much freedom an agent has, and review
 the actions it takes.
 
-Your conversations and app data live where you run Open Duet. Prompts are sent
-to the model provider you choose so it can answer. Open Duet does not include
-a model or pay model-provider costs for you.
+You choose where the app runs and which engine gets your prompts. Open Duet
+does not include a model or a model subscription.
 
 [Watch the demo](https://youtu.be/MzgrNQXgVX4) · [Quick start](#quick-start) · [Run it on your server](docs/SELF-HOSTING.md) · [Guides](#guides)
 
@@ -41,6 +40,34 @@ a model or pay model-provider costs for you.
 - **Keep track of work.** Search conversations, attach text files and images,
   browse or download workspace files, and review reported token use and cost.
 
+## Example: prepare a weekly project briefing
+
+Create a lead agent and a couple of specialists, such as a researcher and an
+editor. Give them the same project workspace, and set the lead's engine to
+Claude. Then ask the lead to prepare a briefing from the notes and reports in
+that folder.
+
+The lead can split the request into smaller tasks and hand them to the
+specialists. Their work runs in its own conversations; when the results are
+ready, they return to the lead, which can put the briefing together. You can
+open the chats to follow along, and approve actions when the approval settings
+require it. Once the task is useful, make it a weekly routine and review each
+run from the app.
+
+## What stays on your machine or server
+
+Open Duet stores conversations, agent notes, routines, and settings in the
+local data folder or server database for the instance you run. Workspace files
+stay in the folders you assign to agents. API keys saved through Open Duet are
+encrypted there; command-line sign-ins remain with the engine installed on
+that machine.
+
+When an agent answers, the selected engine receives the prompt and the context
+needed for that turn. That can include text you attach, relevant notes, and
+workspace content the engine reads. If the engine is a hosted service, that
+information is handled under that provider's terms. Open Duet does not include
+a hosted model or a model subscription.
+
 ## Choose an engine
 
 Connect an engine you already use: Claude Code or Codex CLI, Gemini CLI or
@@ -58,6 +85,7 @@ account, CLI sign-in, or API key; model usage may cost money.
 |---|---|---|---|
 | Good for | Trying a personal, local workspace | Keeping agents and routines available while your computer is off | Contributing or changing Open Duet |
 | Where data lives | The desktop app's local data folder | Your server | Your development machine or configured database |
+| You'll need | Node.js 22+, uv, and an engine on your computer | A Linux server, a domain with HTTPS, Docker or Node.js and uv, and an engine on the server | Node.js, uv, and Docker if you use PostgreSQL |
 | Start here | [Quick start](#quick-start) | [Self-hosting guide](docs/SELF-HOSTING.md) | [Development setup](docs/SETUP.md) |
 | Status | Experimental | Experimental; single owner | |
 
@@ -67,6 +95,8 @@ The desktop app runs from a source checkout. It needs Node.js 22 or newer,
 [uv](https://docs.astral.sh/uv/), and at least one engine available on the
 same computer. For a CLI engine, install it and sign in before opening Open
 Duet. You can also configure an API-based engine in **Settings → Engines**.
+You do not need Docker for ordinary chat; Docker is only needed for the
+optional isolated agent computers.
 
 ```bash
 git clone https://github.com/Anil-matcha/open-duet.git
@@ -79,7 +109,8 @@ workspace and approval mode, and can create a starter agent. Then:
 
 1. Open **Settings → Engines** and confirm that an engine is ready.
 2. Create an agent with a name, a clear job, and the workspace it should use.
-3. Start a chat. Choose **Ask first** if you want the agent to pause for approval before actions that need it.
+3. Start a chat. Choose **Ask first** if you want the agent to pause for
+   approval before actions that need it.
 4. Add teammates or a routine when you want to split up work or repeat it later.
 
 Tagged desktop installers may be available on the [Releases page](https://github.com/Anil-matcha/open-duet/releases). They are experimental, unsigned, and do not auto-update; the source checkout is the documented path.

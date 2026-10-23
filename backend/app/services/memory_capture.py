@@ -33,7 +33,16 @@ from datetime import UTC, datetime
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services import agent_memory, memory_budget, memory_entries, memory_journal, memory_status, memory_tidy, memory_topics
+from app.services import (
+    agent_memory,
+    memory_budget,
+    memory_entries,
+    memory_journal,
+    memory_settings,
+    memory_status,
+    memory_tidy,
+    memory_topics,
+)
 from app.services.agent_memory import MemoryConflict, MemoryTooLarge, redact_secrets
 
 logger = get_logger(__name__)
@@ -101,16 +110,18 @@ def worth_capturing(turns: list[Turn]) -> bool:
 
 
 def helper_model(engine_id: str, fallback: str | None) -> str | None:
-    """The model for a background call on `engine_id`: the one the owner set for
-    that engine (`MEMORY_HELPER_MODEL`), else a small default on Claude, else the
-    conversation's own model (or the endpoint's)."""
+    """The model for a background call on `engine_id`: the one chosen for that
+    engine in the Memory settings, else the environment's (`MEMORY_HELPER_MODEL`),
+    else a small default on Claude, else the conversation's own model (or the
+    endpoint's)."""
     configured = {}
     for part in (settings.MEMORY_HELPER_MODEL or "").split(","):
         if "=" in part:
             key, _, value = part.partition("=")
             if key.strip() and value.strip():
                 configured[key.strip()] = value.strip()
-    return configured.get(engine_id) or DEFAULT_HELPER_MODELS.get(engine_id) or fallback
+    chosen = memory_settings.helper_models().get(engine_id)
+    return chosen or configured.get(engine_id) or DEFAULT_HELPER_MODELS.get(engine_id) or fallback
 
 
 def prompt(*, agent_name: str, turns: list[Turn], notebook: str, topics: str, day: str) -> str:
@@ -542,7 +553,10 @@ class MemoryCapture:
             name = existing.get(wanted, wanted)
             current = memory_topics.read_topic(agent_id, name)
             have = memory_entries.identities(current.text)
-            lines = [m.entry.raw for m in group if memory_entries.line_identity(m.entry.raw) not in have]
+            lines = [
+                "\n".join(memory_tidy.lines_of(first, m.entry))  # with its continuation lines
+                for m in group if memory_entries.line_identity(m.entry.raw) not in have
+            ]
             if lines:
                 text = memory_topics.merge_topic_text(
                     current.text if current.exists else None,
@@ -567,15 +581,25 @@ class MemoryCapture:
         memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="upkeep", before=doc.text, after=new.text)
         return count
 
-    def _archive(self, agent_id: int, lines: list[str]) -> None:
+    def _archive(self, agent_id: int, lines: list[str]) -> tuple[str | None, str] | None:
+        """Write the archive lines; (the archive's earlier text, its new text), or None when there was nothing to write."""
         if not lines:
-            return
+            return None
         current = memory_topics.read_topic(agent_id, memory_budget.ARCHIVE)
         before = current.text if current.exists else None
         head = before if before is not None else f"---\ntitle: {memory_budget.ARCHIVE_TITLE}\n---\n\n"
         body = head + ("" if head.endswith("\n") else "\n") + "\n".join(lines) + "\n"
         new, _, _ = memory_topics.write_topic(agent_id, memory_budget.ARCHIVE, body)
-        memory_journal.record(agent_id, memory_journal.note_path(memory_budget.ARCHIVE), actor="upkeep", before=before, after=new.text)
+        return before, new.text
+
+    def _unarchive(self, agent_id: int, before: str | None) -> None:
+        try:
+            if before is None:
+                memory_topics.delete_topic(agent_id, memory_budget.ARCHIVE)
+            else:
+                memory_topics.write_topic(agent_id, memory_budget.ARCHIVE, before)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not put the archive back", agent_id=agent_id)
 
     async def tidy(self, agent_id: int) -> dict:
         """The tidy-up: organize, then expire, de-duplicate and reconcile
@@ -627,17 +651,31 @@ class MemoryCapture:
             if not plan.changes:
                 continue
             new_text, archived = memory_tidy.apply(text, plan, today)
+            archive_path = memory_journal.note_path(memory_budget.ARCHIVE)
             try:
-                self._archive(agent_id, archived)  # the archive first: a line is never out of both
+                # The archive first: a line is never out of MEMORY.md without being in the archive.
+                moved = self._archive(agent_id, archived)
+            except (MemoryTooLarge, memory_topics.TooManyTopics):
+                # Nowhere to put the expired entries: they stay where they are.
+                plan.expired = []
+                if not plan.changes:
+                    continue
+                new_text, archived = memory_tidy.apply(text, plan, today)
+                moved = None
+            try:
                 if is_core:
                     new, _ = agent_memory.write_memory(agent_id, new_text, expected_hash=doc.hash)
-                    memory_journal.record(agent_id, agent_memory.MEMORY_FILE, actor="upkeep", before=text, after=new.text)
+                    before = text
                 else:
                     name = path.split("/", 1)[1]
                     new, _, before = memory_topics.write_topic(agent_id, name, new_text, expected_hash=doc.hash)
-                    memory_journal.record(agent_id, path, actor="upkeep", before=before, after=new.text)
-            except (MemoryConflict, MemoryTooLarge):
+            except (MemoryConflict, MemoryTooLarge, memory_topics.TooManyTopics):
+                if moved is not None:
+                    self._unarchive(agent_id, moved[0])  # the file did not change, so nothing is archived twice
                 continue
+            if moved is not None:
+                memory_journal.record(agent_id, archive_path, actor="upkeep", before=moved[0], after=moved[1])
+            memory_journal.record(agent_id, path, actor="upkeep", before=before, after=new.text)
             report["expired"] += len(plan.expired)
             report["duplicates"] += len(plan.duplicates)
             report["superseded"] += len(plan.superseded)
@@ -646,7 +684,7 @@ class MemoryCapture:
 
     def due(self, agent_id: int, now=None) -> bool:
         now = now or datetime.now()
-        hour = settings.MEMORY_TIDY_HOUR
+        hour = memory_settings.tidy_hour()
         if hour >= 24 or now.hour < hour:
             return False
         last = (memory_status.read(agent_id).get("last_tidy") or {}).get("at")

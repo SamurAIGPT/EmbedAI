@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.services import memory_entries
+from app.services.agent_memory import redact_secrets
 from app.services.memory_entries import Entry
 
 MAX_MOVES = 20
@@ -66,7 +67,7 @@ def organize_candidates(text: str, today: str, core: set[str]) -> list[Entry]:
 
 
 def organize_prompt(candidates: list[Entry], topics: str) -> str:
-    listed = "\n".join(f"[{i}] {e.body}" for i, e in enumerate(candidates)) or "(nothing)"
+    listed = "\n".join(f"[{i}] {redact_secrets(e.body)[0]}" for i, e in enumerate(candidates)) or "(nothing)"
     return "\n".join([
         "You tidy an assistant's core notebook. You have no tools: read only what is below.",
         "",
@@ -169,7 +170,7 @@ def contradiction_candidates(text: str, today: str) -> list[Entry]:
 
 
 def contradiction_prompt(candidates: list[Entry]) -> str:
-    listed = "\n".join(f"[{i}] ({e.day}) {e.body}" for i, e in enumerate(candidates[:TIDY_ENTRIES])) or "(nothing)"
+    listed = "\n".join(f"[{i}] ({e.day}) {redact_secrets(e.body)[0]}" for i, e in enumerate(candidates[:TIDY_ENTRIES])) or "(nothing)"
     return "\n".join([
         "You tidy an assistant's notebook. You have no tools: read only the numbered lines below, each with the "
         "date it was written.",
@@ -214,7 +215,8 @@ def parse_pairs(answer: str, count: int) -> list[Pair]:
 
 def plan(text: str, today: str, pairs: list[Pair] | None = None, *, minimum_budget: int = 0) -> Plan:
     entries = memory_entries.parse(text)
-    expired = [e for e in entries if memory_entries.is_expired(e, today)]
+    # A health or safety fact is never archived, whatever its `until`.
+    expired = [e for e in entries if memory_entries.is_expired(e, today) and not memory_entries.always_core(e.body)]
     live = [e for e in entries if not e.struck and not memory_entries.is_expired(e, today)]
     result = Plan(expired=expired, duplicates=_duplicates(live))
     candidates = contradiction_candidates(text, today)
@@ -223,6 +225,8 @@ def plan(text: str, today: str, pairs: list[Pair] | None = None, *, minimum_budg
     for pair in pairs or []:
         a, b = candidates[pair.a], candidates[pair.b]
         winner, loser = (a, b) if pair.keep == "a" else (b, a)
+        if memory_entries.always_core(loser.body):
+            continue  # a health or safety fact is for the person to settle, never the model
         if winner.start in touched or loser.start in touched:
             continue
         if len(result.superseded) >= budget:
@@ -238,10 +242,9 @@ def apply(text: str, plan_: Plan, today: str) -> tuple[str, list[str]]:
     lines = text.split("\n")
     drop = {i for e in [*plan_.expired, *plan_.duplicates] for i in range(e.start, e.end)}
     for loser, _winner, remainder in plan_.superseded:
-        struck = f"{loser.prefix}~~{loser.body}~~ · superseded {today}"
-        lines[loser.start] = struck + (f"\n- {today} · from tidy-up · {remainder}" if remainder else "")
-        for i in range(loser.start + 1, loser.end):
-            drop.add(i)
+        lines[loser.start] = f"{loser.prefix}~~{loser.body}~~ · superseded {today}"
+        if remainder:  # after the struck entry's own continuation lines
+            lines[loser.end - 1] += f"\n- {today} · from tidy-up · {remainder}"
     # the first line of an archived entry carries the mark
     archived = [_mark_first(text, e, today) for e in plan_.expired]
     return "\n".join(line for i, line in enumerate(lines) if i not in drop), archived

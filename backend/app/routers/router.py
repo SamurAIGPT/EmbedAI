@@ -56,5 +56,7 @@ router.include_router(usage_router)
 
 from app.routers.team import router as team_router
 from app.routers.rooms import router as rooms_router
+from app.routers.memory import router as memory_router
+router.include_router(memory_router)
 router.include_router(team_router)
 router.include_router(rooms_router)

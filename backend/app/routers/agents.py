@@ -543,7 +543,7 @@ async def memory_upkeep_status(agent_id: int, rt: ThreadRuntime = Depends(get_ru
     """Whether quiet memory upkeep is on for the agent, whether its engine can
     make the background call, and what the last capture did."""
     from app.core.config import settings
-    from app.services import memory_capture
+    from app.services import memory_capture, memory_settings
 
     agent = await _agent_or_404(rt, agent_id)
     adapter = rt.adapters.get(agent.provider)
@@ -553,7 +553,9 @@ async def memory_upkeep_status(agent_id: int, rt: ThreadRuntime = Depends(get_ru
         "quiet_seconds": settings.MEMORY_CAPTURE_QUIET_SECONDS,
         "last_capture": memory_capture.read_status(agent.id).get("last_capture"),
         "last_tidy": memory_capture.read_status(agent.id).get("last_tidy"),
-        "tidy_hour": settings.MEMORY_TIDY_HOUR,
+        "tidy_hour": memory_settings.tidy_hour(),
+        "engine": agent.provider,
+        "helper_model": memory_capture.helper_model(agent.provider, None),
     }
 
 

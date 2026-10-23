@@ -363,7 +363,8 @@ only the two steps that need no model run):
   core is not asked about again. At most 20 move in a pass; an answer that names a
   line that is not there is dropped whole, and so is one made stale by an edit
   during the call. Each file's change is a journal row by **Memory upkeep**.
-- **Tidy-up.** Once a day after 3 am local time (`MEMORY_TIDY_HOUR`, 24 = never),
+- **Tidy-up.** Once a day after 3 am local time (`MEMORY_TIDY_HOUR`, 24 = never;
+  `tidy_hour` in the Memory settings overrides it),
   at the next check if the computer was asleep, never while the agent is working,
   and on **Tidy up now** (`POST /memory/tidy`): expired entries move to
   `memory/archive.md` (marked `· expired <date>`; from `MEMORY.md` and topic
@@ -375,9 +376,20 @@ only the two steps that need no model run):
   entries are struck in one pass in `MEMORY.md` and none in a file of fewer than
   five; a topic note may reconcile one pair even with two entries. Four files are
   checked per pass, rotating through the topics. The archive is written before
-  the file it came from. "Exactly the same fact" is narrow on purpose: spacing, a
+  the file it came from, and put back when that file then cannot be written (it
+  was edited meanwhile); when the archive is full, expired entries stay where
+  they are. A health or safety fact (diet, allergies, medication, disability) is
+  never archived, offered for moving or struck, whatever the model says; a
+  hand-written line is never touched. Prompts are redacted, and a moved or
+  struck entry keeps its continuation lines. "Exactly the same fact" is narrow on purpose: spacing, a
   bullet and a final full stop are ignored, nothing else (`-10` and `10`, `C++`
   and `C` are different facts).
+
+The model steps (noticing, organizing, tidy-up) run on the **helper model**
+chosen for the agent's engine in the Memory settings (`helper_models`, for
+example `{"claude": "haiku"}`; it overrides `MEMORY_HELPER_MODEL`, which
+overrides the built-in `haiku` on Claude). It is always the engine the agent
+already uses, never another provider.
 
 The status route reports the last tidy-up; the editor has a **Tidy up now**
 button. Every upkeep change is undoable from the History tab.
@@ -422,6 +434,12 @@ chat-scope device), with sign-in like every route.
 | `GET` | `/memory/proposals` | Proposed notes (reads quiet conversations first). |
 | `POST` | `/memory/proposals/{id}/accept` | `{line?, target?}`: save it, or your edited line, into `MEMORY.md` or a topic. |
 | `POST` | `/memory/proposals/{id}/reject` | Drop it for good. |
+
+Installation-wide, under `/api/v1/memory` (admin scope):
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never) and `helper_models` (a model per engine). `422 invalid_setting`. |
 
 `recall_enabled` and `memory_upkeep` are fields of the agent. Run `alembic upgrade head`:
 revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds

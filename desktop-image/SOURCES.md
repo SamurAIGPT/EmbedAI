@@ -12,3 +12,8 @@ https://sources.debian.org/. TigerVNC, Openbox, maim, socat and ImageMagick incl
 copyleft components; Firefox ESR includes MPL-licensed components. Review all
 package licences and corresponding source obligations before redistributing a
 built image. This repository supplies a local build recipe and publishes no image.
+
+Chromium comes from Debian's security repository. The Python Playwright client
+is pinned to 1.58.0 from PyPI (Apache-2.0); its bundled driver and licence notices
+remain in site-packages/playwright. No Playwright browser download is used;
+the client attaches over CDP to Debian's installed Chromium.

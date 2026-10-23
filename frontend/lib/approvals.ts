@@ -30,6 +30,7 @@ export function decisionText(entry: DecisionEntry): string {
     case "auto_allowed":
       if (entry.source === "screen_turn_grant") return `${what} ran with your screen permission for this turn`;
       if (entry.source === "computer_screen_read") return `${what} ran without asking: reading the computer screen`;
+      if (entry.source === "computer_browser_read") return `${what} ran without asking: reading the agent's browser`;
       if (entry.source === "computer_read") return `${what} ran without asking: reading inside the agent's computer`;
       if (entry.source === "accept_edits") return `${what} ran without asking: edits are accepted for this agent`;
       return `${what} ran without asking: a saved rule allowed it`;
@@ -84,5 +85,5 @@ export function issueKindLabel(kind: string): string {
 }
 
 export function isScreenInput(tool: string): boolean {
-  return /^mcp__computer__(click|double_click|move|drag|type|key|scroll)$/.test(tool);
+  return /^mcp__computer__(click|double_click|move|drag|type|key|scroll|browser_(open|click|fill|type|press|tabs|dialog|restart|close))$/.test(tool);
 }

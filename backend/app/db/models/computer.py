@@ -38,6 +38,7 @@ class Computer(Base):
         String, nullable=False, default="docker", server_default="docker"
     )
     kind: Mapped[str] = mapped_column(String, nullable=False, default="shell", server_default="shell")
+    browser_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
     image: Mapped[str] = mapped_column(String, nullable=False)
     # The image's content id when the machine was made, so a moved tag is noticed.
     image_id: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -424,6 +424,7 @@ export type Computer = ComputerSummary & {
   pids_limit: number;
   idle_minutes: number;
   auto_start: boolean;
+  browser_enabled: boolean;
   // What Docker reports now; null when it was not asked or cannot be reached.
   live_state: string | null;
   needs_recreate: boolean;
@@ -446,6 +447,7 @@ export type ComputerSettings = {
   network?: ComputerNetwork;
   idle_minutes?: number;
   auto_start?: boolean;
+  browser_enabled?: boolean;
 };
 
 // A named agent: instructions, model, workspace and how much it asks first.

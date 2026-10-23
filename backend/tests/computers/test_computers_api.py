@@ -60,6 +60,28 @@ async def new_agent(api):
     return response.json()
 
 
+async def test_browser_opt_in_is_desktop_only_and_active_turns_refuse_changes(api, rt):  # noqa: F811
+    agent = await new_agent(api)
+    created = await api.post(f"/api/v1/agents/{agent['id']}/computer", json={"kind": "desktop"})
+    assert created.status_code == 201
+    computer = created.json()
+    assert computer["browser_enabled"] is False
+    path = f"/api/v1/computers/{computer['id']}"
+    assert (await api.patch(path, json={"browser_enabled": True})).json()["browser_enabled"] is True
+    assert (await api.get(path, params={"live": "false"})).json()["browser_enabled"] is True
+    rt.computers._leases[computer["id"]] = {999}
+    try:
+        response = await api.patch(path, json={"browser_enabled": False})
+        assert response.status_code == 409
+        assert response.json()["detail"]["error_code"] == "computer_busy"
+    finally:
+        rt.computers._leases.pop(computer["id"], None)
+    assert (await api.patch(path, json={"browser_enabled": False})).json()["browser_enabled"] is False
+    shell_agent = await new_agent(api)
+    response = await api.post(f"/api/v1/agents/{shell_agent['id']}/computer", json={"kind": "shell", "browser_enabled": True})
+    assert response.status_code == 422
+
+
 async def test_health_reports_docker_and_degrades_when_it_is_down(api, docker):  # noqa: F811
     body = (await api.get("/api/v1/computers/health")).json()
     assert body == {"provider": "docker", "available": True, "version": "27.0.0-fake", "error": None}

@@ -328,6 +328,11 @@ function DockerComputerView({
             />
             Start when a turn needs it
           </label>
+          {computer.kind === "desktop" && <label className="flex cursor-pointer items-center gap-1 text-xs text-muted">
+            <input type="checkbox" checked={computer.browser_enabled} disabled={busy || computer.busy}
+              onChange={() => act(() => api.updateComputer(computer.id, { browser_enabled: !computer.browser_enabled }))} />
+            Browser tools (requires the current desktop image)
+          </label>}
         </div>
       </form>
 

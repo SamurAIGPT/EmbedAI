@@ -372,15 +372,20 @@ button. Every upkeep change is undoable from the History tab.
 
 Every change made through the app to `MEMORY.md` or a topic note (an editor
 save, a topic deletion, an accepted proposal, an undo) is a row: which file,
-who (`person`, `proposal`, `undo`), created, edited or deleted, the before and
+who (`person`, `proposal`, `upkeep`, `agent`, `undo`), created, edited or deleted, the before and
 after hashes, a short diff, and the earlier text, so **Undo** puts the file
 back without anything else. An undo is itself a row and can be undone. A row
 whose earlier text held something that looked like a secret keeps no earlier
 text and cannot be undone; neither can one whose earlier text was over 256 KB.
 The **History** tab shows the rows with their diffs.
 
-Changes an agent makes with its own file tools during a turn are not
-journaled (and so cannot be undone here).
+Changes an agent makes with its own file tools are caught at the turn
+boundary: when a turn starts the app notes what every memory file says, and when it
+ends whatever differs is a row by **Agent** (a file whose newest row already ends
+in its current text, because the app wrote and journaled it, is skipped). They can be
+undone like any row. A file edited between turns, outside the app, is not seen;
+two turns of one agent at once are both diffed, so a change may be recorded under
+whichever finished first. A journal failure never fails a turn.
 
 ## API
 
@@ -416,7 +421,6 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Noticed facts are not added to a person-level profile, and rooms are never read.
 - Past-conversation search is a tool on Claude only; other engines have the brief and recall.
-- An agent's own edits with its file tools are not journaled.
 - Recall ranks by shared words only (no stemming, no embeddings), so a
   question worded differently from the note can miss it.
 - Proposals are found when the queue is looked at, not pushed.

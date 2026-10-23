@@ -27,7 +27,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_log, memory_recall, recent_work
+from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_journal, memory_log, memory_recall, recent_work
 from app.db.models import Room
 from app.db.transactions import begin_write
 from app.services.memory_bridge import MemoryBridge
@@ -189,6 +189,8 @@ class ActiveRun:
     capturable: bool = False
     # The agent's notes are on: the finished turn leaves a line in its daily log.
     log_memory: bool = False
+    # What the memory files said when the turn began, to journal the agent's own edits.
+    memory_before: dict | None = None
 
     def touch(self) -> None:
         try:
@@ -844,6 +846,16 @@ class ThreadRuntime:
             return
         await self._disclose(agent, thread, private_ids, recalled=True)
 
+    def _journal_agent_edits(self, run: "ActiveRun") -> None:
+        """Journal what the agent changed in its memory files with its own
+        tools during the turn (they can be undone like any change)."""
+        if run.memory_before is None or run.agent_id is None:
+            return
+        try:
+            memory_journal.record_changes(run.agent_id, run.memory_before)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not journal the agent's memory edits", turn_id=run.turn_id)
+
     async def _log_turn(self, run: "ActiveRun", outcome: TurnOutcome) -> None:
         """One line in the agent's daily log for a finished turn (memory_log.py)."""
         if not run.log_memory or run.agent_id is None:
@@ -940,6 +952,11 @@ class ThreadRuntime:
                     team_bridge = TeamBridge(self, run)
                     run.ctx.team_launch = team_bridge.launch
                     team_bridge.start()
+                if run.agent_id is not None and run.log_memory:
+                    try:
+                        run.memory_before = memory_journal.snapshot(run.agent_id)
+                    except Exception:  # noqa: BLE001
+                        logger.exception("could not note the memory files", turn_id=run.turn_id)
                 if run.agent_id is not None and run.log_memory and capabilities_of(adapter).mcp:
                     memory_bridge = MemoryBridge(self, run)
                     run.ctx.memory_launch = memory_bridge.launch
@@ -1008,6 +1025,7 @@ class ThreadRuntime:
             await self._finish(run, outcome)
             if not run.recorder.lost:
                 await self._log_turn(run, outcome)
+            self._journal_agent_edits(run)
             if run.capturable and outcome.status == "succeeded" and not run.recorder.lost:
                 # Only a turn that succeeded is ever read for facts to keep.
                 self.capture.note_turn(

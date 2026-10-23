@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select, update
 
 from app.db.models import Thread, Turn
-from app.services import agent_memory, agent_store, local_claude_runner, memory_log, recent_work
+from app.services import agent_memory, agent_store, local_claude_runner, memory_journal, memory_log, memory_topics, recent_work
 from app.services.provider_adapter import Capabilities, ProviderStatus, TurnOutcome
 from app.services.thread_hub import ThreadHub
 from app.services.thread_runtime import ThreadRuntime
@@ -26,6 +26,7 @@ class Engine:
         self.contexts = []
         self.fail = False
         self.tool = None
+        self.edit = None
 
     def new_session_id(self):
         return None
@@ -35,6 +36,8 @@ class Engine:
 
     async def run_turn(self, ctx, sink, gate):
         self.contexts.append(ctx)
+        if self.edit:
+            self.edit(ctx)
         if self.tool:
             await sink.emit("tool.started", {"call_id": "c1", "name": self.tool, "input": {}})
             await sink.emit("tool.completed", {"call_id": "c1", "ok": True, "output": "ok"})
@@ -215,3 +218,27 @@ async def test_a_room_turn_gets_the_brief_and_the_private_chat_is_disclosed_once
     await rt.rooms.post(room["id"], "And now?")
     await rt.rooms.work(room["id"])
     assert len([m for m in await rt.rooms.messages(room["id"]) if m.get("kind") == "brief"]) == 1
+
+
+async def test_an_agents_own_file_edits_to_its_notes_are_journaled_and_undoable(harness, sessions, owner):
+    rt, engine = harness
+    agent = await make_agent(sessions, owner)
+    agent_memory.write_memory(agent.id, "- 2026-10-01 · likes tea\n")
+    memory_topics.write_topic(agent.id, "keep.md", "- unchanged\n")
+
+    def edit(ctx):
+        # What an agent with file tools does inside its own folder.
+        (agent_memory.agent_home(agent.id) / "MEMORY.md").write_text("- 2026-10-01 · likes tea\n- 2026-10-23 · likes coffee too\n")
+        (agent_memory.agent_home(agent.id) / "memory" / "new.md").write_text("- a new topic by the agent\n")
+
+    engine.edit = edit
+    await say(rt, sessions, agent, "Remember that I like coffee")
+    rows = memory_journal.read(agent.id)
+    assert {(r["path"], r["actor"], r["kind"]) for r in rows} == {("MEMORY.md", "agent", "edited"), ("memory/new.md", "agent", "created")}
+    memory_journal.undo(agent.id, next(r["id"] for r in rows if r["path"] == "memory/new.md"))
+    assert not memory_topics.read_topic(agent.id, "new.md").exists
+    # an untouched file leaves no row, and a turn that edits nothing leaves none
+    engine.edit = None
+    before = len(memory_journal.read(agent.id))
+    await say(rt, sessions, agent, "Thanks")
+    assert len(memory_journal.read(agent.id)) == before

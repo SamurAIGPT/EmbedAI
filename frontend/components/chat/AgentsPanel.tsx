@@ -549,6 +549,7 @@ export function AgentsPanel({
                         {agent.instructions && (
                           <p className="mt-1 line-clamp-2 text-xs text-muted">{agent.instructions}</p>
                         )}
+                        {engines.find((engine) => engine.id === agent.provider)?.available === false && <p className="mt-1 text-xs text-warning">Connect an AI: {engines.find((engine) => engine.id === agent.provider)?.reason} <a href="/settings/" className="underline">Open engine settings</a></p>}
                         <div className="mt-2 flex flex-wrap gap-1">
                           <button onClick={() => setDraft(toDraft(agent))} disabled={busy} className={SMALL}>
                             Edit

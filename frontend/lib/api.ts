@@ -485,6 +485,15 @@ export type AgentInput = {
 };
 
 export type EngineModel = { id: string; label: string; default: boolean };
+export type EngineConfigField = {
+  name: keyof EngineConfigInput;
+  label: string;
+  kind?: "text" | "secret" | "url";
+  required?: boolean;
+  advanced?: boolean;
+  placeholder?: string | null;
+  help?: string | null;
+};
 export type Engine = {
   id: string;
   label: string;
@@ -500,6 +509,9 @@ export type Engine = {
   capabilities: { tools: boolean; approvals: boolean; mcp: boolean; images: boolean; resume: boolean; computers: boolean };
   configurable: boolean;
   config: Record<string, unknown> | null;
+  preset?: boolean;
+  setup?: { install?: string | null; sign_in?: string | null; docs_url?: string | null; credential?: string; notes?: string[] } | null;
+  config_fields?: EngineConfigField[];
   // Set while the engine refuses turns for a usage or rate limit or no credits.
   limit?: EngineLimit | null;
 };
@@ -516,6 +528,7 @@ export type EngineConfigInput = {
   model?: string;
   api_key?: string;
   clear_api_key?: boolean;
+  context_tokens?: number;
 };
 
 // Topic notes (memory/<topic>.md), the journal and proposed notes (docs/MEMORY.md).

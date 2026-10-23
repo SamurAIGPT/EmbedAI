@@ -86,6 +86,8 @@ async def test_the_list_and_one_engine(api):
     acp = by_id["acp"]
     assert acp["kind"] == "acp" and acp["configurable"] and not acp["available"] and acp["config"] is None
     assert acp["custom_models"] is False and acp["capabilities"]["computers"] is False
+    assert [field["name"] for field in acp["config_fields"]] == ["command", "label"]
+    assert acp["setup"]["credential"] == "terminal" and acp["preset"] is False
     assert by_id["openai_compat"]["kind"] == "api" and by_id["openai_compat"]["capabilities"]["tools"] is False
     one = await api.get("/api/v1/engines/acp")
     assert one.status_code == 200 and one.json()["id"] == "acp"
@@ -152,6 +154,11 @@ async def test_acp_config_and_the_validation_errors(api):
     assert (await api.put("/api/v1/engines/nope/config", json={"command": "x"})).status_code == 404
     assert (await api.delete("/api/v1/engines/nope/config")).status_code == 404
     assert (await api.delete("/api/v1/engines/claude/config")).status_code == 409
+
+
+async def test_fields_owned_by_another_engine_are_rejected(api):
+    response = await api.put("/api/v1/engines/acp/config", json={"command": "x", "api_key": KEY})
+    assert response.status_code == 422 and KEY not in response.text
 
 
 async def test_agents_and_threads_validate_provider_and_model(api):

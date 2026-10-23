@@ -130,6 +130,11 @@ def _issue_permit(ctx: TurnContext, handle: ApprovalHandle, tool_input: dict) ->
 
 
 class ClaudeAdapter:
+    setup = {
+        "sign_in": "claude auth login", "credential": "terminal",
+        "docs_url": "https://code.claude.com/docs/en/setup",
+        "notes": ["Install the CLI and sign in from a terminal, then check again."],
+    }
     key = "claude"
     label = "Claude"
     kind = "cli"

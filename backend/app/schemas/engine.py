@@ -16,6 +16,24 @@ class EngineCapabilities(BaseModel):
     computers: bool
 
 
+class EngineSetup(BaseModel):
+    install: str | None = None
+    sign_in: str | None = None
+    docs_url: str | None = None
+    credential: str = "none"
+    notes: list[str] = Field(default_factory=list)
+
+
+class EngineConfigField(BaseModel):
+    name: str
+    label: str
+    kind: str = "text"
+    required: bool = False
+    advanced: bool = False
+    placeholder: str | None = None
+    help: str | None = None
+
+
 class EngineResponse(BaseModel):
     """One engine. `available` says a turn can start now; `reason` says why
     not. Status comes from short, bounded checks of the engine's CLI or
@@ -42,6 +60,9 @@ class EngineResponse(BaseModel):
     # What is saved, without secrets: an ACP `command` and `label`, or an
     # endpoint's `base_url`, `model` and `has_api_key`.
     config: dict | None = None
+    preset: bool = False
+    setup: EngineSetup | None = None
+    config_fields: list[EngineConfigField] = Field(default_factory=list)
     # Set while the engine is refusing turns for a usage or rate limit or a lack
     # of credits, as its last turn reported: {"kind": "usage_limit" |
     # "rate_limit" | "credits", "resets_at": ISO time or null, "since": ISO

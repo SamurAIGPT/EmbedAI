@@ -15,7 +15,7 @@ UI do not know which engine they are talking to.
 
 ## Choose and configure an engine
 
-Open **Settings → Engines** in the web UI or desktop app. **Refresh status**
+Open **Settings → Engines** in the web UI or desktop app. **Check again**
 checks installation, login and endpoint readiness. An unavailable engine shows
 its reason without blocking the others. Sign in to Claude or Codex in a terminal;
 the app does not install engines or complete their login for you.
@@ -25,7 +25,15 @@ endpoint, save its base URL (including `/v1` when required), optional default
 model and optional API key. Configuration is encrypted at rest. A blank key
 keeps the saved key for the same URL; changing the URL drops it unless you
 enter a key again. **Forget settings** deletes the configuration and credential.
-For OpenRouter, the API key is enough: the address defaults to OpenRouter's.
+For OpenRouter, save an API key. The address is fixed to OpenRouter over HTTPS; configure a proxy with the generic OpenAI-compatible engine.
+
+
+Settings forms come from each adapter's `config_fields` and `setup` descriptors.
+Ready engines appear before engines that need setup, including in engine pickers.
+Connection commands are displayed for the person to run; the app never installs
+a CLI. Under the generic endpoint card, **Fill address from template** supplies
+an address for Ollama, LM Studio, Groq, Cerebras, Mistral or OpenAI. It supplies
+no key or model. These services have not been checked with real accounts.
 
 Choose an engine and model in the Agents panel or before sending a new chat.
 The model field offers catalog suggestions and accepts a custom ID only when
@@ -163,22 +171,26 @@ A preset of the OpenAI-compatible engine (`OpenRouterAdapter` in
 be set up beside a local endpoint. Everything above applies, with these
 differences:
 
-- `base_url` is optional and defaults to `https://openrouter.ai/api/v1`; give
-  another address only for a proxy that speaks OpenRouter's API. The usual
-  rule holds: a new address drops the saved key unless it is given again.
-- A key is required: saving without one answers 422 `invalid_engine_config`,
-  and the engine is unavailable until one is saved.
-- Model ids are OpenRouter's, `vendor/model` with an optional variant such as
-  `:free` (`openai/gpt-4o-mini`, `meta-llama/llama-3.3-70b-instruct:free`).
-  Refresh status lists OpenRouter's catalog from `GET /models`.
+- The address is fixed to `https://openrouter.ai/api/v1`. Configuration requests
+  containing `base_url` are rejected. Use the OpenAI-compatible engine for a
+  proxy. Older saved proxy configurations must be saved there again; they are
+  refused without sending the key to that proxy.
+- A key is required. Readiness authenticates through `GET /key`, independently
+  of the public model catalog. A rejected key reports signed out. A failed or
+  malformed key check reports unavailable without displaying its body.
+- Model ids use `vendor/model` with an optional variant such as `:free`.
+  Refresh lists up to 600 models from `GET /models`, labels free models, and
+  puts free models supporting tools first (this engine remains chat only).
+  A free-tier key with no chosen model uses the first available free model.
+  Other keys require a chosen model; the app does not select a paid model.
 - Requests to openrouter.ai also carry OpenRouter's optional app-attribution
   headers, `HTTP-Referer: https://github.com/Anil-matcha/open-duet` and
   `X-Title: Open Duet`. They tell OpenRouter that this account's traffic comes
   from Open Duet (OpenRouter uses them for its public app rankings), and they
   are sent only to openrouter.ai.
 - Chat only, like any OpenAI-compatible endpoint: no tools, images or
-  computers. A 429 or `insufficient_quota` from OpenRouter is a limit like
-  any other (below).
+  computers. HTTP 402 is a credit limit. A `free-models-per-day` refusal is a
+  usage limit; a general 429 is a rate limit. No reset time is guessed.
 
 Tested against a mock endpoint only; no turn has been run against the real
 OpenRouter service yet.

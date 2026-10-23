@@ -150,6 +150,14 @@ class _Stopped(Exception):
 
 
 class AcpAdapter:
+    config_fields = [
+        {"name": "command", "label": "ACP command", "required": True, "placeholder": "agent-cli --acp"},
+        {"name": "label", "label": "Display name", "placeholder": "ACP agent"},
+    ]
+    setup = {
+        "credential": "terminal",
+        "notes": ["Sign in to this command in a terminal first. It uses its configured model and asks for tools through ACP."],
+    }
     key = "acp"
     label = "ACP agent"
     kind = "acp"

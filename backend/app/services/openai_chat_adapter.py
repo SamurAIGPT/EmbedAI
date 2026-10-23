@@ -99,6 +99,17 @@ def chat_messages(items: list[dict], instructions: str | None) -> list[dict]:
 
 
 class OpenAIChatAdapter:
+    config_fields = [
+        {"name": "base_url", "label": "Base URL", "kind": "url", "required": True,
+         "placeholder": "https://api.example.com/v1"},
+        {"name": "model", "label": "Default model", "placeholder": "Use endpoint default"},
+        {"name": "api_key", "label": "API key", "kind": "secret",
+         "help": "Encrypted at rest. Leave empty to keep the saved key for this address."},
+    ]
+    setup = {
+        "credential": "api_key",
+        "notes": ["Changing the address drops the saved key unless you enter it again. Chat only."],
+    }
     key = "openai_compat"
     label = "OpenAI-compatible"
     kind = "api"
@@ -108,6 +119,7 @@ class OpenAIChatAdapter:
     models: list[ModelOption] = []
     custom_models = True
     needs_config = True
+    max_models = MAX_MODELS
     # No session: every turn replays the stored conversation, folded when it
     # outgrows the budget (context_compaction.py). `context_tokens` in the
     # saved configuration (the model's context window) sets the budget.
@@ -210,7 +222,7 @@ class OpenAIChatAdapter:
                 data = response.json().get("data")
             except (ValueError, AttributeError):
                 data = None
-            for item in (data or [])[:MAX_MODELS]:
+            for item in (data if isinstance(data, list) else [])[:self.max_models]:
                 if isinstance(item, dict) and isinstance(item.get("id"), str):
                     models.append(ModelOption(item["id"], item["id"], item["id"] == default))
         if default and default not in {m.id for m in models}:
@@ -352,6 +364,16 @@ def _error_text(status: int, body: str, secret: str | None) -> str:
 
 
 class OpenRouterAdapter(OpenAIChatAdapter):
+    preset = True
+    config_fields = [
+        {"name": "api_key", "label": "OpenRouter API key", "kind": "secret", "required": True},
+        {"name": "model", "label": "Default model", "placeholder": "provider/model"},
+    ]
+    setup = {
+        "credential": "api_key", "docs_url": "https://openrouter.ai/keys",
+        "notes": ["Create an OpenRouter key and save it here. Chat only.",
+                  "Requests go to OpenRouter and its model providers. Check their data policies before sending private content."],
+    }
     """OpenRouter (https://openrouter.ai) as a preset of the OpenAI-compatible
     engine: its own saved configuration (`engine:openrouter`), so it can sit
     beside a local endpoint. The address defaults to OpenRouter's, a key is
@@ -363,12 +385,14 @@ class OpenRouterAdapter(OpenAIChatAdapter):
 
     key = "openrouter"
     label = "OpenRouter"
+    max_models = 600
     not_configured = "Add your OpenRouter API key in Settings → Engines."
 
     def validate_config(self, payload: dict, current: dict | None) -> dict:
         base = payload.get("base_url")
-        if not isinstance(base, str) or not base.strip():
-            payload = {**payload, "base_url": OPENROUTER_BASE_URL}
+        if base and base.strip().rstrip("/") != OPENROUTER_BASE_URL:
+            raise InvalidConfig("OpenRouter uses its fixed address. Use the OpenAI-compatible engine for a proxy.")
+        payload = {**payload, "base_url": OPENROUTER_BASE_URL}
         config = super().validate_config(payload, current)
         if not config.get("api_key"):
             raise InvalidConfig("Give your OpenRouter API key (openrouter.ai → Keys).")
@@ -381,11 +405,64 @@ class OpenRouterAdapter(OpenAIChatAdapter):
         return headers
 
     async def status(self) -> ProviderStatus:
-        if not (self.config or {}).get("api_key"):
-            return ProviderStatus(ready=False, error=self.not_configured, installed=False)
-        return await super().status()
+        probe = await self.probe()
+        return ProviderStatus(ready=probe.ready, error=probe.reason, installed=probe.installed, signed_in=probe.signed_in)
 
     async def probe(self) -> EngineProbe:
-        if not (self.config or {}).get("api_key"):
+        return await self._probe_config(self.config or {})
+
+    async def _probe_config(self, config: dict) -> EngineProbe:
+        if not config.get("api_key"):
             return EngineProbe(installed=False, ready=False, reason=self.not_configured)
-        return await super().probe()
+        if config.get("base_url", OPENROUTER_BASE_URL) != OPENROUTER_BASE_URL:
+            return EngineProbe(installed=True, ready=False, reason="Use the OpenAI-compatible engine for a proxy, or save your OpenRouter settings again.")
+        try:
+            async with self._client(httpx.Timeout(PROBE_TIMEOUT_SECONDS)) as client:
+                response = await client.get(f"{OPENROUTER_BASE_URL}/key", headers=self._headers(config))
+                if response.status_code in (401, 403):
+                    return EngineProbe(installed=True, ready=False, signed_in=False, reason="OpenRouter refused the key. Save a valid key in Settings → Engines.")
+                if response.status_code != 200:
+                    return EngineProbe(installed=True, ready=False, reason=f"OpenRouter key check answered {response.status_code}. Try again later.")
+                try:
+                    key_data = response.json().get("data")
+                except (ValueError, AttributeError):
+                    key_data = None
+                if not isinstance(key_data, dict):
+                    return EngineProbe(installed=True, ready=False, reason="OpenRouter returned an unreadable key check. Try again later.")
+                # A failed catalog must not turn a valid key into a signed-out
+                # account. A saved or explicitly chosen model still works.
+                try:
+                    catalog = await client.get(f"{OPENROUTER_BASE_URL}/models", headers=self._headers(config))
+                    data = catalog.json().get("data") if catalog.status_code == 200 else []
+                except (httpx.HTTPError, ValueError, AttributeError):
+                    data = []
+        except httpx.HTTPError as exc:
+            return EngineProbe(installed=True, ready=False, reason=f"OpenRouter did not answer ({exc.__class__.__name__}).")
+        entries = []
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                continue
+            pricing = item.get("pricing")
+            free = item["id"].endswith(":free") or (
+                isinstance(pricing, dict) and str(pricing.get("prompt")) == "0" and str(pricing.get("completion")) == "0"
+            )
+            tools = "tools" in (item.get("supported_parameters") or [])
+            entries.append((item["id"], free, tools))
+        entries.sort(key=lambda item: (not item[1], not item[2], item[0]))
+        entries = entries[:self.max_models]
+        default = config.get("model")
+        if not default and key_data.get("is_free_tier") is True:
+            default = next((model for model, free, _ in entries if free), None)
+        models = [ModelOption(model, model + (" (free)" if free else ""), model == default) for model, free, _ in entries]
+        if default and default not in {m.id for m in models}:
+            models.insert(0, ModelOption(default, default, True))
+        return EngineProbe(installed=True, ready=True, signed_in=True, models=models or None)
+
+    async def run_turn(self, ctx: TurnContext, sink, gate) -> TurnOutcome:
+        config = ctx.engine_config or self.config or {}
+        if not config.get("api_key") or config.get("base_url", OPENROUTER_BASE_URL) != OPENROUTER_BASE_URL:
+            return TurnOutcome("failed", error="Save your OpenRouter key in Settings → Engines. For a proxy use the OpenAI-compatible engine.", error_code="engine_not_configured")
+        if not ctx.model and not config.get("model"):
+            probe = await self._probe_config(config)
+            ctx.model = next((model.id for model in probe.models or [] if model.default), None)
+        return await super().run_turn(ctx, sink, gate)

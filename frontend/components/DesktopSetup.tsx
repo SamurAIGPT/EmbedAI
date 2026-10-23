@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type ApplicationSetting, type ApprovalMode, type DesktopSettings, type Engine } from "@/lib/api";
 import { APPROVAL_MODES, modelLabel } from "@/lib/agents";
 import { EngineSettings } from "./EngineSettings";
 import { EngineModelFields } from "./chat/EngineModelFields";
+import { firstReadyEngine } from "@/lib/engines";
 
 const BUTTON = "rounded-md border border-line px-3 py-2 text-sm disabled:opacity-50";
 const FIELD = "mt-1 w-full rounded-md border border-line bg-transparent px-3 py-2 text-sm";
@@ -18,7 +19,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   const row = (key: string) => settings.settings.find((item) => item.key === key);
   const [step, setStep] = useState(0);
   const [engines, setEngines] = useState<Engine[]>([]);
-  const [provider, setProvider] = useState("claude");
+  const [provider, setProvider] = useState("");
   const [model, setModel] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState(String(row("LOCAL_WORKSPACE_ROOT")?.value ?? ""));
   const [tools, setTools] = useState(row("LOCAL_TOOLS_ENABLED")?.value === true);
@@ -29,6 +30,10 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const engine = engines.find((item) => item.id === provider);
+  const enginesChanged = useCallback((items: Engine[]) => {
+    setEngines(items);
+    setProvider((current) => firstReadyEngine(items, current) ?? current);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,9 +85,9 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
     <ol className="flex flex-wrap gap-3 text-xs" aria-label="Setup progress">{STEPS.map((name, index) => <li key={name} aria-current={index === step ? "step" : undefined} className={index === step ? "font-semibold" : "text-muted"}>{index + 1}. {name}</li>)}</ol>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
     {step === 0 && <div className="space-y-4">
-      <p className="text-sm text-muted">Use a CLI you have signed in to, or configure your own endpoint. For CLI sign-in, run <code>claude auth login</code> or <code>codex login</code> in a terminal, then refresh status below.</p>
-      <EngineModelFields engines={engines} provider={provider} model={model} disabled={busy} onChange={(nextProvider, nextModel) => { setProvider(nextProvider); setModel(nextModel); }} />
-      <details><summary className="cursor-pointer text-sm underline">Detect and configure engines</summary><div className="mt-3"><EngineSettings onEnginesChanged={setEngines} /></div></details>
+      <p className="text-sm text-muted">{engine?.available ? `${engine.label} is ready. Continue to choose a workspace.` : "Connect an AI"}</p>
+      {engine?.available && <details><summary className="cursor-pointer text-sm underline">Advanced: engine and model</summary><div className="mt-3"><EngineModelFields engines={engines} provider={provider} model={model} disabled={busy} onChange={(nextProvider, nextModel) => { setProvider(nextProvider); setModel(nextModel); }} /></div></details>}
+      <EngineSettings onEnginesChanged={enginesChanged} />
       {!engines.length && <p role="status" className="text-sm text-muted">Checking installed engines…</p>}
     </div>}
     {step === 1 && <div className="space-y-3">

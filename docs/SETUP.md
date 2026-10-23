@@ -295,3 +295,16 @@ Each field has its own **Save** and **Discard**, source, effective value, defaul
 - `npm run e2e` (in `desktop/`) runs the app for real: it opens a window, and its `chat` part makes a few short requests with your Claude. It is written for Windows. `npm run e2e -- upgrade` is optional and only runs when named: it starts the previous release (taken from Git history, prepared once under your temp folder), then checks that upgrading keeps an existing Claude conversation in its original workspace after you change the default one. It needs Claude signed in (two short requests), `git`, `tar` and `uv`, and skips with a reason if any is missing. The conversations it creates stay in Claude's own session store; the test never deletes anything there.
 
 This file will change when the installable launcher (roadmap F10) ships.
+
+## Choosing an AI during desktop setup
+
+Setup detects ready engines and selects one in this order: Claude, Codex,
+Cursor, OpenCode, Gemini, OpenRouter, then any other ready adapter. A person's
+working selection is preserved when status refreshes. Engine and model choices
+are under **Advanced: engine and model**. When none is ready, **Connect an AI**
+shows connection instructions and a **Check again** button; Continue waits for
+a ready engine. Skip and replay remain available.
+
+This setup flow was checked in Chromium at desktop and phone widths with
+scripted engine responses. Real preset accounts and packaged first run were
+not checked for this change.

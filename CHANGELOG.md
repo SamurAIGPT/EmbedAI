@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+- Engine Settings now builds connection forms from engine descriptors and groups ready engines first. Generic endpoint address templates cover Ollama, LM Studio, Groq, Cerebras, Mistral and OpenAI. Desktop setup detects a ready engine and offers advanced model selection. Tested with scripted engine responses; real preset accounts and packaged setup were not run.
+- OpenRouter readiness authenticates the saved key, lists up to 600 models with free labels, and chooses a free default only for a free-tier key. Its address is fixed to OpenRouter; proxy users must use the generic endpoint engine. Keys refused by the service no longer appear ready. Checked with a mock endpoint, including conversation fallback; a real OpenRouter account was not run.
+
 ## v0.2.0 (2026-10-22)
 
 ### Changed

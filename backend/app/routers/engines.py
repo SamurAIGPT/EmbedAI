@@ -61,6 +61,17 @@ async def save_engine_config(
     """Save the engine's configuration (encrypted, like every credential) and
     check the engine again. The response never includes a key."""
     adapter = _configurable(rt, engine_id)
+    fields = getattr(adapter, "config_fields", None)
+    if fields is not None:
+        allowed = {field["name"] for field in fields}
+        # Clearing a secret and setting the context budget are protocol
+        # controls rather than text inputs in the generated form.
+        if "api_key" in allowed:
+            allowed.add("clear_api_key")
+        if getattr(adapter, "kind", None) == "api":
+            allowed.add("context_tokens")
+        if payload.model_fields_set - allowed:
+            raise _error(422, "invalid_engine_config", "This engine does not accept one or more supplied fields.")
     current = await rt.engine_config(engine_id)
     try:
         config = adapter.validate_config(payload.model_dump(exclude_none=True), current)

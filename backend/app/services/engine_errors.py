@@ -34,7 +34,7 @@ CREDITS = "credits"
 _USAGE = re.compile(
     r"\busage limit\b|\bhit your (?:(?!rate\b)[\w'’-]+ ){0,3}(?:limit|budget)\b"
     r"|\b(?:weekly|daily|monthly|subscription|usage|session|5-hour) limit reached\b"
-    r"|\bout of (?:usage(?: credits)?|extra usage)\b",
+    r"|\bout of (?:usage(?: credits)?|extra usage)\b|\bfree-models-per-(?:day|24h)\b",
     re.IGNORECASE,
 )
 _CREDITS = re.compile(

@@ -3,6 +3,7 @@
 import { useId } from "react";
 import type { Engine } from "@/lib/api";
 import { engineLimitText } from "@/lib/everyday";
+import { engineGroups } from "@/lib/engines";
 
 const FIELD = "mt-1 w-full rounded-md border border-line bg-transparent px-3 py-1.5 text-sm disabled:opacity-50";
 
@@ -23,7 +24,7 @@ export function EngineModelFields({ engines, provider, model, onChange, disabled
     <label className="block text-xs text-muted">Engine
       <select className={FIELD} aria-label="Engine" value={provider} disabled={disabled || lockProvider} onChange={(event) => onChange(event.target.value, null)}>
         {!engine && <option value={provider}>{provider}</option>}
-        {engines.map((item) => <option key={item.id} value={item.id} disabled={hasComputer && !item.capabilities.computers}>{item.label}{item.available ? "" : " (unavailable)"}{item.limit ? ` · ${engineLimitText(item.limit)}` : ""}{hasComputer && !item.capabilities.computers ? " · cannot use this computer" : ""}</option>)}
+        {engineGroups(engines).map((group) => <optgroup key={group.label} label={group.label}>{group.engines.map((item) => <option key={item.id} value={item.id} disabled={!item.available || (hasComputer && !item.capabilities.computers)}>{item.label}{item.available ? "" : ` · ${item.reason ?? "Needs setup"}`}{item.limit ? ` · ${engineLimitText(item.limit)}` : ""}{hasComputer && !item.capabilities.computers ? " · cannot use this computer" : ""}</option>)}</optgroup>)}
       </select>
     </label>
     {engine?.limit && <p role="status" className="text-xs text-warning"><span className="mr-1 rounded-full border border-warning/60 px-2 py-0.5 font-medium">{engineLimitText(engine.limit)}</span>{engine.limit.message}</p>}

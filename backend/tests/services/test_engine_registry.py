@@ -78,6 +78,7 @@ async def test_a_small_adapter_gets_safe_defaults():
     assert entry["capabilities"] == {k: False for k in ("tools", "approvals", "mcp", "images", "resume", "computers")}
     assert entry["custom_models"] is True and entry["models"] == []
     assert entry["reason"] is None
+    assert entry["preset"] is False and entry["setup"] is None and entry["config_fields"] == []
 
 
 async def test_an_unready_adapter_says_why():

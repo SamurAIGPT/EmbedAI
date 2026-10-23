@@ -424,3 +424,9 @@ async def test_a_cut_turn_says_whether_the_engine_had_the_prompt(sessions, owner
         replays.append(events[-1].data["replay"])
         assert (await reload(sessions, Turn, turn.id)).status == "interrupted"
     assert replays == ["before_accept", "unknown", "after_accept"]
+
+
+def test_free_daily_limit_is_usage_and_not_a_short_rate_limit():
+    limit = engine_errors.classify("The endpoint answered 429: free-models-per-day limit exceeded")
+    assert limit.kind == engine_errors.USAGE_LIMIT
+    assert limit.resets_at is None

@@ -164,6 +164,11 @@ class _Stopped(Exception):
 
 
 class CodexAdapter:
+    setup = {
+        "install": "npm install -g @openai/codex", "sign_in": "codex login",
+        "credential": "terminal", "docs_url": "https://developers.openai.com/codex/cli/",
+        "notes": ["Install the CLI and sign in from a terminal, then check again."],
+    }
     key = "codex"
     label = "Codex"
     kind = "cli"

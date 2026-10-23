@@ -20,6 +20,8 @@ def tool(n, text, *, turn=1, thread=1, name="Bash", minutes=0):
 def test_normalize_removes_what_is_specific_to_the_work():
     text = 'open "/Users/ann/secret plan.txt" failed at line 12 for ann@example.com id 3f2a9c8b1d'
     out = s.normalize(text)
+    unc = s.normalize(r"cannot open \\files\users\priya\secret.txt")
+    assert "priya" not in unc and "secret" not in unc and "<path>" in unc
     for leaked in ("ann", "secret", "12", "3f2a9c8b1d", "example"):
         assert leaked not in out
     assert s.normalize("no layer 12 in /a/b") == s.normalize("no layer 104 in /c/d")

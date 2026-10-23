@@ -56,7 +56,7 @@ def normalize(text: str) -> str:
     text = re.sub(r"\"[^\"\n]*\"|(?<![\w])'[^'\n]*'(?![\w])|`[^`\n]*`", "<q>", text)
     text = re.sub(r"\b[a-z][a-z0-9+.-]*://\S+", "<url>", text, flags=re.I)
     text = re.sub(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b", "<email>", text)
-    text = re.sub(r"\b[A-Za-z]:\\[^\s:]+", "<path>", text)
+    text = re.sub(r"\\\\[^\s]+|\b[A-Za-z]:\\[^\s:]+", "<path>", text)
     text = re.sub(r"(?:~|\.{1,2})?(?:/[^\s/:'\",)]+)+/?", "<path>", text)
     text = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<id>", text, flags=re.I)
     text = re.sub(r"\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,}\b", "<id>", text, flags=re.I)

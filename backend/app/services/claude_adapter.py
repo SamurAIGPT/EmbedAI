@@ -120,14 +120,19 @@ class _Attempt:
         )
 
 
-def _issue_permit(ctx: TurnContext, handle: ApprovalHandle, tool_input: dict) -> bool:
+def _issue_permit(ctx: TurnContext, handle: ApprovalHandle, tool_input: dict, native_epoch: int | None = None) -> bool:
     """For an allowed computer call, the one-use permit the computer's MCP
     server must find before it runs the call. Other calls need none."""
     tool = getattr(handle, "tool", None) or ""
     if ctx.computer is None or not tool.startswith(COMPUTER_TOOL_PREFIX):
         return True
     try:
-        grants.issue(ctx.computer.grants_dir, tool[len(COMPUTER_TOOL_PREFIX):], tool_input)
+        file = grants.issue(ctx.computer.grants_dir, tool[len(COMPUTER_TOOL_PREFIX):], tool_input)
+        if getattr(ctx.computer, "provider", None) == "native":
+            if native_epoch is None:
+                file.unlink(missing_ok=True)
+                return False
+            file.write_text(json.dumps({"generation": native_epoch, "tool": tool[len(COMPUTER_TOOL_PREFIX):], "arguments": tool_input}), encoding="utf-8")
         return True
     except OSError:
         logger.exception("could not write a computer permit", thread_id=ctx.thread_id)
@@ -249,6 +254,8 @@ class ClaudeAdapter:
         queue: asyncio.Queue = asyncio.Queue()
         answering: set[asyncio.Task] = set()
         tools_by_request: dict[str, str] = {}
+        native_calls: set[str] = set()
+        native_epochs: dict[str, int] = {}
 
         def on_line(line: bytes) -> bool:
             # Runs on the runner's reader thread. Everything it learns goes onto
@@ -273,7 +280,7 @@ class ClaudeAdapter:
                 control.resume_deadline()
             if decision.kind == LOST:
                 return
-            if decision.kind == ALLOW and not _issue_permit(ctx, handle, tool_input):
+            if decision.kind == ALLOW and not _issue_permit(ctx, handle, tool_input, native_epochs.get(handle.request_id)):
                 payload = _deny_payload(handle.request_id, DENY_NO_PERMIT)
             elif decision.kind == ALLOW:
                 payload = _allow_payload(handle.request_id, tool_input)
@@ -287,17 +294,23 @@ class ClaudeAdapter:
         async def handle_tool_event(event: ToolEvent) -> None:
             data = event.data
             if event.kind == "tool_started":
+                from app.computers.native import durable_input
+                native = data["tool"].startswith("mcp__computer__native_")
+                if native:
+                    native_calls.add(data["tool_use_id"])
                 await sink.emit(
                     "tool.started",
                     {
                         "call_id": data["tool_use_id"],
                         "name": data["tool"],
-                        "summary": data["summary"],
-                        "input": event.extra.get("input", {}),
+                        "summary": data["tool"].removeprefix("mcp__computer__native_").replace("_", " ") + " on this Mac" if native else data["summary"],
+                        "input": durable_input(data["tool"], event.extra.get("input", {})),
                     },
                 )
             elif event.kind == "tool_completed":
                 output, truncated = cap_tool_output(event.extra.get("output", ""))
+                if data["tool_use_id"] in native_calls:
+                    output, truncated = "Native desktop result omitted from history for privacy.", False
                 await sink.emit(
                     "tool.completed",
                     {
@@ -333,6 +346,15 @@ class ClaudeAdapter:
                 control.send(json.dumps(_deny_payload(request_id, DENY_TOO_LARGE)))
                 return
             tools_by_request[request_id] = tool
+            if ctx.computer is not None and getattr(ctx.computer, "provider", None) == "native":
+                from app.computers.native import request
+                try:
+                    connection = json.loads((ctx.computer.grants_dir / "connection.json").read_text())
+                    epoch = await asyncio.to_thread(request, connection, {"method": "epoch"})
+                    native_epochs[request_id] = epoch["generation"]
+                except Exception:
+                    control.send(json.dumps(_deny_payload(request_id, DENY_NO_PERMIT)))
+                    return
             # Recorded here, in stream order, so the approval appears after the
             # tool call that caused it; the wait happens in its own task.
             handle = await gate.open(

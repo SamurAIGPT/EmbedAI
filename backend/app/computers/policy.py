@@ -15,6 +15,10 @@ COMPUTER_TOOL_PREFIX = "mcp__computer__"
 COMPUTER_EXEC_TOOL = COMPUTER_TOOL_PREFIX + "exec"
 SCREEN_INPUT = frozenset(COMPUTER_TOOL_PREFIX + name for name in ("click", "double_click", "move", "drag", "type", "key", "scroll"))
 SCREEN_READ = frozenset(COMPUTER_TOOL_PREFIX + name for name in ("screenshot", "wait"))
+NATIVE_READ = frozenset(COMPUTER_TOOL_PREFIX + "native_" + name for name in ("get_desktop_state", "get_window_state", "list_apps", "list_windows"))
+NATIVE_INPUT = frozenset(COMPUTER_TOOL_PREFIX + "native_" + name for name in ("click", "type_text", "press_key", "scroll"))
+SCREEN_READ |= NATIVE_READ
+SCREEN_INPUT |= NATIVE_INPUT
 
 
 def automatic(tool: str, mode: str | None, screen_granted: bool = False) -> tuple[str, str] | None:
@@ -22,6 +26,11 @@ def automatic(tool: str, mode: str | None, screen_granted: bool = False) -> tupl
     if not isinstance(tool, str) or not tool.startswith(COMPUTER_TOOL_PREFIX):
         return None
     name = tool[len(COMPUTER_TOOL_PREFIX):]
+    if tool in NATIVE_READ:
+        return "allowed", "native_screen_read"
+    if tool in NATIVE_INPUT:
+        # Native host input always gets its own decision, never a whole-turn grant.
+        return ("denied", "plan_mode") if mode == "plan" else None
     if name in ("screenshot", "wait"):
         return "allowed", "computer_screen_read"
     if name in ("click", "double_click", "move", "drag", "type", "key", "scroll"):

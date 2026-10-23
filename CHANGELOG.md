@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- macOS desktop preview: named Claude agents can opt into native screen and accessibility tools, with per-action approvals, one-turn ownership, takeover and history redaction. The driver is owned by Electron and loaded only from a verified offline bundle. Real OS permission/GUI interaction, a real model turn, Intel and packaged signing/offline startup have not been run.
 - Agent files: topic notes that are too large for the file (over 64 KB each, past 100, or past 600 KB together) are left out of an export and named in `skipped`; an import is checked against the same total, and each note it writes is an undoable History row by *Imported agent file*.
 - Gemini CLI and Cursor appear as ACP presets with their own connection fields, credential scope, bounded status/model discovery and pinned model selection. Signed-out turns give connection advice. Synthetic ACP tests cover the new hooks; real accounts and vendor approval behavior have not been verified.
 - Experimental OpenCode is available only through `OPEN_DOTS_PRESET_ENGINES`; its subprocess pins permission requests and disables project configuration. Real adversarial permission proof is still required before default enablement.

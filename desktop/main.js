@@ -10,7 +10,7 @@
 // Everything that can be tested without Electron is in src/. This file only
 // connects those pieces to Electron.
 
-const { app, BrowserWindow, dialog, safeStorage, session, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, safeStorage, session, ipcMain, systemPreferences } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -20,6 +20,7 @@ const { startBackend, backendEnvironment, newToken } = require("./src/backend");
 const { attachTokenTo, lockDown, sameOrigin } = require("./src/origin");
 const { registerPathPicker } = require("./src/path-picker");
 const { lastReason, describeFailure, describeUnexpectedExit } = require("./src/messages");
+const { NativeControl, registerNativeControl } = require("./src/native-control");
 
 const mode = process.argv.includes("--mode=dev") ? "dev" : "start";
 // An installed app carries its own frozen backend and page; a checkout uses its own folders.
@@ -45,6 +46,7 @@ let quitting = false;
 let backendStopped = false;
 let shutdown = null;
 let backendOrigin = null;
+let nativeControl = null;
 
 // Stops what this launch started, once: this app's own connections first (the
 // backend waits for its connected clients, and idle keep-alive sockets held here
@@ -52,6 +54,7 @@ let backendOrigin = null;
 function stopEverything() {
   shutdown ??= (async () => {
     quitting = true;
+    await nativeControl?.close();
     try {
       await session.defaultSession?.closeAllConnections?.();
     } catch {
@@ -128,6 +131,14 @@ async function main() {
   });
 
   await app.whenReady();
+  nativeControl = new NativeControl({
+    root: app.isPackaged ? path.join(process.resourcesPath, "native-control") : path.join(__dirname, "native-control"),
+    pin: require("./src/native-control-pin.json"),
+    userData,
+    permissions: (prompt) => process.platform === "darwin" && systemPreferences.isTrustedAccessibilityClient(prompt) && systemPreferences.getMediaAccessStatus("screen") === "granted",
+  });
+  registerNativeControl({ ipcMain, dialog, service: nativeControl, getWindow: () => window, getOrigin: () => backendOrigin });
+  const nativeConnection = await nativeControl.listen();
   registerPathPicker({ ipcMain, dialog, getWindow: () => window, getOrigin: () => backendOrigin });
   window = createWindow();
   window.on("closed", () => {
@@ -166,6 +177,7 @@ async function main() {
       encryption_key: key,
       data_dir: dataDir,
       ui_dir: paths.ui,
+      native_control: nativeConnection,
       ...(claudePath ? { claude_cli_path: claudePath } : {}),
     },
     token,

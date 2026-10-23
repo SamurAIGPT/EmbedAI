@@ -73,6 +73,12 @@ class TurnComputer:
     guest_workspace: str = docker_cli.GUEST_WORKSPACE
 
     def prompt_note(self) -> str:
+        if self.provider == "native":
+            return ("You have explicitly enabled native desktop control of the person's Mac. "
+                    "Use only native computer tools; no host shell or file tools are available. "
+                    "Take a fresh native desktop or window snapshot before every input. Prefer element tokens from window snapshots. "
+                    "Input needs approval. Stop when the person takes control; after hand-back take a fresh snapshot. "
+                    "This is a shared host desktop, so actions can affect apps outside your workspace. Never substitute Docker or shell tools.")
         screen = (" You also have a 1280x800 screen. Use screenshot, click, double_click, move, drag, type, key, scroll and wait. Screen input needs permission for this turn. A person may take control; stop when refused and take a fresh screenshot after hand-back." if self.kind == "desktop" else "")
         return screen + (
             "You are working on your own computer: an isolated Linux machine "
@@ -499,6 +505,9 @@ class ComputerService:
         Raises ComputerUnavailable when it has one that cannot be used."""
         if agent_id is None:
             return None
+        from app.computers import native
+        if await native.selected(agent_id):
+            return await native.attach(agent_id, turn_id, self.state_dir())
         computer = await self.for_agent(agent_id)
         if computer is None:
             return None
@@ -551,6 +560,10 @@ class ComputerService:
 
     async def release_turn(self, binding: TurnComputer | None, turn_id: int) -> None:
         if binding is None:
+            return
+        if binding.provider == "native":
+            from app.computers import native
+            await native.release(binding, turn_id)
             return
         held = self._leases.get(binding.computer_id)
         if held is not None:

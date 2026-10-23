@@ -130,6 +130,7 @@ def main(stdin=None, handshake_timeout: float = handshake.DEFAULT_TIMEOUT_SECOND
         origin=f"http://127.0.0.1:{port}",
         encryption_key=message.encryption_key,
         claude_cli_path=message.claude_cli_path,
+        native_control=message.native_control,
     )
     profile.activate(desktop)
     launch_auth.install(message.token)

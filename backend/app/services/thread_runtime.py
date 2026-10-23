@@ -304,6 +304,10 @@ class ThreadApprovalGate:
     ) -> ApprovalHandle | None:
         run, runtime = self._run, self._runtime
         run.accepted = True
+        from app.computers.native import durable_input
+        stored_input = durable_input(tool, input)
+        if tool.startswith("mcp__computer__native_"):
+            summary = tool.removeprefix("mcp__computer__native_").replace("_", " ") + " on this Mac"
         async with runtime.session() as db:
             try:
                 approval = await store.create_approval(
@@ -312,7 +316,7 @@ class ThreadApprovalGate:
                     turn_id=run.turn_id,
                     request_id=request_id,
                     tool=tool,
-                    input=input,
+                    input=stored_input,
                     summary=summary,
                     kind=kind,
                     owner_token=run.owner_token,
@@ -956,8 +960,10 @@ class ThreadRuntime:
                 # a computer that cannot be used fails the turn, never falls
                 # back to the host. An engine that cannot use a computer never
                 # runs for an agent that has one.
-                if not computers and run.agent_id is not None and await self.computers.for_agent(run.agent_id):
-                    raise _EngineWithoutComputers()
+                if not computers and run.agent_id is not None:
+                    from app.computers import native
+                    if await native.selected(run.agent_id) or await self.computers.for_agent(run.agent_id):
+                        raise _EngineWithoutComputers()
                 binding = await self.computers.attach_for_turn(
                     run.agent_id, run.turn_id, str(run.ctx.workspace) if run.ctx.workspace else None
                 )

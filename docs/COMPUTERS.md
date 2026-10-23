@@ -2,9 +2,11 @@
 
 An agent can have its own computer: an isolated machine where its turns run
 their commands and file edits instead of on the machine running Open Duet.
-Today a computer is a Docker container on this machine. The design leaves room
-for two more kinds: a server you own reached over SSH, and a desktop computer
-with a screen.
+Docker computers can be a shell or an isolated Linux desktop with screen
+tools, live viewing and takeover. The macOS desktop app also offers a separate,
+explicitly enabled [native desktop preview](NATIVE-DESKTOP.md) that acts on this
+Mac's apps. Docker stays the isolated default. Remote SSH computers remain
+unimplemented.
 
 Status: experimental. Tested with a fake `docker` executable and the real
 Claude CLI. Provider tests against a real Docker daemon are included and run

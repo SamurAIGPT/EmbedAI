@@ -12,7 +12,10 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 declare global {
   interface Window {
-    openDots?: { choosePath(kind: "file" | "folder"): Promise<string | null> };
+    openDots?: {
+      choosePath(kind: "file" | "folder"): Promise<string | null>;
+      nativeControl(request: import("@/components/chat/NativeComputer").NativeRequest): Promise<import("@/components/chat/NativeComputer").NativeStatus | { held: boolean }>;
+    };
   }
 }
 

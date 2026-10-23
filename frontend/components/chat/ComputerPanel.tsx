@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { api, ApiError, type Agent, type Computer, type ComputerHealth, type ComputerNetwork, type ComputerKind } from "@/lib/api";
 import { LiveDesktop } from "./LiveDesktop";
 import { DesktopPicture } from "./DesktopPicture";
+import { NativeComputer } from "./NativeComputer";
 import {
   ACTION_LABEL,
   NETWORK_MODES,
@@ -53,6 +54,12 @@ function errorText(err: unknown): string {
 // An agent's computer: whether it has one, its state, image and limits, what
 // it ran last, and the buttons to make, start, stop, recreate or remove it.
 export function ComputerView({
+  agent, onChanged, engineSupportsComputers, engineLabel,
+}: { agent: Agent; onChanged?: () => void; engineSupportsComputers: boolean | undefined; engineLabel: string }) {
+  return <><NativeComputer key={agent.id} agent={agent.id} supported={agent.provider === "claude"} /><DockerComputerView agent={agent} onChanged={onChanged} engineSupportsComputers={engineSupportsComputers} engineLabel={engineLabel} /></>;
+}
+
+function DockerComputerView({
   agent,
   onChanged,
   engineSupportsComputers,
@@ -153,7 +160,7 @@ export function ComputerView({
               {value === "shell" ? "Shell only" : "Desktop"}
             </label>
           ))}
-          {kind === "desktop" && <p className="text-xs text-muted">Linux desktop with a browser. Build the image locally first; see docs/DESKTOP-IMAGE.md. The first build downloads several hundred MB.</p>}
+          {kind === "desktop" && <p className="text-xs text-muted">Linux desktop with a browser. Build the image locally first; see desktop-image/README.md. The first build downloads several hundred MB.</p>}
         </fieldset>
         <fieldset className="space-y-1">
           <legend className="text-xs text-muted">Network</legend>

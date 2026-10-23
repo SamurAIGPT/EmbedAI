@@ -20,7 +20,7 @@ VERSION = 1
 MAX_LINE_BYTES = 16 * 1024
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
-_FIELDS = {"version", "token", "encryption_key", "data_dir", "ui_dir", "claude_cli_path"}
+_FIELDS = {"version", "token", "encryption_key", "data_dir", "ui_dir", "claude_cli_path", "native_control"}
 
 
 class HandshakeError(Exception):
@@ -34,6 +34,7 @@ class Handshake:
     data_dir: Path
     ui_dir: Path | None
     claude_cli_path: str
+    native_control: dict | None = field(default=None, repr=False)
 
 
 def _text(message: dict, name: str, *, required: bool) -> str | None:
@@ -84,12 +85,20 @@ def parse(line: bytes | str) -> Handshake:
     if data_dir.exists() and not data_dir.is_dir():
         raise HandshakeError("The launcher's data_dir exists and is not a folder.")
     ui = _text(message, "ui_dir", required=False)
+    native = message.get("native_control")
+    if native is not None:
+        if (not isinstance(native, dict) or set(native) != {"port", "token"}
+                or type(native["port"]) is not int or not 1 <= native["port"] <= 65535
+                or not isinstance(native["token"], str) or len(native["token"]) != 64
+                or any(c not in "0123456789abcdef" for c in native["token"])):
+            raise HandshakeError("The launcher's native_control is invalid.")
     return Handshake(
         token=token,
         encryption_key=key,
         data_dir=data_dir,
         ui_dir=_absolute("ui_dir", ui) if ui else None,
         claude_cli_path=_text(message, "claude_cli_path", required=False) or "",
+        native_control=native,
     )
 
 

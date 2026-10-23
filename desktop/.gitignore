@@ -1,3 +1,4 @@
 node_modules/
+native-control/
 release/
 playwright/.results/

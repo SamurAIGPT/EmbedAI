@@ -24,6 +24,7 @@ class DesktopProfile:
     # Never shown by repr(): a profile ends up in tracebacks and test output.
     encryption_key: str = field(repr=False)
     claude_cli_path: str = ""
+    native_control: dict | None = field(default=None, repr=False)
 
     @property
     def database_file(self) -> Path:

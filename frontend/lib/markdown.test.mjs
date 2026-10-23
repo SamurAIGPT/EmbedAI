@@ -11,6 +11,12 @@ test('paragraphs, headings and rules', () => {
   assert.equal(blocks[3].level, 3);
 });
 
+test('a heading drops only a closing # run that follows a space', () => {
+  const text = (source) => parseMarkdown(source)[0].children[0].text;
+  assert.equal(text('## Using C#'), 'Using C#');
+  assert.equal(text('# Title ##'), 'Title');
+});
+
 test('a fenced code block keeps its text and language, and may be unclosed while streaming', () => {
   const closed = parseMarkdown('```js\nconst a = 1;\n# not a heading\n```\nafter');
   assert.deepEqual(kinds(closed), ['code', 'paragraph']);

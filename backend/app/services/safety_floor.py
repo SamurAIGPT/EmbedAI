@@ -12,7 +12,7 @@ are blocked. The one exception is the security invariant: a command that could
 not be read to the end (an unbalanced quote, command substitution, a nested
 shell) is "unreadable", never "clear", and is also held for a person.
 
-    delete-root, delete-home, delete-system-directory   rm -r on / ~ /etc ...
+    delete-root, delete-home, delete-system-directory   rm -r on / ~ /etc ... (and find -delete / -exec rm there)
     permission-change-root                              chmod/chown -R on those
     format-disk, overwrite-disk                         mkfs, diskutil eraseDisk, dd of=/dev/sda, > /dev/sda
     force-push                                          git push --force / -f / +ref
@@ -198,6 +198,29 @@ def _flags(words: list[str]) -> set[str]:
     return flags
 
 
+def _find_start_paths(args: list[str]) -> list[str]:
+    """The directories `find` walks: the words before its first test or action."""
+    paths: list[str] = []
+    for arg in args:
+        if arg in ("-H", "-L", "-P") and not paths:
+            continue
+        if arg.startswith("-") or arg in ("(", "!"):
+            break
+        paths.append(arg)
+    return paths
+
+
+def _find_deletes(args: list[str]) -> bool:
+    """True for `-delete`, or an `-exec`-style action that runs `rm`."""
+    for index, arg in enumerate(args):
+        if arg == "-delete":
+            return True
+        if arg in ("-exec", "-execdir", "-ok", "-okdir") and index + 1 < len(args):
+            if posixpath.basename(args[index + 1]) in ("rm", "unlink"):
+                return True
+    return False
+
+
 def _check_command(words: list[str], targets: list[str]) -> FloorVerdict | None:
     for target in targets:
         text = target.replace("//", "/")
@@ -220,6 +243,12 @@ def _check_command(words: list[str], targets: list[str]) -> FloorVerdict | None:
             o.startswith("/") and posixpath.normpath("/" + o.lstrip("/")) == "/" for o in operands
         ):
             return _verdict("delete-root")
+    elif name == "find":
+        if _find_deletes(args):
+            for start in _find_start_paths(args):
+                rule = _dangerous_target(start)
+                if rule:
+                    return _verdict(rule)
     elif name in ("chmod", "chown", "chgrp"):
         if flags & {"R", "--recursive"}:
             for operand in operands[1:]:  # the first operand is the mode or owner

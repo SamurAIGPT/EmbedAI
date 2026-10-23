@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Gemini CLI and Cursor appear as ACP presets with their own connection fields, credential scope, bounded status/model discovery and pinned model selection. Signed-out turns give connection advice. Synthetic ACP tests cover the new hooks; real accounts and vendor approval behavior have not been verified.
+- Experimental OpenCode is available only through `OPEN_DOTS_PRESET_ENGINES`; its subprocess pins permission requests and disables project configuration. Real adversarial permission proof is still required before default enablement.
+- Server and desktop doctors include preset CLI guidance; the server guide documents API-key connections and optional Docker packages. Optional engine image builds were not run.
 - Engine Settings now builds connection forms from engine descriptors and groups ready engines first. Generic endpoint address templates cover Ollama, LM Studio, Groq, Cerebras, Mistral and OpenAI. Desktop setup detects a ready engine and offers advanced model selection. Tested with scripted engine responses; real preset accounts and packaged setup were not run.
 - OpenRouter readiness authenticates the saved key, lists up to 600 models with free labels, and chooses a free default only for a free-tier key. Its address is fixed to OpenRouter; proxy users must use the generic endpoint engine. Keys refused by the service no longer appear ready. Checked with a mock endpoint, including conversation fallback; a real OpenRouter account was not run.
 

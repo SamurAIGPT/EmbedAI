@@ -299,3 +299,16 @@ def test_a_missing_encryption_key_is_reported_by_name_without_a_traceback_or_a_s
     assert result.returncode == 1, result.stderr
     assert "TOKEN_ENCRYPTION_KEYS" in result.stdout and "FAIL  Settings" in result.stdout
     assert "Traceback" not in result.stdout + result.stderr
+
+
+def test_preset_advice_only_for_installed_signed_out_engines():
+    entries = [
+        {"id": engine, "label": engine, "available": False, "installed": True, "signed_in": False, "reason": "Connect this engine.", "version": None}
+        for engine in ("gemini", "cursor", "opencode", "openrouter")
+    ]
+    checks = doctor.check_engines(make_describe(*entries))
+    assert "gemini" in by_name(checks, "Engine gemini").advice
+    assert "cursor-agent login" in by_name(checks, "Engine cursor").advice
+    assert "opencode auth login" in by_name(checks, "Engine opencode").advice
+    assert "Settings" in by_name(checks, "Engine openrouter").advice
+    assert by_name(checks, "Engines").status == FAIL

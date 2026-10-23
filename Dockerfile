@@ -2,6 +2,10 @@
 #
 #   docker build -t open-dots .
 #   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t open-dots .
+#   docker build --build-arg ENGINES="@google/gemini-cli opencode-ai" -t open-dots .
+# OpenRouter needs no CLI. Cursor is installed separately (not an npm package).
+# OpenCode remains experimental: set OPEN_DOTS_PRESET_ENGINES=gemini,cursor,openrouter,opencode
+# only after checking its approval behavior against your own CLI configuration.
 #
 # The image listens on 0.0.0.0:8000 inside the container (the container's own address; nothing is
 # public until you publish a port: compose.yaml publishes it on the host's loopback only). Put any

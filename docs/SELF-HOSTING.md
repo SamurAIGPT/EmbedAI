@@ -16,7 +16,7 @@ There are two ways to run it. Both use the same server, the same settings and th
 ## Before you start
 
 - A Linux server with `sudo`, a domain name whose address points at it, and ports 80 and 443 open.
-- At least one engine (Claude Code or Codex) installed and signed in **on the server**, as the same account that runs Open Duet: see [ENGINES.md](ENGINES.md) and [Engines](#engines). Agents run there, with that account's files.
+- At least one connected engine: Claude Code, Codex, Gemini CLI, Cursor, OpenRouter, a custom ACP command or an OpenAI-compatible endpoint. CLI engines must be installed and signed in **on the server**, as the same account that runs Open Duet: see [ENGINES.md](ENGINES.md) and [Engines](#engines). Agents run there, with that account's files.
 - Two secrets you must keep: your **passphrase**, and the **encryption key** (`TOKEN_ENCRYPTION_KEYS`). The key encrypts the credentials the server stores. Back it up somewhere else: without it those credentials cannot be read, and a backup archive does not contain it.
 
 Agents only run when the settings say `LOCAL_EXECUTION_ENABLED=true` (both routes below set it). Tools (file edits and commands) stay off until you also set `LOCAL_TOOLS_ENABLED=true`; every command still asks for your approval.
@@ -194,10 +194,25 @@ It prints a full link when `OPEN_DOTS_PUBLIC_URL` is set. A code works once and 
 
 ## Engines
 
-Agents use an engine CLI that is signed in as the account running Open Duet. Sign in from a terminal on the server; signing in from the web app does not exist yet.
+Connect engines in **Settings → Engines**. Saved keys are encrypted. CLI browser sign-in runs from a terminal as the account running Open Duet; use API keys on headless servers. OpenRouter and OpenAI-compatible endpoints need no CLI.
 
 - **Direct install:** install the CLI as `opendots` (see [ENGINES.md](ENGINES.md)), then `claude auth login` or `codex login --device-auth`. A service has a short `PATH`; the server also looks in `~/.local/bin`, `~/.npm-global/bin` and `/usr/local/bin`, and `OPEN_DOTS_EXTRA_PATH` adds more folders.
 - **Docker:** the image carries no engine and no credentials. To add one, name its package when you build, for example `OPEN_DOTS_ENGINES="@anthropic-ai/claude-code" docker compose build`, then sign in inside the container: `docker compose exec -it open-dots claude auth login`. The sign-in is kept in the data volume. Installing a CLI into a running container is lost when it is recreated; rebuild with `OPEN_DOTS_ENGINES` instead.
+
+Preset connection options:
+
+| Engine | Headless connection | Optional npm package in the image |
+|---|---|---|
+| Gemini CLI | Save a key in Settings, or `GEMINI_API_KEY`; Vertex environment names must be opted in with `OPEN_DOTS_ENGINE_ENV` | `@google/gemini-cli` |
+| Cursor | Save a key in Settings, or `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN` | None; install Cursor separately |
+| OpenCode (experimental) | `opencode auth login` or its hosted API key | `opencode-ai` |
+| OpenRouter | Save an OpenRouter key in Settings | None |
+
+For example, `OPEN_DOTS_ENGINES="@google/gemini-cli opencode-ai" docker compose build` installs those packages; a direct image build uses `--build-arg ENGINES="@google/gemini-cli opencode-ai"`. These optional package builds have not been run. Cursor's installer is outside the supported image build. Preset CLIs on Windows have not been enabled.
+
+`OPEN_DOTS_PRESET_ENGINES` is a comma-separated selection of presets. Unset means Gemini, Cursor and OpenRouter. Set it to an empty string to disable all presets, or `gemini,cursor,openrouter,opencode` to also expose experimental OpenCode. OpenCode must remain opt-in until a real adversarial configuration check proves its permission override. Custom ACP and endpoint engines remain available.
+
+Saved keys are injected only into their engine's process and are readable by shell commands that process starts. Cursor credentials are not added to other engines' environments; existing globally allowed provider prefixes remain as described below. OpenCode strips ambient foreign API keys, removes configuration override variables, and pins project configuration off. Additional OpenCode provider-key maps are not implemented.
 
 `python -m app.server doctor` reports which engines it found and whether they are signed in.
 

@@ -36,12 +36,17 @@ function diagnose({ layout, nodeVersion = process.version, env = process.env, pl
   if (!nodeIsNewEnough(nodeVersion)) {
     problems.unshift({ what: `Node.js ${NODE_MAJOR_NEEDED} or newer is required.`, fix: `Install Node.js ${NODE_MAJOR_NEEDED} or newer, then rerun npm run doctor.` });
   }
-  const engines = ["claude", "codex"].map((id) => {
-    const executable = findCli(id, { env, platform, fsImpl });
+  const enabledPresets = new Set(env.OPEN_DOTS_PRESET_ENGINES === undefined
+    ? ["cursor", "gemini", "openrouter"]
+    : String(env.OPEN_DOTS_PRESET_ENGINES).split(",").map((name) => name.trim()));
+  const commands = [["claude", "claude"], ["codex", "codex"],
+    ...[["cursor", "cursor-agent"], ["gemini", "gemini"], ["opencode", "opencode"]].filter(([id]) => enabledPresets.has(id))];
+  const engines = commands.map(([id, command]) => {
+    const executable = findCli(command, { env, platform, fsImpl });
     return { id, installed: executable !== null, executable, signedIn: null };
   });
   if (!engines.some((engine) => engine.installed)) {
-    warnings.push({ what: "No Claude or Codex executable was found on PATH.", fix: "Install a CLI and sign in, or configure an ACP command or API endpoint in Settings → Engines." });
+    warnings.push({ what: "No engine executable was found on PATH.", fix: "Install Claude, Codex, Gemini or Cursor and sign in, or connect OpenRouter, an ACP command or an API endpoint in Settings → Engines." });
   }
   return {
     ok: problems.length === 0,

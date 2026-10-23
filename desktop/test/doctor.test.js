@@ -84,3 +84,18 @@ test("Windows lookup accepts case-insensitive environment names and npm command 
   };
   assert.equal(findCli("claude", { platform: "win32", env: { Path: "C:\\Other;C:\\Tools", PathExt: ".EXE;.CMD" }, fsImpl }), executable);
 });
+
+test("doctor finds preset CLIs without running them and gates experimental OpenCode", () => {
+  ready();
+  const bin = path.join(root, "bin");
+  for (const command of ["gemini", "cursor-agent", "opencode"]) {
+    write(path.join(bin, command));
+    fs.chmodSync(path.join(bin, command), 0o755);
+  }
+  const result = diagnose({ layout: paths, nodeVersion: "v24.0.0", platform: "darwin", env: { PATH: bin } });
+  assert.equal(result.engines.find((e) => e.id === "gemini").installed, true);
+  assert.equal(result.engines.find((e) => e.id === "cursor").installed, true);
+  assert.equal(result.engines.some((e) => e.id === "opencode"), false);
+  const experimental = diagnose({ layout: paths, nodeVersion: "v24.0.0", platform: "darwin", env: { PATH: bin, OPEN_DOTS_PRESET_ENGINES: "opencode" } });
+  assert.equal(experimental.engines.find((e) => e.id === "opencode").installed, true);
+});

@@ -202,6 +202,44 @@ class AcpAdapter:
             return None
         return {"command": config.get("command"), "label": config.get("label")}
 
+    # Preset hooks deliberately leave the generic ACP wire behavior unchanged.
+    def program(self, config: dict) -> list[str] | None:
+        return resolve_command(config["command"]) if config.get("command") else None
+
+    def mode_args(self, ctx, config: dict) -> list[str]:
+        return []
+
+    def child_env(self, config: dict, ctx=None) -> dict:
+        return local_claude_runner.child_env()
+
+    def authenticate(self, methods: list, env: dict) -> str | None:
+        return None
+
+    async def auth_failure_allowed(self, env: dict, config: dict) -> bool:
+        return False
+
+    async def select_model(self, call, session_id: str, session: dict, model: str | None) -> str | None:
+        return None
+
+    def signed_out_message(self) -> str:
+        sign_in = self.setup.get("sign_in")
+        return f"{self.label} is signed out. " + (f"Run `{sign_in}` or connect it in Settings → Engines." if sign_in else "Connect it in Settings → Engines.")
+
+    def is_auth_error(self, exc: Exception) -> bool:
+        if not getattr(self, "preset", False):
+            return False
+        if self.key == "cursor" and getattr(exc, "code", None) == -32000:
+            return True
+        text = str(exc).lower()
+        return any(word in text for word in ("auth required", "authentication required", "invalid api key", "not logged in", "unauthorized", "unauthenticated"))
+
+    def redact(self, text: str, env: dict) -> str:
+        if getattr(self, "preset", False):
+            for name, secret in env.items():
+                if any(part in name.upper() for part in ("KEY", "TOKEN", "PASSWORD", "SECRET")) and secret:
+                    text = text.replace(secret, "[redacted]")
+        return text
+
     # -- status ------------------------------------------------------------------------
 
     async def status(self) -> ProviderStatus:
@@ -248,21 +286,25 @@ class AcpAdapter:
 
     async def run_turn(self, ctx: TurnContext, sink, gate) -> TurnOutcome:
         config = ctx.engine_config or self.config or {}
-        command = config.get("command")
-        if not command:
+        if not config.get("command") and not getattr(self, "preset", False):
             return TurnOutcome("failed", error=NOT_CONFIGURED, error_code="engine_not_configured")
         try:
-            argv = resolve_command(command)
+            argv = self.program(config)
         except InvalidConfig as exc:
             return TurnOutcome("failed", error=str(exc), error_code="engine_not_configured")
         if argv is None:
             return TurnOutcome("failed", error="The agent's program was not found.", error_code="cli_unavailable")
+        argv += self.mode_args(ctx, config)
         if ctx.computer is not None:
             return TurnOutcome(
                 "failed", error="This engine cannot run its tools in an agent computer.",
                 error_code="engine_without_computers",
             )
-        return await _AcpTurn(ctx, sink, gate, argv).go()
+        env = self.child_env(config, ctx)
+        result = await _AcpTurn(ctx, sink, gate, argv, adapter=self, env=env).go()
+        if result.error:
+            result.error = self.redact(result.error, env)
+        return result
 
 
 def _initialize_params() -> dict:
@@ -279,6 +321,9 @@ class _AcpTurn:
     sink: object
     gate: object
     argv: list[str]
+    adapter: AcpAdapter | None = None
+    env: dict | None = None
+    confirmed_model: str | None = None
     rpc: StdioRpc | None = None
     session_id: str | None = None
     session_started: bool = False
@@ -310,7 +355,7 @@ class _AcpTurn:
         self.ctx.on_abort(lambda: loop.call_soon_threadsafe(self.aborted.set))
         try:
             self.rpc = await StdioRpc.spawn(
-                self.argv, cwd=str(self.workspace), max_bytes=self.max_text * RAW_STREAM_SIZE_FACTOR
+                self.argv, cwd=str(self.workspace), max_bytes=self.max_text * RAW_STREAM_SIZE_FACTOR, env=self.env
             )
         except (OSError, ValueError):
             return TurnOutcome("failed", error="The agent's command could not be started.", error_code="cli_unavailable")
@@ -322,7 +367,7 @@ class _AcpTurn:
         except _Stopped:
             await self._cancel()
         except Exception:  # noqa: BLE001
-            logger.exception("ACP run crashed", thread_id=self.ctx.thread_id)
+            logger.warning("ACP run crashed", thread_id=self.ctx.thread_id)
             return self._outcome(crashed=True)
         finally:
             for task in list(self.answering):
@@ -334,14 +379,14 @@ class _AcpTurn:
 
     def _common(self) -> dict:
         return {
-            "model": None,
+            "model": self.confirmed_model,
             "usage": self.usage,
             "session_state": "active" if self.session_started else None,
             "provider_state": {"acp_session_id": self.session_id} if self.session_id else None,
         }
 
     def _failed(self, error: str, code: str, **more) -> TurnOutcome:
-        return TurnOutcome("failed", error=_clip(error), error_code=code, **{**self._common(), **more})
+        return TurnOutcome("failed", error=_clip(self.adapter.redact(error, self.env or {})), error_code=code, **{**self._common(), **more})
 
     async def _call(self, method: str, params: dict, *, handle_incoming: bool = False):
         """A request that a Stop or the time limit can cut short. With
@@ -395,18 +440,29 @@ class _AcpTurn:
         except (RpcError, RpcClosed, asyncio.TimeoutError) as exc:
             return self._failed(self._why(exc, "The agent did not answer the ACP handshake."), "cli_error")
         init = init if isinstance(init, dict) else {}
+        config = self.ctx.engine_config or self.adapter.config or {}
+        method = self.adapter.authenticate(init.get("authMethods") or [], self.env or {})
+        if method:
+            try:
+                await self._call("authenticate", {"methodId": method}, handle_incoming=True)
+            except (RpcError, RpcClosed, asyncio.TimeoutError):
+                if not await self.adapter.auth_failure_allowed(self.env or {}, config):
+                    return self._failed(self.adapter.signed_out_message(), "engine_signed_out")
+        session = {}
         caps = init.get("agentCapabilities") if isinstance(init.get("agentCapabilities"), dict) else {}
         can_load = caps.get("loadSession") is True
         self.preamble = ""
         if self.ctx.resume and self.saved_session and can_load:
             try:
                 # Replayed history arrives before the prompt and is dropped.
-                await self._call(
+                session = await self._call(
                     "session/load",
                     {"sessionId": self.saved_session, "cwd": str(self.workspace), "mcpServers": []},
                     handle_incoming=True,
                 )
             except RpcError as exc:
+                if self.adapter.is_auth_error(exc):
+                    return self._failed(self.adapter.signed_out_message(), "engine_signed_out")
                 return self._failed(
                     "The agent could not load this conversation's session, so it cannot continue it. "
                     f"Start a new session to go on. ({exc})",
@@ -424,6 +480,8 @@ class _AcpTurn:
                     "session/new", {"cwd": str(self.workspace), "mcpServers": []}, handle_incoming=True
                 )
             except RpcError as exc:
+                if self.adapter.is_auth_error(exc):
+                    return self._failed(self.adapter.signed_out_message(), "engine_signed_out")
                 return self._failed(f"The agent refused to start a session: {exc}", "acp_error")
             except (RpcClosed, asyncio.TimeoutError) as exc:
                 return self._failed(self._why(exc, "The agent did not start a session."), "cli_error")
@@ -431,10 +489,19 @@ class _AcpTurn:
             if not isinstance(session_id, str) or not session_id:
                 return self._failed("The agent did not return a session id.", "acp_error")
             self.session_id = session_id
+            session = created
+        try:
+            self.confirmed_model = await self.adapter.select_model(
+                self._call, self.session_id, session or {}, self.ctx.model or config.get("model")
+            )
+        except (RpcError, RpcClosed, asyncio.TimeoutError, InvalidConfig):
+            return self._failed("The engine could not confirm the selected model. Choose another model in Settings → Engines.", "engine_model_unavailable")
         self.session_started = True
         return None
 
     def _why(self, exc: Exception, default: str) -> str:
+        if getattr(self.adapter, "preset", False):
+            return default
         if isinstance(exc, RpcError):
             return f"{default} ({exc})"
         tail = self.rpc.stderr_tail.strip() if self.rpc is not None else ""
@@ -457,7 +524,8 @@ class _AcpTurn:
                 handle_incoming=True,
             )
         except RpcError as exc:
-            self.prompt_error = str(exc)
+            self.prompt_error = self.adapter.signed_out_message() if self.adapter.is_auth_error(exc) else str(exc)
+            self.prompt_auth_error = self.adapter.is_auth_error(exc)
             self.finished = True
             await self._flush()
             return
@@ -629,7 +697,7 @@ class _AcpTurn:
         partial = self.buffer or None
 
         def failed(error: str, code: str) -> TurnOutcome:
-            return TurnOutcome("failed", error=_clip(error), error_code=code, partial_text=partial, **self._common())
+            return TurnOutcome("failed", error=_clip(self.adapter.redact(error, self.env or {})), error_code=code, partial_text=partial, **self._common())
 
         if self.ctx.aborted:
             return failed("The run was stopped because it no longer owns its turn.", "lost")
@@ -640,9 +708,9 @@ class _AcpTurn:
         if self.over_text or (self.rpc is not None and self.rpc.over_limit):
             return failed("The agent produced more output than allowed", "output_too_large")
         if self.prompt_error is not None:
-            return failed(f"The agent reported an error: {self.prompt_error}", "acp_error")
+            return failed(f"The agent reported an error: {self.prompt_error}", "engine_signed_out" if getattr(self, "prompt_auth_error", False) else "acp_error")
         if not self.finished:
-            tail = self.rpc.stderr_tail.strip() if self.rpc is not None else ""
+            tail = self.rpc.stderr_tail.strip() if self.rpc is not None and not getattr(self.adapter, "preset", False) else ""
             return failed(tail or "The agent ended without finishing the turn.", "cli_error")
         if self.stop_reason == "end_turn":
             return TurnOutcome("succeeded", result=self.messages[-1] if self.messages else "", **self._common())

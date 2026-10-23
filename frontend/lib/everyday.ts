@@ -126,6 +126,7 @@ export function shiftMonth(month: string, delta: number): string {
 // error text is shown above this; this line only adds the next step.
 const NEXT_STEP: Record<string, string> = {
   cli_unavailable: "Install the engine's command line tool, or set its path in Settings, then send again.",
+  engine_signed_out: "Open Settings, Engines and connect this engine, then send again.",
   engine_not_configured: "Open Settings and finish this engine's setup, then send again.",
   engine_unavailable: "Check the engine's status in Settings, then send again.",
   engine_stalled: "The engine stopped responding. Send the message again; if it keeps happening, check the engine in a terminal.",

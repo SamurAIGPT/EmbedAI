@@ -39,7 +39,7 @@ def log(**fields):
         handle.write(json.dumps(fields) + "\n")
 
 
-log(event="argv", argv=sys.argv[1:], cwd=os.getcwd())
+log(event="argv", argv=sys.argv[1:], cwd=os.getcwd(), env_names=sorted(os.environ))
 
 
 def send(message):
@@ -121,7 +121,7 @@ def prompt(rid, params):
     elif kind == "refusal":
         send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "refusal"}})
     elif kind == "error":
-        send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32603, "message": "agent fell over"}})
+        send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32603, "message": step.get("message", "agent fell over")}})
 
 
 for line in sys.stdin:
@@ -139,11 +139,22 @@ for line in sys.stdin:
     if method == "initialize":
         if plan.get("hang_init"):
             time.sleep(60)
-        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": bool(plan.get("load"))}, "agentInfo": {"name": "fake-agent", "version": "1.2"}, "authMethods": []}})
+        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": bool(plan.get("load"))}, "agentInfo": {"name": "fake-agent", "version": "1.2"}, "authMethods": plan.get("auth_methods", [])}})
+    elif method == "authenticate":
+        if plan.get("auth_error"):
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": plan["auth_error"]}})
+        else:
+            send({"jsonrpc": "2.0", "id": rid, "result": {}})
+    elif method in ("session/set_model", "session/set_config_option"):
+        if plan.get("model_error"):
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": plan["model_error"], "message": "Model refused"}})
+        else:
+            result = {"configOptions": [{"id": "model", "currentValue": params.get("value")}]} if method == "session/set_config_option" else {}
+            send({"jsonrpc": "2.0", "id": rid, "result": result})
     elif method == "session/new":
         session_id = "sess_" + uuid.uuid4().hex[:8]
         (sessions / session_id).write_text("x")
-        send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session_id}})
+        send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session_id, **plan.get("session", {})}})
     elif method == "session/load":
         session_id = params.get("sessionId")
         if not (sessions / str(session_id)).exists():

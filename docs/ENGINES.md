@@ -9,6 +9,9 @@ UI do not know which engine they are talking to.
 |---|---|---|---|
 | `claude` | Claude | cli | your own `claude` CLI (stream-json both ways) |
 | `codex` | Codex | cli | your own `codex` CLI over `codex app-server` (JSON-RPC on stdio) |
+| `gemini` | Gemini CLI | acp | Gemini CLI with engine-scoped credentials and model selection |
+| `cursor` | Cursor | acp | Cursor CLI, with a live model catalog |
+| `opencode` | OpenCode (experimental, opt-in) | acp | OpenCode CLI; real permission override proof pending |
 | `acp` | ACP agent | acp | any agent CLI that speaks the Agent Client Protocol, from a saved command |
 | `openai_compat` | OpenAI-compatible | api | `POST {base_url}/chat/completions`, streamed (Ollama, LM Studio, vLLM, hosted APIs) |
 | `openrouter` | OpenRouter | api | the OpenAI-compatible engine preset for `https://openrouter.ai/api/v1` |
@@ -263,3 +266,29 @@ Limits are per backend process (a restart forgets them until the next refusal).
 - Model prices, context windows and usage-limit meters.
 - Images (attached text files work everywhere), MCP servers or computers for engines other than Claude.
 - A long-lived engine process across turns (each turn starts one).
+
+
+## ACP preset engines
+
+Gemini CLI (`gemini`) and Cursor (`cursor`) use the same ACP transport, approval gate, workspace, transcript replay, resume and Stop handling as the custom ACP engine. Install and sign-in advice appears in Settings → Engines. Program overrides contain the program only (for example `npx -y @google/gemini-cli`); the preset adds the ACP arguments itself. Optional saved keys are encrypted, write-only, and injected only into that engine's process. The engine's own shell commands can read those keys.
+
+- **Gemini CLI:** install `npm install -g @google/gemini-cli`, run `gemini` to sign in or save an API key. Starts with `--acp --approval-mode default`, plus `-m` for a selected model. Existing refreshable Google login files and API keys are detected locally. Vertex configuration must be opted in through `OPEN_DOTS_ENGINE_ENV`; consumer login availability depends on Google's current policy. Static model suggestions accept custom IDs.
+- **Cursor:** install from [Cursor's CLI documentation](https://cursor.com/docs/cli), then `cursor-agent login` or save a key. Starts with `cursor-agent acp`, without automatic approval flags. Credentials suppress ACP browser authentication. Status and model discovery use bounded CLI commands. A selected model must be offered by the session and accepted by `session/set_model`; refusal ends the turn before the prompt. Cursor's `cursor/ask_question` extension is answered as unsupported, so it cannot hang waiting for a question card.
+- **OpenCode (experimental):** install `npm install -g opencode-ai` and run `opencode auth login`. Discovery uses `opencode models` without creating a session. A model must be offered by the session's configuration and confirmed by `session/set_config_option`. Additional saved provider-key maps are not implemented. OpenCode strips ambient foreign API keys and configuration overrides, pins project configuration off, and supplies `OPENCODE_PERMISSION` asking for every tool (edit/bash denied in plan mode, all tools denied when tools are off). This override has **not** been proven against hostile real CLI configuration; OpenCode is disabled by default.
+
+`OPEN_DOTS_PRESET_ENGINES` selects enabled presets by comma-separated ID. Unset enables `gemini,cursor,openrouter`. An empty value disables all presets; `gemini,cursor,openrouter,opencode` also enables experimental OpenCode. Custom ACP and OpenAI-compatible engines are always registered. Preset CLIs are not supported on Windows yet.
+
+For ask and accept-edits modes, Gemini always uses `--approval-mode default`, Cursor receives no automatic approval flag, and OpenCode receives ask rules. Every permission request uses the existing approval gate; accept-edits only auto-allows edits whose listed locations all lie inside the workspace. Plan mode and tools-off refuse permission requests. A vendor's own configuration can allow tools without sending a request, especially Cursor allow rules; these presets do not provide a filesystem sandbox. Review CLI configuration before enabling tools.
+
+`engine_signed_out` means connect the engine in Settings or run the sign-in command shown there. This is a credential failure, not a usage limit, and does not trigger limit fallback. `engine_model_unavailable` means the selected model could not be confirmed; no prompt was sent. Session resume is used only when advertised; otherwise stored history is included in the new prompt.
+
+### Preset verification record (2026-10-23)
+
+| Engine | Checked | Not checked |
+|---|---|---|
+| Gemini CLI | Synthetic ACP authentication, argv, model reporting and local credential fixtures; installed 0.34.0 distribution source inspected for auth methods and flags | Real signed-in turn, real permission requests, quota messages and resume |
+| Cursor | Synthetic status/models discovery, credential isolation, model selection/refusal, generic ACP lifecycle regression tests | Real CLI/account, exact live model IDs, question behavior, permission bypass from user configuration |
+| OpenCode | Synthetic model discovery without sessions, model confirmation, pinned environment controls | Real CLI/account, permission overrides against hostile configuration, real resume; remains opt-in |
+| OpenRouter | Mock HTTP authentication, catalog, streaming and fallback tests | Real account and credits/limit behavior |
+
+No real-account compatibility, Windows compatibility, optional Docker package build or approval bypass resistance is claimed by these checks. Real CLI runs must record version, redacted responses and permission behavior before changing this table or default-enabling OpenCode.

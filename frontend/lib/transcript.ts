@@ -22,6 +22,7 @@ export type NeedsYouItem = { kind: "needs_you"; key: string; turnId: number | nu
 export type TranscriptItem =
   | TeamJobItem
   | NeedsYouItem
+  | { kind: "team_notice"; key: string; turnId: number | null; tone: "incident" | "escalation" | "refused" | "retried"; text: string; threadId: number | null }
   | { kind: "team_setup"; key: string; turnId: number | null; requestId: string; undoAvailable: boolean; rows: { action: string; agentId: number; name: string }[] }
   | { kind: "agent_created"; key: string; turnId: number | null; agentId: number; name: string; title: string }
   | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[] }
@@ -360,6 +361,16 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
         return typeof r?.action === "string" && typeof r.agent_id === "number" ? [{ action: r.action, agentId: r.agent_id, name: text(r.name) }] : [];
       });
       return { ...base, items: [...state.items, { kind: "team_setup", key, turnId: id, requestId: data.request_id, undoAvailable: data.undo_available === true, rows }] };
+    }
+
+    // A report the lead was given about a teammate's thread, or a retry it made.
+    case "team.notice.chip":
+    case "team.notice.refused":
+    case "team.notice.retried": {
+      const message = text(data.text);
+      if (!message) return base;
+      const tone = event.type === "team.notice.refused" ? "refused" : event.type === "team.notice.retried" ? "retried" : data.family === "escalation" ? "escalation" : "incident";
+      return { ...base, items: [...state.items, { kind: "team_notice", key, turnId: id, tone, text: message, threadId: typeof data.thread_id === "number" ? data.thread_id : null }] };
     }
 
     case "team.job.started":

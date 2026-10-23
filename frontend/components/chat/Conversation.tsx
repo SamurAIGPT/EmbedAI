@@ -20,7 +20,7 @@ import {
 } from "./items";
 
 import { NeedsYouCard } from "./NeedsYouCard";
-import { DelegationCard, AgentCreatedCard, TeamSetupCard } from "./TeamCards";
+import { DelegationCard, AgentCreatedCard, TeamNoticeCard, TeamSetupCard } from "./TeamCards";
 
 const STICK_DISTANCE_PX = 80;
 
@@ -122,6 +122,8 @@ export function Conversation({
                 return <NeedsYouCard key={item.key} item={item} />;
               case "team_job":
                 return <DelegationCard key={item.key} item={item} />;
+              case "team_notice":
+                return <TeamNoticeCard key={item.key} item={item} />;
               case "team_setup":
                 return <TeamSetupCard key={item.key} item={item} />;
               case "agent_created":

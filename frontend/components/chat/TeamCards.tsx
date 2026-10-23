@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { collaboration } from "@/lib/collaboration";
@@ -52,6 +53,19 @@ export function TeamSetupCard({ item }: { item: Extract<TranscriptItem, { kind: 
       {canUndo && <button type="button" className="text-xs underline" onClick={() => void undo()}>Undo</button>}
       {state && <p role="status" className="text-xs text-muted">{state === "busy" ? "Undoing…" : "Undone."}</p>}
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+    </article>
+  );
+}
+
+const NOTICE_LABEL = { incident: "Incident", escalation: "Escalation", refused: "Report not delivered", retried: "Retry" } as const;
+
+// What the lead was told about a teammate (or what it retried). The text is
+// quoted data from other agents; it is only ever shown, never acted on here.
+export function TeamNoticeCard({ item }: { item: Extract<TranscriptItem, { kind: "team_notice" }> }) {
+  return (
+    <article className="flex items-start justify-between gap-3 rounded-field border border-line p-3 text-sm">
+      <p className="min-w-0 break-words"><strong>{NOTICE_LABEL[item.tone]}</strong>{" · "}{item.text.replace(/^(Incident|Escalation): /, "")}</p>
+      {item.threadId !== null && <Link href={`/chat?thread=${item.threadId}`} className="shrink-0 text-xs underline">Open</Link>}
     </article>
   );
 }

@@ -51,16 +51,24 @@ async def get_team(rt=Depends(get_runtime)):
             data.update(is_lead=team.lead_agent_id == agent.id, state='waiting_on_you' if waiting else 'working' if running else 'idle', instructions_reviewed=agent.created_by_agent_id is None or agent.instructions_reviewed_at is not None)
             output.append(data)
         lead = next((a for a in rows if a.id == team.lead_agent_id), None)
-        available = bool(lead and lead.provider in rt.adapters and capabilities_of(rt.adapters[lead.provider]).mcp)
+        available = bool(lead and lead_engine_ok(rt, lead))
         return {'team': {'id': team.id, 'name': team.name, 'lead_agent_id': team.lead_agent_id}, 'agents': output,
                 'limits': {'max_agents': settings.TEAM_MAX_AGENTS, 'max_depth': settings.TEAM_MAX_DEPTH, 'max_parallel': settings.TEAM_MAX_PARALLEL},
                 'lead_ready': {'ok': available, 'reason': None if available else 'This lead needs an engine with team tools (Claude).'}}
+
+
+def lead_engine_ok(rt, agent):
+    adapter = rt.adapters.get(agent.provider) if agent else None
+    return bool(adapter and capabilities_of(adapter).mcp)
 
 
 @router.post('/lead')
 async def lead(payload: LeadRequest, rt=Depends(get_runtime)):
     try:
         async with rt.session() as db:
+            candidate = await db.get(Agent, payload.agent_id)
+            if candidate is not None and not lead_engine_ok(rt, candidate):
+                raise service.TeamError('lead_engine', 'A lead needs an engine with team tools (Claude).')
             await service.set_lead(db, rt.owner_id, payload.agent_id, payload.name)
     except service.TeamError as exc:
         raise error(exc) from None

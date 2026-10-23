@@ -1210,6 +1210,8 @@ class ThreadRuntime:
             missing.append("images")
         if computer and not other.computers:
             missing.append("an agent computer")
+        if run.ctx.team is not None and not other.mcp:
+            missing.append("team tools")
         # A conversation that already has earlier messages needs an engine
         # that reads them from the stored transcript: another engine cannot
         # resume this one's own session.

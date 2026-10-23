@@ -152,8 +152,13 @@ async def update_agent(
         raise AgentNotFound(agent_id)
     for field, value in changes.items():
         setattr(agent, field, value)
+    if "instructions" in changes:
+        # The person wrote or looked at these instructions.
+        agent.instructions_reviewed_at = _utcnow()
     if archived is not None:
         agent.archived_at = _utcnow() if archived else None
+        if archived:
+            await _leave_team(db, agent)
     agent.updated_at = _utcnow()
     name = agent.name  # read now: after a rollback the row is expired
     try:
@@ -217,6 +222,19 @@ async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
     )
 
 
+async def _leave_team(db: AsyncSession, agent: Agent) -> None:
+    """An agent that goes away stops leading and belonging to its team, so the
+    team never points at a missing lead."""
+    if agent.team_id is None:
+        return
+    from app.db.models import Team
+    team = await db.get(Team, agent.team_id, with_for_update=True)
+    if team is not None and team.lead_agent_id == agent.id:
+        team.lead_agent_id = None
+        team.updated_at = _utcnow()
+    agent.team_id = None
+
+
 async def delete_agent(db: AsyncSession, agent_id: int) -> None:
     """Remove the agent. Its threads keep their whole conversation and simply
     stop being linked: later turns use the thread's own provider and model.
@@ -226,6 +244,7 @@ async def delete_agent(db: AsyncSession, agent_id: int) -> None:
     if agent is None:
         await db.rollback()
         raise AgentNotFound(agent_id)
+    await _leave_team(db, agent)
     await db.execute(
         update(Thread)
         .where(Thread.agent_id == agent_id)

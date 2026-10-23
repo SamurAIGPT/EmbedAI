@@ -177,6 +177,11 @@ class Jobs:
                     else:
                         await self.follow(current)
                     await asyncio.sleep(.2)
+            except asyncio.CancelledError:
+                # The bridge closed under us (stop, stall, crash): settle now
+                # instead of waiting for the next recovery sweep.
+                await asyncio.shield(self.cancel(job.id))
+                raise
             finally:
                 release()
             async with self.rt.session() as db:
@@ -215,7 +220,11 @@ class Jobs:
                     if row.status in ('running', 'needs_input'):
                         row.status = state
                         event(db, row, state)
+                        if await db.get(Thread, row.requester_thread_id):
+                            await thread_store._add_event(db, row.requester_thread_id, 'team.job.updated',
+                                {'job_id': row.id, 'assignee_agent_id': row.assignee_agent_id, 'assignee_thread_id': row.assignee_thread_id, 'status': state}, row.requester_turn_id)
                         await db.commit()
+                self.rt.hub.notify(job.requester_thread_id)
         elif turn.status == 'succeeded':
             await self.settle(job.id, 'completed', 'done', result=turn.result)
         elif turn.status == 'cancelled':

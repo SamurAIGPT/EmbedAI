@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, update
 from app.db.models import Approval, Turn, Agent
 from app.db.transactions import begin_write
-from app.team import fence, service
+from app.team import fence, policy, service
 
 
 def canonical(value):
@@ -112,7 +112,7 @@ class TeamBridge:
                 return {'agents': [{'id': a.id, 'name': fence.line(a.name), 'title': fence.line(a.title), 'can_delegate': a.delegation_enabled} for a in rows]}
             if name == 'create_agent':
                 # A permission card cannot widen the immutable origin or plan floor.
-                if run.ctx.approval_mode == 'plan' or run.ctx.team.origin in ('outside', 'webhook'):
+                if run.ctx.approval_mode == 'plan' or run.ctx.team.origin in policy.UNATTENDED:
                     raise service.TeamError('forbidden', 'Creating an agent is unavailable for this turn.')
                 agent = await service.create_specialist(db, rt.owner_id, run.agent_id, run.turn_id, args)
                 await run.recorder.emit('team.agent.created', {'agent_id': agent.id, 'name': agent.name, 'title': agent.title, 'created_by_agent_id': run.agent_id, 'undo_until_used': True})

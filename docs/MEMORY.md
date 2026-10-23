@@ -328,8 +328,10 @@ transcripts:
 
 ### Searching past conversations (session_search)
 
-On Claude, an agent with notes on also gets two read-only MCP tools, started per
-turn like the team tools (`mcp__memory__session_search`, `mcp__memory__session_read`):
+An agent with notes on also gets two read-only tools from one small MCP server
+started for each turn (`memory`; on Claude `mcp__memory__session_search` and
+`mcp__memory__session_read`). **Claude, Codex and ACP agents** get them; see
+"Which engines" below.
 
 - **session_search** takes `query` (words that must all match), `since` and
   `until` (a span like `24h`, `3d`, `2w`; `today`, `yesterday`; or a date), `limit`
@@ -345,13 +347,41 @@ turn like the team tools (`mcp__memory__session_search`, `mcp__memory__session_r
 
 No card is shown (the calls only read the agent's own history, and the policy
 allows exactly these two tools); the turn's host tools stay off unless tools were
-already on. A request cannot name another agent: the backend answers for the
+already on, and are never switched on by the search. A request cannot name another agent: the backend answers for the
 agent the turn belongs to, through the turn's private mailbox folder.
 **Disclosure:** when a room turn's search or read uses a private one-to-one chat,
 the room gets a notice once per chat (*Scout recalled 1 message from its private
-chat with you*). Engines without MCP here (Codex, ACP agents, OpenAI-compatible
-endpoints) do not get the tools; they still get the recent-work brief and
-automatic recall. The agent is told about the tools in its system prompt.
+chat with you*), whichever engine made the call: the answers come from the same
+backend code for every engine, so the private-chat and room rules are the same.
+The agent is told about the tools in its instructions.
+
+**Which engines.**
+
+- **Claude:** the server is passed with the turn's MCP servers; the policy allows the
+  two tools without a card.
+- **Codex:** the same server is added to the thread (`thread/start` and
+  `thread/resume`) as a config override for that thread only, never written to the
+  person's `config.toml`, limited to the two tools (`enabled_tools`) and set to run
+  without asking (`default_tools_approval_mode = "approve"`), so there is no card;
+  every other tool is asked about as before. Checked against a real Codex
+  app-server: the server starts from the override and a tool call reaches the
+  backend and answers.
+- **ACP agents:** the server is listed in `session/new` and `session/load`
+  (`mcpServers`, stdio). An ACP agent asks permission through its own request, which
+  names the tool in its own way, so a request is let through without a card only
+  when its title names one of the two tools and the `memory` server and its
+  arguments are only the ones those tools take (anything else, including a request
+  that names the tool but carries other arguments, is refused or asked about as
+  before, and an agent that sends none is simply never asked). An agent that does
+  not support or ignores MCP servers has no search and keeps the brief and recall.
+- **OpenAI-compatible endpoints and OpenRouter: not available.** That engine sends
+  one streamed `chat/completions` request per turn with no `tools`, reads only
+  `delta.content` from the answer, and has no loop that runs a tool and sends its
+  result back. Adding the search would mean adding that loop (tool definitions
+  sent to every endpoint, many local models do not support them, parsing streamed
+  tool calls, a bounded round trip, and its own disclosure and stop handling), which
+  is a different feature. Until then these agents have the recent-work brief and
+  automatic recall.
 
 ## About me
 
@@ -588,7 +618,7 @@ adds `agent.memory_upkeep`, `a5c3e8b1d7f2` adds `agent.compaction_summary` and
 - There is one helper for the installation, not one per agent or per engine; token counts of a helper call are recorded only when its engine reports them (an OpenAI-compatible endpoint does, the Claude CLI's text output does not).
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Rooms are read for facts only with **Learn from group chats** on, and only a member agent's own turns.
-- Past-conversation search is a tool on Claude only; other engines have the brief and recall.
+- Past-conversation search is a tool on Claude, Codex and ACP agents; an OpenAI-compatible endpoint has the brief and recall (it has no tool-call loop).
 - Recall ranks by shared words only (no stemming, no embeddings), so a
   question worded differently from the note can miss it.
 - Proposals are found when the queue is looked at, not pushed.

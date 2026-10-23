@@ -29,7 +29,7 @@ from app.computers import grants
 from app.computers.service import COMPUTER_TOOL_PREFIX
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import engine_errors, local_claude_runner
+from app.services import engine_errors, local_claude_runner, memory_bridge
 from app.services.local_approval_broker import (
     DENY_BY_USER,
     DENY_CANCELLED,
@@ -410,11 +410,7 @@ class ClaudeAdapter:
             servers["team"] = ctx.team_launch
         if ctx.memory_launch is not None:
             servers["memory"] = ctx.memory_launch
-            notes.append(
-                "You can search your own earlier conversations, the rooms you belong to and your memory "
-                "files with the session_search tool (words, a since/until time, or both), and read a whole "
-                "message with session_read. Use it before asking the person to repeat something."
-            )
+            notes.append(memory_bridge.TOOL_NOTE)
         if servers:
             extra["mcp_servers"] = servers
             if not host_tools:

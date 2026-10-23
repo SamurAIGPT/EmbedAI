@@ -61,6 +61,7 @@ the engine default. Changing an agent's engine affects new conversations.
   | `tools` | can run tools (commands, file edits) in the workspace |
   | `approvals` | its tool calls go through the approval gate |
   | `mcp` | can mount an MCP server this app gives it |
+  | `memory_tools` | mounts only the read-only past-conversation search ([MEMORY.md](MEMORY.md)); Codex and ACP agents set this, not `mcp`, so the team tools are not offered to them |
   | `images` | accepts images attached to a message ([EVERYDAY.md](EVERYDAY.md)); an image for any other engine is refused with `images_unsupported` |
   | `resume` | a conversation continues with the engine's earlier context |
   | `computers` | its turns can run their tools in an agent computer |
@@ -150,7 +151,7 @@ the workspace.
 
 One process per turn from the saved command (split like a shell, never run
 through one): `initialize` (file system and terminal advertised as off),
-`session/new` with no MCP servers, or `session/load` when the agent can load
+`session/new` with no MCP servers (an agent with notes on gets the one read-only memory-search server, see [MEMORY.md](MEMORY.md)), or `session/load` when the agent can load
 sessions, then `session/prompt`. An agent that cannot load sessions gets the
 conversation so far as text. `session/request_permission` goes through the
 gate; only an `allow_once` option approves (never `allow_always`), Deny picks
@@ -264,7 +265,7 @@ Limits are per backend process (a restart forgets them until the next refusal).
   own engine is limited; a fallback chain of more than one engine; usage-limit
   meters read ahead of a refusal.
 - Model prices, context windows and usage-limit meters.
-- Images (attached text files work everywhere), MCP servers or computers for engines other than Claude.
+- Images (attached text files work everywhere), team-tool MCP servers or computers for engines other than Claude (Codex and ACP agents get only the read-only memory search).
 - A long-lived engine process across turns (each turn starts one).
 
 

@@ -991,7 +991,7 @@ class ThreadRuntime:
                         run.memory_before = memory_journal.snapshot(run.agent_id)
                     except Exception:  # noqa: BLE001
                         logger.exception("could not note the memory files", turn_id=run.turn_id)
-                if run.agent_id is not None and run.log_memory and capabilities_of(adapter).mcp:
+                if run.agent_id is not None and run.log_memory and capabilities_of(adapter).can_search_history:
                     memory_bridge = MemoryBridge(self, run)
                     run.ctx.memory_launch = memory_bridge.launch
                     memory_bridge.start()

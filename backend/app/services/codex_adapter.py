@@ -46,7 +46,7 @@ from uuid import uuid4
 from app.core import app_settings
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services import cli_probe, local_claude_runner
+from app.services import cli_probe, local_claude_runner, memory_bridge
 from app.services.local_approval_broker import MAX_REVIEWABLE_INPUT_CHARS
 from app.services.provider_adapter import (
     ALLOW,
@@ -172,10 +172,11 @@ class CodexAdapter:
     key = "codex"
     label = "Codex"
     kind = "cli"
-    # Tools with approvals and resume. No MCP from this app, no images, and no
-    # agent computers (Codex runs its tools on this machine).
+    # Tools with approvals and resume. No MCP from this app except the read-only
+    # past-conversation search (`memory_tools`), no images, and no agent computers
+    # (Codex runs its tools on this machine).
     capabilities = Capabilities(
-        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=False
+        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=False, memory_tools=True
     )
     models: list[ModelOption] = []
     custom_models = True
@@ -404,8 +405,19 @@ class _CodexTurn:
         }
         if self.ctx.model:
             common["model"] = self.ctx.model
-        if self.ctx.instructions:
-            common["developerInstructions"] = self.ctx.instructions
+        instructions = self.ctx.instructions
+        launch = self.ctx.memory_launch
+        if launch is not None:
+            # The read-only past-conversation search, as one MCP server for this thread
+            # only (a config override, never written to the person's config.toml).
+            common["config"] = {"mcp_servers": {memory_bridge.SERVER: {
+                "command": launch.command, "args": list(launch.args), "env": dict(launch.env),
+                # Only the two read-only tools, and Codex does not ask about them (no card).
+                "enabled_tools": list(memory_bridge.TOOLS), "default_tools_approval_mode": "approve",
+            }}}
+            instructions = f"{instructions}\n\n{memory_bridge.TOOL_NOTE}" if instructions else memory_bridge.TOOL_NOTE
+        if instructions:
+            common["developerInstructions"] = instructions
         try:
             if self.codex_thread:
                 started = await self._call("thread/resume", {"threadId": self.codex_thread, **common})

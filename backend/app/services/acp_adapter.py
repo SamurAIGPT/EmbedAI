@@ -36,6 +36,7 @@ from app.core import app_settings
 from app.core.logging import get_logger
 from app.services import local_claude_runner
 from app.services.local_approval_broker import MAX_REVIEWABLE_INPUT_CHARS
+from app.services import memory_bridge
 from app.services.provider_adapter import (
     ALLOW,
     LOST,
@@ -163,7 +164,7 @@ class AcpAdapter:
     label = "ACP agent"
     kind = "acp"
     capabilities = Capabilities(
-        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=False
+        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=False, memory_tools=True
     )
     # The agent runs its own configured model; there is nothing to choose here.
     models: list[ModelOption] = []
@@ -458,7 +459,7 @@ class _AcpTurn:
                 # Replayed history arrives before the prompt and is dropped.
                 session = await self._call(
                     "session/load",
-                    {"sessionId": self.saved_session, "cwd": str(self.workspace), "mcpServers": []},
+                    {"sessionId": self.saved_session, "cwd": str(self.workspace), "mcpServers": self._mcp_servers()},
                     handle_incoming=True,
                 )
             except RpcError as exc:
@@ -481,7 +482,7 @@ class _AcpTurn:
                     return self._failed("The run was stopped because it no longer owns its turn.", "lost")
             try:
                 created = await self._call(
-                    "session/new", {"cwd": str(self.workspace), "mcpServers": []}, handle_incoming=True
+                    "session/new", {"cwd": str(self.workspace), "mcpServers": self._mcp_servers()}, handle_incoming=True
                 )
             except RpcError as exc:
                 if self.adapter.is_auth_error(exc):
@@ -511,10 +512,24 @@ class _AcpTurn:
         tail = self.rpc.stderr_tail.strip() if self.rpc is not None else ""
         return f"{default} {tail}".strip() if tail else default
 
+    def _mcp_servers(self) -> list[dict]:
+        """The read-only past-conversation search, the only MCP server this app mounts
+        for an ACP agent (stdio, as the protocol requires every agent to accept)."""
+        launch = self.ctx.memory_launch
+        if launch is None:
+            return []
+        return [{
+            "name": memory_bridge.SERVER, "command": launch.command, "args": list(launch.args),
+            "env": [{"name": k, "value": v} for k, v in launch.env.items()],
+        }]
+
     def _prompt_text(self) -> str:
         parts = []
-        if self.ctx.instructions:
-            parts.append(f"Standing instructions for this conversation:\n{self.ctx.instructions}\n\n")
+        instructions = self.ctx.instructions
+        if self.ctx.memory_launch is not None:
+            instructions = f"{instructions}\n\n{memory_bridge.TOOL_NOTE}" if instructions else memory_bridge.TOOL_NOTE
+        if instructions:
+            parts.append(f"Standing instructions for this conversation:\n{instructions}\n\n")
         parts.append(self.preamble)
         parts.append(self.ctx.prompt)
         return "".join(parts)
@@ -650,6 +665,16 @@ class _AcpTurn:
         call = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
         kind = call.get("kind") if isinstance(call.get("kind"), str) else "other"
         raw = call.get("rawInput") if isinstance(call.get("rawInput"), dict) else {}
+        if (
+            self.ctx.memory_launch is not None
+            and allow_id is not None
+            and kind in ("other", "read", "search", "fetch")
+            and memory_bridge.is_memory_call(title=call.get("title"), raw=raw)
+        ):
+            # A read-only call to this turn's own memory server: no card, whatever the
+            # approval mode (it only reads the agent's own history, memory_bridge.py).
+            self.rpc.respond(rid, payload(True))
+            return
         if not self.tools or self.mode == "plan":
             self.rpc.respond(rid, payload(False))
             return

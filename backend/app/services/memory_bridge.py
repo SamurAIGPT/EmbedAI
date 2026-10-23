@@ -21,6 +21,28 @@ logger = get_logger(__name__)
 
 SERVER = "memory"
 TOOL_PREFIX = f"mcp__{SERVER}__"
+TOOLS = ("session_search", "session_read")
+# The agent is told about the tools in its instructions, on every engine that mounts them.
+TOOL_NOTE = (
+    "You can search your own earlier conversations, the rooms you belong to and your memory "
+    "files with the session_search tool (words, a since/until time, or both), and read a whole "
+    "message with session_read. Use it before asking the person to repeat something."
+)
+_ARGS = {"query", "since", "until", "limit", "scope", "thread_id", "message_id"}
+
+
+def is_memory_call(*, server: str | None = None, tool: str | None = None, title: str | None = None, raw=None) -> bool:
+    """True when a permission request is for one of the two read-only memory tools of
+    this turn's own server. An engine names a tool its own way (`mcp__memory__session_search`,
+    `memory/session_search`, "session_search (memory MCP Server)"), so a call counts only
+    when its name is one of the two tools, it comes from the server called `memory`, and
+    its arguments are only the ones those tools take. Anything else goes the usual way."""
+    if isinstance(raw, dict) and not set(raw) <= _ARGS:
+        return False
+    if tool is not None:
+        return server == SERVER and tool in TOOLS
+    text = (title or "").lower()
+    return len(text) <= 200 and SERVER in text and any(name in text for name in TOOLS)
 
 
 def render_hit(hit: session_search.Hit, *, with_query: bool) -> str:

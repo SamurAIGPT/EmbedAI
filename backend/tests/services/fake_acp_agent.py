@@ -7,7 +7,7 @@ Configured by FAKE_ACP_DIR, a folder holding `plan.json`; the script writes
 plan.json: {"load": bool (agentCapabilities.loadSession), "hang_init": bool,
             "steps": [step, ...]}   prompt N plays steps[N], the last repeats:
   {"type": "chat", "text": "..."}
-  {"type": "permission", "kind": "execute", "command": "ls", "locations": [...]}
+  {"type": "permission", "kind": "execute", "command": "ls", "locations": [...], "title": "...", "raw": {...}}
   {"type": "only_always"}              offers allow_always and reject_once only
   {"type": "fs"}                       asks the client to read a file
   {"type": "slow"}                     streams, then waits for session/cancel
@@ -91,7 +91,7 @@ def prompt(rid, params):
     elif kind in ("permission", "only_always"):
         call_id = "call_" + uuid.uuid4().hex[:6]
         tool_kind = step.get("kind", "execute")
-        raw = {"command": step.get("command", "ls -la")} if tool_kind == "execute" else {"path": "x"}
+        raw = step.get("raw") or ({"command": step.get("command", "ls -la")} if tool_kind == "execute" else {"path": "x"})
         chunk(session_id, "Let me look.")
         update(session_id, {"sessionUpdate": "tool_call", "toolCallId": call_id, "title": step.get("title", "Run ls"), "kind": tool_kind, "status": "pending", "rawInput": raw})
         options = [

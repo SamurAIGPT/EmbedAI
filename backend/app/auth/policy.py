@@ -37,6 +37,17 @@ CHAT_ROUTES: tuple[tuple[frozenset[str], re.Pattern[str]], ...] = tuple(
     (frozenset(methods), re.compile(f"^{API}{path}$"))
     for methods, path in (
         ({"GET"}, "/auth/session"),
+        ({"GET"}, "/team"),
+        ({"GET"}, "/team/jobs"),
+        ({"GET"}, f"/team/jobs/{_ID}"),
+        ({"GET"}, "/rooms"),
+        ({"GET"}, f"/rooms/{_ID}"),
+        ({"GET"}, f"/rooms/{_ID}/messages"),
+        ({"POST"}, f"/rooms/{_ID}/messages"),
+        ({"POST"}, f"/rooms/{_ID}/read"),
+        ({"POST"}, f"/rooms/{_ID}/stop"),
+        ({"GET"}, f"/rooms/{_ID}/approvals"),
+        ({"GET"}, f"/rooms/{_ID}/export"),
         ({"GET"}, "/threads"),
         ({"POST"}, "/threads"),
         ({"GET", "PATCH"}, f"/threads/{_ID}"),

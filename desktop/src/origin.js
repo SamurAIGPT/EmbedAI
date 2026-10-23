@@ -16,13 +16,14 @@ function sameOrigin(url, origin) {
 // Returns the headers to send.
 function withToken(details, origin, token) {
   const headers = { ...details.requestHeaders };
-  if (sameOrigin(details.url, origin)) headers[HEADER] = token;
+  const wsOrigin = origin.replace(/^http/, "ws");
+  if (sameOrigin(details.url, origin) || sameOrigin(details.url, wsOrigin)) headers[HEADER] = token;
   return headers;
 }
 
 // Wires the rule into an Electron session.
 function attachTokenTo(session, origin, token) {
-  session.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`] }, (details, callback) => {
+  session.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`, `${origin.replace(/^http/, "ws")}/*`] }, (details, callback) => {
     callback({ requestHeaders: withToken(details, origin, token) });
   });
 }

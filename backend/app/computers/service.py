@@ -33,7 +33,8 @@ from pathlib import Path
 
 from sqlalchemy import delete, select
 
-from app.computers import docker_cli
+from app.computers import docker_cli, screen
+from app.computers.control import ControlRegistry
 from app.computers.docker_cli import Spec
 from app.computers.mcp_server import LAST_COMMAND_FILE
 from app.computers.policy import COMPUTER_TOOL_PREFIX
@@ -68,10 +69,12 @@ class TurnComputer:
     provider: str
     launch: McpLaunch
     grants_dir: Path
+    kind: str = "shell"
     guest_workspace: str = docker_cli.GUEST_WORKSPACE
 
     def prompt_note(self) -> str:
-        return (
+        screen = (" You also have a 1280x800 screen. Use screenshot, click, double_click, move, drag, type, key, scroll and wait. Screen input needs permission for this turn. A person may take control; stop when refused and take a fresh screenshot after hand-back." if self.kind == "desktop" else "")
+        return screen + (
             "You are working on your own computer: an isolated Linux machine "
             f"({self.provider}, image {self.image}). Use the computer tools (exec, read_file, "
             f"write_file, list_files) for every command and file. Your workspace folder is "
@@ -102,6 +105,71 @@ class ComputerService:
     _health: tuple[float, Health] | None = None
     _instance: str | None = None
     _orphans_checked: bool = False
+    control: ControlRegistry = field(default_factory=ControlRegistry)
+    _captures: dict = field(default_factory=dict)
+    _capture_cache: dict = field(default_factory=dict)
+    _capture_slots: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(3))
+    _capture_tokens: float = 4
+    _capture_at: float = field(default_factory=time.monotonic)
+    _control_initialized: bool = False
+
+    def _initialize_control(self):
+        if not self._control_initialized:
+            for path in self.state_dir().glob("*/control.json"):
+                path.unlink(missing_ok=True)
+            self._control_initialized = True
+
+    def expire_control(self):
+        self._initialize_control()
+        expired = self.control.expire()
+        # Snapshot/owns may already have expired a registry entry.
+        for path in self.state_dir().glob("*/control.json"):
+            if path.parent.name.isdigit() and not self.control.snapshot(int(path.parent.name))["held"]:
+                path.unlink(missing_ok=True)
+        return expired
+
+    def held(self, computer_id: int) -> bool:
+        self.expire_control()
+        return self.control.snapshot(computer_id)["held"]
+
+    def release_control(self, computer_id: int, lease=None):
+        self.expire_control()
+        released = self.control.release(computer_id, lease)
+        if released:
+            (self.state_dir() / str(computer_id) / "control.json").unlink(missing_ok=True)
+        return released
+
+    def write_control(self, computer_id: int):
+        # Same cross-process lock as screen input: a completed take response
+        # guarantees all earlier input has finished before the person drives.
+        with screen.driver_lock(self.state_dir() / str(computer_id)):
+            screen.write_state(self.state_dir() / str(computer_id) / "control.json", {"until": time.time()+35})
+
+    async def screenshot(self, computer: Computer) -> bytes:
+        if computer.kind != "desktop":
+            raise ComputerError("This computer has no screen.", "not_a_desktop")
+        cached = self._capture_cache.get(computer.id)
+        if cached and time.monotonic()-cached[0] < 1:
+            return cached[1]
+        task = self._captures.get(computer.id)
+        if task is None:
+            async def capture():
+                now = time.monotonic()
+                self._capture_tokens = min(4, self._capture_tokens + (now-self._capture_at)*4)
+                self._capture_at = now
+                if self._capture_tokens < 1:
+                    raise ComputerError("Screen capture budget reached. Try again shortly.", "capture_busy")
+                self._capture_tokens -= 1
+                async with self._capture_slots:
+                    async with self._lock(computer.id):
+                        current = await self.get(computer.id)
+                        data = await self._call(self.provider(current.provider).screenshot, self.spec(current))
+                    self._capture_cache[computer.id] = (time.monotonic(), data)
+                    return data
+            task = asyncio.create_task(capture())
+            self._captures[computer.id] = task
+            task.add_done_callback(lambda t: self._captures.pop(computer.id, None))
+        return await asyncio.shield(task)
 
     # -- plumbing ----------------------------------------------------------------------
 
@@ -139,6 +207,8 @@ class ComputerService:
             memory_mb=computer.memory_mb,
             pids_limit=computer.pids_limit,
             network=computer.network,
+            kind=computer.kind,
+            shm_mb=512 if computer.kind == "desktop" else 0,
         )
 
     async def _call(self, fn, *args):
@@ -213,7 +283,12 @@ class ComputerService:
     async def create_for_agent(self, agent: Agent, *, workspace: str, image: str | None = None, **config) -> tuple[Computer, bool]:
         """The agent's computer row, made if it has none. Returns (computer,
         created). Never touches the provider. Raises ValueError for bad config."""
-        image = docker_cli.check_image(image or docker_cli.DEFAULT_IMAGE)
+        kind = config.pop("kind", "shell")
+        if kind not in docker_cli.COMPUTER_KINDS:
+            raise ValueError("kind must be shell or desktop")
+        image = docker_cli.check_image(image or (docker_cli.DESKTOP_IMAGE if kind == "desktop" else docker_cli.DEFAULT_IMAGE))
+        if kind == "desktop":
+            config = {"cpus": 2, "memory_mb": 2048, "pids_limit": 1024, **config}
         values = _checked_config(config)
         async with self.session() as db:
             await begin_write(db)
@@ -230,6 +305,7 @@ class ComputerService:
                 owner_id=self.owner_id,
                 agent_id=agent.id,
                 provider="docker",
+                kind=kind,
                 image=image,
                 workspace_path=workspace,
                 state="missing",
@@ -269,6 +345,8 @@ class ComputerService:
             computer = await self.get(computer_id)
             await self._require_docker()
             provider = self.provider(computer.provider)
+            if computer.kind == "desktop" and computer.image == docker_cli.DESKTOP_IMAGE:
+                raise ComputerError("Build the desktop image locally first: docker build -t open-dots-desktop:local desktop-image. See docs/DESKTOP-IMAGE.md.", "image_missing")
             await self._call(provider.pull, computer.image)
             return await self._save(computer_id, last_error=None)
 
@@ -285,6 +363,13 @@ class ComputerService:
         try:
             await self._save(computer.id, state="creating" if computer.state == "missing" else computer.state)
             status = await self._call(provider.create, self.spec(computer))
+            if computer.kind == "desktop":
+                deadline = time.monotonic() + 60
+                while status.state == "running" and not status.desktop_ready and time.monotonic() < deadline:
+                    await asyncio.sleep(1)
+                    status = await self._call(provider.status, self.spec(computer))
+                if not status.desktop_ready:
+                    raise ComputerError("The desktop did not come up in 60 seconds. Check the container logs.", "desktop_not_ready")
         except ComputerError as exc:
             await self._save(computer.id, state="error", last_error=str(exc))
             raise
@@ -296,6 +381,9 @@ class ComputerService:
             computer = await self.get(computer_id)
             if self._leases.get(computer_id):
                 raise ComputerError("A turn is using this computer. Stop the turn first.", "computer_busy")
+            self.release_control(computer_id)
+            if hasattr(self, "viewers"): await self.viewers.close_computer(computer_id)
+            self._capture_cache.pop(computer_id, None)
             await self._require_docker()
             status = await self._call(self.provider(computer.provider).stop, self.spec(computer))
             return await self._apply_status(computer_id, status)
@@ -308,6 +396,9 @@ class ComputerService:
             if self._leases.get(computer_id):
                 raise ComputerError("A turn is using this computer. Stop the turn first.", "computer_busy")
             await self._require_docker()
+            self.release_control(computer.id)
+            if hasattr(self, "viewers"): await self.viewers.close_computer(computer.id)
+            self._capture_cache.pop(computer.id, None)
             await self._call(self.provider(computer.provider).delete, self.spec(computer))
             values = {"state": "missing", "container_id": None, "image_id": None}
             if workspace:
@@ -343,6 +434,9 @@ class ComputerService:
             health = await self.health(fresh=True)
             if not health.available:
                 raise ComputerError(health.error or "Docker is not available.", "docker_unavailable")
+            self.release_control(computer.id)
+            if hasattr(self, "viewers"): await self.viewers.close_computer(computer.id)
+            self._capture_cache.pop(computer.id, None)
             await self._call(self.provider(computer.provider).delete, self.spec(computer))
         except ComputerError as exc:
             await self._save(computer.id, last_error=f"Removal is waiting: {exc}")
@@ -447,6 +541,7 @@ class ComputerService:
         spec = self.spec(computer)
         return TurnComputer(
             computer_id=computer.id,
+            kind=computer.kind,
             name=spec.name,
             image=computer.image,
             provider=computer.provider,
@@ -462,6 +557,10 @@ class ComputerService:
             held.discard(turn_id)
             if not held:
                 self._leases.pop(binding.computer_id, None)
+        with screen.driver_lock(self.state_dir() / str(binding.computer_id)):
+            owner_path = self.state_dir() / str(binding.computer_id) / "screen-owner.json"
+            if screen.read_state(owner_path).get("turn_id") == str(binding.grants_dir):
+                owner_path.unlink(missing_ok=True)
         shutil.rmtree(binding.grants_dir, ignore_errors=True)
         try:
             await self._save(binding.computer_id, last_used_at=_utcnow())
@@ -482,6 +581,7 @@ class ComputerService:
     async def upkeep(self) -> None:
         """Background job: finish interrupted removals, remove orphans once
         Docker answers, and stop computers that have been idle too long."""
+        self.expire_control()
         health = await self.health(fresh=True)
         if not health.available:
             return
@@ -496,7 +596,7 @@ class ComputerService:
             self._orphans_checked = True
         now = _utcnow()
         for computer in rows:
-            if computer.state != "running" or computer.idle_minutes <= 0 or self.busy(computer.id):
+            if computer.state != "running" or computer.idle_minutes <= 0 or self.busy(computer.id) or self.held(computer.id):
                 continue
             last = self._last_activity(computer) or computer.updated_at
             if last is not None and now - last < timedelta(minutes=computer.idle_minutes):
@@ -505,7 +605,7 @@ class ComputerService:
             if lock.locked():
                 continue
             async with lock:
-                if self.busy(computer.id):
+                if self.busy(computer.id) or self.held(computer.id):
                     continue
                 try:
                     status = await self._call(self.provider(computer.provider).stop, self.spec(computer))

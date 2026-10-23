@@ -27,6 +27,8 @@ class Definition:
 
 
 REGISTRY = {
+    "TEAM_ENABLED": Definition("boolean", False, "next_run"),
+    "TEAM_LEAD_AUTO": Definition("boolean", True, "next_run"),
     "DESKTOP_ONBOARDING_COMPLETED": Definition("boolean", False, "immediate"),
     "LOCAL_CLAUDE_CLI_PATH": Definition("file", True, "next_run"),
     "LOCAL_WORKSPACE_ROOT": Definition("directory", True, "next_run"),

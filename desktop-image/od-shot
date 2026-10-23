@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = "--jpeg" ]; then
+  maim -u | convert png:- -quality 70 jpeg:-
+elif [ "${1:-}" = "--crop" ]; then
+  maim -u -g "$2"
+else
+  maim -u
+fi

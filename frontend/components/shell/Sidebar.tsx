@@ -52,6 +52,7 @@ export function Sidebar({
   onNewAgent,
   onOpenRoutines,
   onNavigate,
+  collaboration,
 }: {
   // null: the backend has no agents (an older one), so the section is left out.
   agents: Agent[] | null;
@@ -74,6 +75,7 @@ export function Sidebar({
   onOpenRoutines?: () => void;
   // Lets a drawer close itself after a choice.
   onNavigate?: () => void;
+  collaboration?: React.ReactNode;
 }) {
   const [searching, setSearching] = useState(false);
   const names = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
@@ -151,6 +153,8 @@ export function Sidebar({
             </ul>
           </section>
         )}
+
+        {collaboration}
 
         <section aria-label={t("sidebar.recent")}>
           <SectionHeader title={t("sidebar.recent")}>

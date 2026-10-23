@@ -120,13 +120,14 @@ async def create_thread(payload: ThreadCreateRequest, rt: ThreadRuntime = Depend
 @router.get("", response_model=list[ThreadResponse])
 async def list_threads(
     include_archived: bool = False,
+    kind: Literal["chat", "all", "job", "room", "room_member"] = "chat",
     limit: int = Query(100, ge=1, le=500),
     rt: ThreadRuntime = Depends(get_runtime),
 ):
     """Newest activity first."""
     async with rt.session() as db:
         threads = await store.list_threads(
-            db, rt.owner_id, include_archived=include_archived, limit=limit
+            db, rt.owner_id, include_archived=include_archived, limit=limit, kind=kind
         )
     return await _with_computers(rt, threads)
 
@@ -209,7 +210,9 @@ async def send_turn(
 ):
     """Send a message. The answer arrives as events (stream or poll); this returns
     as soon as the turn has started."""
-    await _thread_or_404(rt, thread_id)
+    thread = await _thread_or_404(rt, thread_id)
+    if thread.kind in ("room", "room_member"):
+        raise _error(409, thread.kind + "_thread", "Talk to this agent in the room.")
     try:
         return await rt.send_turn(
             thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids

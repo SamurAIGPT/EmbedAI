@@ -139,6 +139,8 @@ class _GuardedRoutines:
     async def tick(self) -> None:
         if await self.ensure():
             await routine_service.scheduler.tick()
+            from app.services.thread_runtime import runtime
+            await runtime.rooms.tick()
 
 
 app = FastAPI(lifespan=lifespan)

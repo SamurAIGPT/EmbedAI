@@ -34,6 +34,7 @@ router = APIRouter(tags=["Computers"], dependencies=[Depends(require_local_acces
 
 # Which HTTP status a provider refusal becomes.
 _STATUS = {
+    "capture_busy": 429,
     "docker_missing": 503,
     "docker_unavailable": 503,
     "docker_timeout": 503,
@@ -63,6 +64,7 @@ def summary(service: ComputerService, computer: Computer) -> ComputerSummary:
     return ComputerSummary(
         id=computer.id,
         provider=computer.provider,
+        kind=computer.kind,
         name=docker_cli.container_name(service.instance(), computer.id),
         image=computer.image,
         network=computer.network,
@@ -100,6 +102,7 @@ def respond(
         guest_workspace=docker_cli.GUEST_WORKSPACE,
         container_id=computer.container_id,
         busy=service.busy(computer.id),
+        desktop_ready=bool(status and status.desktop_ready),
         last_used_at=computer.last_used_at,
         last_command=LastCommandResponse(**{k: v for k, v in last.items() if k in LastCommandResponse.model_fields}) if last else None,
         health=_health(health),
@@ -291,3 +294,14 @@ async def delete_computer(computer_id: int, rt: ThreadRuntime = Depends(get_runt
     except ComputerNotFound:
         raise HTTPException(status_code=404, detail="Computer not found") from None
     return ComputerDeleteResponse(removed=removed)
+
+
+@router.get("/computers/{computer_id}/screenshot")
+async def computer_screenshot(computer_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    service = _service(rt)
+    computer = await _computer_or_404(service, computer_id)
+    try:
+        data = await service.screenshot(computer)
+    except ComputerError as exc:
+        raise _refused(exc) from None
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})

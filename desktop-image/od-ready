@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+test -f /tmp/od-ready
+xdpyinfo -display :1 >/dev/null 2>&1

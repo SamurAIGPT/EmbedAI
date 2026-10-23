@@ -913,6 +913,7 @@ class RoutineScheduler:
                 run.prompt or routine.prompt,
                 approval_mode=mode,
                 approval_timeout=float(routine.approval_timeout_minutes * MINUTE_SECONDS),
+                team_origin="outside" if run.trigger == "webhook" else "routine",
             )
         except runtime_module.ProviderUnavailable as exc:
             await self._fail(run.id, f"The engine is not available: {exc}")

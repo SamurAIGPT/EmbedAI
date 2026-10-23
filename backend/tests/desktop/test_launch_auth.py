@@ -70,11 +70,21 @@ def test_the_route_walk_sees_the_whole_application():
 
 def test_no_route_hides_from_the_walk():
     """The walk reads the OpenAPI schema, which leaves out a route declared with
-    include_in_schema=False, and the app has no WebSocket routes. If either appears
-    this test fails, so the route walk above is extended before it can miss one."""
+    include_in_schema=False and every WebSocket route. The one WebSocket route
+    (the desktop viewer) is checked on its own below; a second one fails this
+    test, so the check is extended before it can be missed."""
     sources = "\n".join(path.read_text(encoding="utf-8") for path in (BACKEND_DIR / "app").rglob("*.py"))
     assert "include_in_schema" not in sources
-    assert "websocket" not in sources.replace("websocket.close", "").replace('"websocket"', "")
+    assert sources.count("@router.websocket(") == 1
+
+
+def test_the_desktop_viewer_socket_is_closed_without_the_token(desktop, client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with client.websocket_connect("/api/v1/computers/1/viewer"):
+            pass
+    assert refused.value.code == 1008
 
 
 @pytest.mark.parametrize("method, path", ROUTES)

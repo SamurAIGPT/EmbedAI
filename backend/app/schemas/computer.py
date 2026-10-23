@@ -22,11 +22,14 @@ class ComputerSettings(BaseModel):
 
 
 class ComputerCreateRequest(ComputerSettings):
+    kind: Literal["shell", "desktop"] = "shell"
     # Also make and start the machine now (needs the image on this computer).
     start: bool = False
 
 
 class ComputerUpdateRequest(ComputerSettings):
+    model_config = {"extra": "forbid"}
+
     @model_validator(mode="after")
     def _something_to_change(self):
         if not self.model_fields_set:
@@ -58,6 +61,7 @@ class ComputerSummary(BaseModel):
 
     id: int
     provider: str
+    kind: Literal["shell", "desktop"] = "shell"
     name: str
     image: str
     network: Network
@@ -86,6 +90,7 @@ class ComputerResponse(ComputerSummary):
     container_id: str | None
     # A turn is using it now.
     busy: bool = False
+    desktop_ready: bool = False
     last_used_at: datetime | None
     last_command: LastCommandResponse | None = None
     health: ComputerHealthResponse | None = None

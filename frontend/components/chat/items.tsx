@@ -2,7 +2,7 @@
 
 import { Check, ChevronRight, Loader2, Square, X } from "lucide-react";
 import { useState } from "react";
-import { canAlwaysAllow } from "@/lib/approvals";
+import { canAlwaysAllow, isScreenInput } from "@/lib/approvals";
 import { isComputerTool, toolLabel } from "@/lib/computers";
 import { cn } from "@/lib/cn";
 import { failureNextStep, interruptedText, turnUsageText } from "@/lib/everyday";
@@ -166,6 +166,7 @@ export function ApprovalCard({
 }) {
   const pending = item.status === "pending";
   const rememberable = canAlwaysAllow(item.tool, item.input);
+  const screenInput = isScreenInput(item.tool);
   const byRule = item.resolvedBy === "saved_rule";
   const savedRuleId = remembered?.ruleId ?? (byRule ? item.ruleId : null);
   const undone = savedRuleId != null && undoneRules.includes(savedRuleId);
@@ -181,7 +182,7 @@ export function ApprovalCard({
         {pending ? (
           isComputerTool(item.tool) ? (
             <>
-              Your agent wants to {toolLabel(item.tool)}, an isolated machine, not this one. It will not run
+              {screenInput ? "Let your agent use this computer’s screen and keyboard for this turn." : <>Your agent wants to {toolLabel(item.tool)}, an isolated machine, not this one.</>} It will not run
               until you allow it.
             </>
           ) : (
@@ -221,7 +222,7 @@ export function ApprovalCard({
       {pending && (
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" onClick={() => onAnswer("allow")} disabled={answering}>
-            Allow
+            {screenInput ? "Allow this turn" : "Allow"}
           </Button>
           {rememberable && (
             <Button

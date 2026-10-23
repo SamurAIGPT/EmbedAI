@@ -22,7 +22,7 @@ FILES = [DOC, *sorted(path for path in DEPLOY.rglob("*") if path.is_file())]
 
 # Read by the server entry point, not by the Settings class.
 ENTRY_SETTINGS = {"OPEN_DOTS_HOST", "OPEN_DOTS_PORT", "OPEN_DOTS_UI_DIR", "OPEN_DOTS_ALLOW_PUBLIC_BIND",
-                  "OPEN_DOTS_EXTRA_PATH", proxies.ENV_NAME}
+                  "OPEN_DOTS_EXTRA_PATH", "OPEN_DOTS_PRESET_ENGINES", proxies.ENV_NAME}
 SERVER_COMMANDS = {"migrate", "doctor", "backup", "restore", "service"}
 AUTH_COMMANDS = {"set-passphrase", "pairing-code", "devices", "revoke"}
 

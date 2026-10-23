@@ -51,6 +51,7 @@ class Status:
     needs_recreate: bool = False
     problem: str | None = None
     started_at: str | None = None
+    desktop_ready: bool = False
 
 
 @dataclass
@@ -96,18 +97,20 @@ def _backend_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def mcp_launch_for(container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None) -> McpLaunch:
+def mcp_launch_for(container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None, kind: str = "shell") -> McpLaunch:
     tail = ["--container", container, "--user", user, "--grants", str(grants_dir), "--state", str(state_dir)]
+    tail += ["--kind", kind]
+    child_env = {k: os.environ[k] for k in ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG") if k in os.environ}
     if docker:
         tail += ["--docker", docker]
     if getattr(sys, "frozen", False):
         # The packaged desktop backend is one executable: it starts the server
         # when its first argument says so (desktop_main.py).
-        return McpLaunch(sys.executable, ["--computer-mcp", *tail])
+        return McpLaunch(sys.executable, ["--computer-mcp", *tail], child_env)
     return McpLaunch(
         sys.executable,
         ["-m", "app.computers.mcp_server", *tail],
-        {"PYTHONPATH": str(_backend_root()), "PYTHONDONTWRITEBYTECODE": "1"},
+        {"PYTHONPATH": str(_backend_root()), "PYTHONDONTWRITEBYTECODE": "1", **child_env},
     )
 
 
@@ -186,7 +189,25 @@ class DockerProvider:
         detail = self._inspect(spec.name)
         if detail is None:
             return Status("missing")
-        return _status_of(detail, spec)
+        status = _status_of(detail, spec)
+        if status.state == "running" and spec.kind == "desktop":
+            status.desktop_ready = self.desktop_ready(spec)
+        return status
+
+    def desktop_ready(self, spec: Spec) -> bool:
+        done = self._run(docker_cli.desktop_args(spec.name, spec.run_as, "od-ready"), 8)
+        return done.code == 0 and not done.timed_out
+
+    def screenshot(self, spec: Spec) -> bytes:
+        status = self.status(spec)
+        if status.state != "running":
+            raise ComputerError("Start the computer to see its screen.", "computer_not_running")
+        if not status.desktop_ready:
+            raise ComputerError("The desktop is starting.", "desktop_not_ready")
+        done = self._must(docker_cli.desktop_args(spec.name, spec.run_as, "od-shot", "--jpeg"), "capture the screen", 15)
+        if not done.raw.startswith(b"\xff\xd8"):
+            raise ComputerError("The desktop returned an invalid picture.", "desktop_not_ready")
+        return done.raw
 
     # -- lifecycle ---------------------------------------------------------------------
 
@@ -282,7 +303,7 @@ class DockerProvider:
         self._must(["rm", "-f", name], "remove the computer")
 
     def mcp_launch(self, spec: Spec, grants_dir: Path, state_dir: Path) -> McpLaunch:
-        return mcp_launch_for(spec.name, spec.run_as, grants_dir, state_dir, self._docker or docker_cli.docker_executable())
+        return mcp_launch_for(spec.name, spec.run_as, grants_dir, state_dir, self._docker or docker_cli.docker_executable(), spec.kind)
 
 
 def _status_of(detail: dict, spec: Spec) -> Status:

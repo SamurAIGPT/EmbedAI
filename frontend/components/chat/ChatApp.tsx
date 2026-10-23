@@ -28,6 +28,10 @@ import { Drawer } from "@/components/ui/Drawer";
 import { SIDEBAR_AND_PANEL_FIT, SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-media-query";
 import { t } from "@/lib/i18n";
 import { chatHref, parsePanel, type Panel } from "@/lib/panel";
+import { RoomList } from "./RoomList";
+import { RoomView } from "./RoomView";
+import { TeamPanel } from "./TeamPanel";
+import { parseRoom, roomHref } from "@/lib/rooms";
 import { useThreadStream } from "./useThreadStream";
 
 const LIST_REFRESH_MS = 15_000;
@@ -98,6 +102,8 @@ export function ChatApp() {
   const router = useRouter();
   const params = useSearchParams();
   const threadId = parseThreadId(params.get("thread"));
+  const roomId = parseRoom(params.get("room"));
+  const [teamOpen, setTeamOpen] = useState(false);
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
   // Bumped by "Check again": Claude may have been installed or signed in since.
@@ -552,6 +558,7 @@ export function ChatApp() {
       }}
       onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
       onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
+      collaboration={ready ? <RoomList selected={roomId} onTeam={() => setTeamOpen(true)} onNavigate={() => setDrawerOpen(false)} /> : undefined}
       onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
       onNavigate={() => { setDrawerOpen(false); setModelDraft(null); }}
     />
@@ -647,6 +654,8 @@ export function ChatApp() {
           onClose={() => setApprovalsOpen(false)}
         />
       )}
+      {teamOpen && agents !== null && <TeamPanel agents={agents} onClose={() => setTeamOpen(false)} onChanged={() => setAgentTick(value => value + 1)} />}
+      {roomId !== null && agents !== null && <RoomView key={roomId} roomId={roomId} agents={agents} onClose={() => router.push("/chat")} onSelect={id => router.replace(roomHref(id))} />}
       {routinesOpen && agents !== null && (
         <RoutinesPanel agents={agents} onClose={() => setRoutinesOpen(false)} />
       )}

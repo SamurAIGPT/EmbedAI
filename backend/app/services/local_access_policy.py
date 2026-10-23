@@ -12,6 +12,7 @@ import ipaddress
 from typing import Protocol
 
 from fastapi import Depends, HTTPException, Request
+from starlette.requests import HTTPConnection
 
 from app.auth.middleware import principal_of
 from app.core.config import settings
@@ -46,7 +47,7 @@ def _issue_grant() -> LocalAccessGrant:
 
 
 class LocalAccessPolicy(Protocol):
-    def authorize(self, request: Request) -> LocalAccessGrant:
+    def authorize(self, request: HTTPConnection) -> LocalAccessGrant:
         """Return a grant or raise LocalAccessDenied."""
         ...
 
@@ -74,7 +75,7 @@ class LoopbackPolicy:
     """The web build: the machine's own browser, or a session the auth
     middleware authenticated (a signed-in owner or a paired device)."""
 
-    def authorize(self, request: Request) -> LocalAccessGrant:
+    def authorize(self, request: HTTPConnection) -> LocalAccessGrant:
         if not settings.LOCAL_EXECUTION_ENABLED:
             raise LocalAccessDenied(
                 "Local execution is disabled. Set LOCAL_EXECUTION_ENABLED=true on the "

@@ -19,6 +19,8 @@ import {
   UserMessage,
 } from "./items";
 
+import { DelegationCard, AgentCreatedCard } from "./TeamCards";
+
 const STICK_DISTANCE_PX = 80;
 
 // Says the few things worth hearing (an approval waiting, a finished answer, a failure) once,
@@ -115,6 +117,10 @@ export function Conversation({
 
           {groupToolRuns(transcript.items).map((item) => {
             switch (item.kind) {
+              case "team_job":
+                return <DelegationCard key={item.key} item={item} />;
+              case "agent_created":
+                return <AgentCreatedCard key={item.key} item={item} />;
               case "tool_run":
                 return <ToolRun key={item.key} tools={item.tools as Extract<TranscriptItem, { kind: "tool" }>[]} />;
               case "user":

@@ -26,6 +26,7 @@ class SearchHitResponse(BaseModel):
     highlights: list[list[int]]
     seq: int | None
     turn_id: int | None
+    room_id: int | None = None
 
 
 class SearchResponse(BaseModel):
@@ -53,6 +54,7 @@ async def search(
     since: str | None = None,
     until: str | None = None,
     include_archived: bool = False,
+    include_delegated: bool = False,
     limit: int = Query(40, ge=1, le=100),
     rt: ThreadRuntime = Depends(get_runtime),
 ):
@@ -68,6 +70,7 @@ async def search(
             since=start,
             until=end,
             include_archived=include_archived,
+            include_delegated=include_delegated,
             limit=limit,
         )
     return SearchResponse(query=q, hits=[SearchHitResponse(**vars(hit)) for hit in hits])

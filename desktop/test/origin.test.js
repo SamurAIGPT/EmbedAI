@@ -57,7 +57,7 @@ test("the session is told to add the header only to requests for the backend's a
     ORIGIN,
     TOKEN,
   );
-  assert.deepEqual(filter, { urls: [`${ORIGIN}/*`] });
+  assert.deepEqual(filter, { urls: [`${ORIGIN}/*`, `${ORIGIN.replace(/^http/, "ws")}/*`] });
   let sent;
   handler({ url: `${ORIGIN}/api/v1/threads`, requestHeaders: {} }, (result) => (sent = result));
   assert.equal(sent.requestHeaders[HEADER], TOKEN);
@@ -100,4 +100,9 @@ test("no new windows, no embedded views, no permissions", () => {
     permissions.handler({}, permission, (value) => (granted = value));
     assert.equal(granted, false, permission);
   }
+});
+
+test("launch token covers matching WebSockets only", () => {
+  assert.equal(withToken({ url: "ws://127.0.0.1:51234/api/v1/computers/1/viewer", requestHeaders:{} }, ORIGIN, TOKEN)[HEADER],TOKEN);
+  for (const url of ["ws://127.0.0.1:51235/x", "wss://127.0.0.1:51234/x", "ws://evil.example/x"]) assert.equal(HEADER in withToken({url,requestHeaders:{}},ORIGIN,TOKEN),false);
 });

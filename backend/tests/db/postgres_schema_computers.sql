@@ -3,6 +3,7 @@ CREATE TABLE computer (
 	owner_id VARCHAR NOT NULL, 
 	agent_id BIGINT NOT NULL, 
 	provider VARCHAR DEFAULT 'docker' NOT NULL, 
+	kind VARCHAR DEFAULT 'shell' NOT NULL, 
 	image VARCHAR NOT NULL, 
 	image_id VARCHAR, 
 	cpu_millis INTEGER DEFAULT '1000' NOT NULL, 

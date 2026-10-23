@@ -495,6 +495,7 @@ def build_args(
     model: str | None = None,
     system_prompt: str | None = None,
     computer=None,
+    mcp_servers: dict | None = None,
 ) -> list[str]:
     # The prompt goes in on stdin, never on the command line. `resume` continues
     # the conversation that already holds `session_id`; otherwise the CLI is
@@ -513,7 +514,7 @@ def build_args(
         common += ["--model", model]
     if system_prompt:
         common += ["--append-system-prompt", system_prompt]
-    if not tools and computer is None:
+    if not tools and computer is None and not mcp_servers:
         return [*common, "--output-format", "stream-json", *LOCKDOWN_ARGS]
     # Only the tools path has a permission mode to choose; chat-only runs stay
     # locked down. `None` keeps the CLI's `default` (ask about everything).
@@ -521,8 +522,22 @@ def build_args(
     tools_args[tools_args.index("--permission-mode") + 1] = cli_permission_mode(approval_mode)
     if computer is not None:
         tools_args[tools_args.index("--tools") + 1] = ""
-        tools_args += ["--mcp-config", computer_mcp_config(computer)]
+    servers = dict(mcp_servers or {})
+    if computer is not None:
+        servers[COMPUTER_SERVER] = computer
+    if servers:
+        tools_args += ["--mcp-config", mcp_config(servers)]
     return [*common, "--output-format", "stream-json", *tools_args]
+
+
+def mcp_config(servers: dict) -> str:
+    config = {}
+    for name, launch in servers.items():
+        server = {"type": "stdio", "command": launch.command, "args": list(launch.args)}
+        if launch.env:
+            server["env"] = dict(launch.env)
+        config[name] = server
+    return json.dumps({"mcpServers": config}, ensure_ascii=False)
 
 
 def computer_mcp_config(launch) -> str:
@@ -613,6 +628,7 @@ def _run_blocking(
     model: str | None = None,
     system_prompt: str | None = None,
     computer=None,
+    mcp_servers: dict | None = None,
     images: list[dict] | None = None,
 ) -> RunOutput:
     if workspace is not None:
@@ -633,6 +649,9 @@ def _run_blocking(
     if computer is not None:
         tools = True
         extra["computer"] = computer  # unset: build_args behaves as before
+    if mcp_servers:
+        tools = True
+        extra["mcp_servers"] = mcp_servers
     args = (
         build_args(executable, session_id, tools=True, **extra)
         if tools
@@ -667,6 +686,7 @@ async def run_prompt(
     model: str | None = None,
     system_prompt: str | None = None,
     computer=None,
+    mcp_servers: dict | None = None,
     images: list[dict] | None = None,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
@@ -689,5 +709,6 @@ async def run_prompt(
         model,
         system_prompt,
         computer,
+        mcp_servers,
         images,
     )

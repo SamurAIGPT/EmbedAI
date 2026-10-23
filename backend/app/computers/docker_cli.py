@@ -23,6 +23,9 @@ DEFAULT_IMAGE = (
     "@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258"
 )
 
+DESKTOP_IMAGE = "open-dots-desktop:local"
+COMPUTER_KINDS = ("shell", "desktop")
+
 GUEST_WORKSPACE = "/workspace"
 GUEST_HOME = "/tmp/home"
 
@@ -66,6 +69,8 @@ class Spec:
     network: str = "none"
     # uid:gid the agent's commands run as; None: this process's own ids.
     user: str | None = None
+    kind: str = "shell"
+    shm_mb: int = 0
 
     @property
     def name(self) -> str:
@@ -113,11 +118,17 @@ def fingerprint(spec: Spec) -> str:
     """What cannot change on a running container. A container whose label
     differs must be recreated for a change to apply."""
     text = "\n".join([spec.image, spec.workspace, spec.network, spec.run_as])
+    if spec.kind != "shell" or spec.shm_mb:
+        text += f"\n{spec.kind}\n{spec.shm_mb}"
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def validate(spec: Spec) -> Spec:
     check_image(spec.image)
+    if spec.kind not in COMPUTER_KINDS:
+        raise InvalidSpec("kind must be shell or desktop")
+    if spec.shm_mb != 0 and not 64 <= spec.shm_mb <= 4096:
+        raise InvalidSpec("shared memory must be between 64 and 4096 MB")
     container_name(spec.instance, spec.computer_id)
     if not Path(spec.workspace).is_absolute():
         raise InvalidSpec("the workspace must be an absolute path")
@@ -143,7 +154,7 @@ def run_args(spec: Spec) -> list[str]:
     agent's workspace), and a non-root user. It sleeps until told otherwise;
     every command is a `docker exec`."""
     validate(spec)
-    return [
+    args = [
         "run", "-d",
         "--name", spec.name,
         "--hostname", "computer",
@@ -169,6 +180,21 @@ def run_args(spec: Spec) -> list[str]:
         spec.image,
         "sleep", "infinity",
     ]
+
+    if spec.kind == "desktop":
+        args[args.index(f"HOME={GUEST_HOME}")] = "HOME=/home/agent"
+        args[-2:] = ["od-desktop"]
+        pos = args.index(spec.image)
+        args[pos:pos] = ["--shm-size", f"{spec.shm_mb or 512}m", "-e", "DISPLAY=:1", "-e", "USER=agent"]
+    return args
+
+
+def desktop_args(name: str, user: str, *command: str) -> list[str]:
+    return ["exec", "-u", user, "-e", "DISPLAY=:1", "-e", "HOME=/home/agent", check_name(name), *command]
+
+
+def rfb_args(name: str, user: str) -> list[str]:
+    return ["exec", "-i", "-u", user, check_name(name), "socat", "-", "TCP:127.0.0.1:5900"]
 
 
 def update_args(name: str, cpus: float, memory_mb: int, pids_limit: int) -> list[str]:

@@ -14,7 +14,11 @@ export type TurnEndStatus = "completed" | "failed" | "cancelled" | "interrupted"
 // A file attached to a message: metadata only, the bytes are fetched by id.
 export type AttachmentRef = { id: string; name: string; mime: string; bytes: number; kind: string };
 
+export type TeamJobItem = { kind: "team_job"; key: string; turnId: number | null; jobId: number; agentId: number; threadId: number | null; mode: string; brief: string; status: string; result: string; outcome: string };
+
 export type TranscriptItem =
+  | TeamJobItem
+  | { kind: "agent_created"; key: string; turnId: number | null; agentId: number; name: string; title: string }
   | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[] }
   | {
       kind: "assistant";
@@ -338,6 +342,26 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
           },
         ],
       };
+
+    case "team.agent.created": {
+      if (typeof data.agent_id !== "number") return base;
+      return { ...base, items: [...state.items, { kind: "agent_created", key, turnId: id, agentId: data.agent_id, name: text(data.name), title: text(data.title) }] };
+    }
+
+    case "team.job.started":
+    case "team.job.updated":
+    case "team.job.finished": {
+      if (typeof data.job_id !== "number") return base;
+      const previous = state.items.find((item): item is TeamJobItem => item.kind === "team_job" && item.jobId === data.job_id);
+      const item: TeamJobItem = {
+        kind: "team_job", key: previous?.key ?? key, turnId: previous?.turnId ?? id,
+        jobId: data.job_id, agentId: typeof data.assignee_agent_id === "number" ? data.assignee_agent_id : previous?.agentId ?? 0,
+        threadId: typeof data.assignee_thread_id === "number" ? data.assignee_thread_id : previous?.threadId ?? null,
+        mode: text(data.mode) || previous?.mode || "work", brief: text(data.brief) || previous?.brief || "Delegated work",
+        status: text(data.status) || previous?.status || "queued", result: text(data.result_preview) || previous?.result || "", outcome: text(data.outcome) || previous?.outcome || "",
+      };
+      return { ...base, items: previous ? state.items.map(entry => entry === previous ? item : entry) : [...state.items, item] };
+    }
 
     case "context.compacted":
       return {

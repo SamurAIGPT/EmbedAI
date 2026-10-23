@@ -11,6 +11,7 @@ from app.db.types import BigIntPK, UTCDateTime
 # machine is removed and the row goes only after, so a removal interrupted by
 # a crash or a stopped Docker is finished later instead of leaving an orphan.
 COMPUTER_STATES = ("missing", "creating", "running", "stopped", "error", "deleting")
+COMPUTER_KINDS = ("shell", "desktop")
 COMPUTER_PROVIDERS = ("docker",)
 COMPUTER_NETWORKS = ("none", "default")
 
@@ -36,6 +37,7 @@ class Computer(Base):
     provider: Mapped[str] = mapped_column(
         String, nullable=False, default="docker", server_default="docker"
     )
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="shell", server_default="shell")
     image: Mapped[str] = mapped_column(String, nullable=False)
     # The image's content id when the machine was made, so a moved tag is noticed.
     image_id: Mapped[str | None] = mapped_column(String, nullable=True)

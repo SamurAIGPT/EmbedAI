@@ -26,6 +26,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
   const [mode, setMode] = useState<ApprovalMode>("ask");
   const [createAgent, setCreateAgent] = useState<boolean | null>(null);
   const [agentName, setAgentName] = useState("Assistant");
+  const [leadsTeam, setLeadsTeam] = useState(true);
   const [createdAgentId, setCreatedAgentId] = useState<number | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +70,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
           const saved = agentId === undefined ? await api.createAgent(input) : await api.updateAgent(agentId, input);
           agentId = saved.id;
           setCreatedAgentId(saved.id);
+          if (leadsTeam && provider === "claude") await api.requestTeamLead(saved.id);
         }
       }
       const completed = row("DESKTOP_ONBOARDING_COMPLETED");
@@ -100,6 +102,7 @@ export function DesktopSetup({ settings, onSaved, onFinished }: {
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={tools} disabled={busy} onChange={(event) => setTools(event.target.checked)} />Allow tools on this computer</label>
       <p className="text-xs text-muted">When off, local CLIs stay read only. API endpoints are chat only. Tool-capable engines use their own permissions and the app&apos;s approval cards.</p>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={createAgent === true} disabled={busy || createAgent === null} onChange={(event) => setCreateAgent(event.target.checked)} />Create a starter agent with the selected engine</label>
+      {createAgent && provider === "claude" && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={leadsTeam} disabled={busy} onChange={(event) => setLeadsTeam(event.target.checked)} />Leads a team: can create specialists and delegate with the team approval settings</label>}
       {createAgent && <label className="block text-sm">Agent name<input aria-label="Starter agent name" className={FIELD} maxLength={80} value={agentName} disabled={busy} onChange={(event) => setAgentName(event.target.value)} /></label>}
       <fieldset className="space-y-2" disabled={busy || !createAgent}><legend className="mb-2 text-sm font-medium">Starter agent approval mode</legend>{APPROVAL_MODES.map((option) => <label key={option.value} className="flex items-start gap-2 text-sm"><input type="radio" name="setup-approval" value={option.value} checked={mode === option.value} onChange={() => setMode(option.value)} /><span>{option.label}<span className="mt-1 block text-xs text-muted">{option.description}</span></span></label>)}</fieldset>
       {!createAgent && <p className="text-xs text-muted">Your existing agents keep their approval modes. Change them in Agents.</p>}

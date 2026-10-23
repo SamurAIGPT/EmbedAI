@@ -156,6 +156,9 @@ class TurnContext:
     # engine that has one: an ACP command, an endpoint and its key. Never
     # logged, stored in events or returned by the API.
     engine_config: dict | None = None
+    team: object | None = None
+    team_launch: object | None = None
+    hold_clock: Callable[[], Callable[[], None]] | None = None
     # Images attached to this message, as {"path", "mime", "name"}. Only ever
     # set for an engine whose capabilities include `images`; attached text
     # files are already folded into `prompt`.

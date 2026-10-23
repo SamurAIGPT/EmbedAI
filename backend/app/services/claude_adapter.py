@@ -75,6 +75,11 @@ _KINDS = {
     COMPUTER_TOOL_PREFIX + "list_files": "file_read",
 }
 
+from app.computers.policy import SCREEN_INPUT, SCREEN_READ
+_KINDS.update({tool: "screen_input" for tool in SCREEN_INPUT})
+_KINDS.update({tool: "screen_read" for tool in SCREEN_READ})
+_KINDS.update({"mcp__team__ask_agent": "delegate", "mcp__team__create_agent": "create_agent", "mcp__team__say_in_room": "room_post"})
+
 DENY_NO_PERMIT = "The approval could not be handed to the computer, so this action was not allowed."
 
 _DENY_MESSAGES = {
@@ -175,7 +180,7 @@ class ClaudeAdapter:
             )
         # A computer is the agent's sandbox: its turns always have tools, and
         # they are the computer's tools only.
-        tools = app_settings.get("LOCAL_TOOLS_ENABLED") or ctx.computer is not None
+        tools = app_settings.get("LOCAL_TOOLS_ENABLED") or ctx.computer is not None or ctx.team_launch is not None
         attempt = await self._attempt(ctx, sink, gate, resume=ctx.resume, tools=tools)
         if attempt.already_in_use and not attempt.resume and not ctx.aborted:
             attempt = await self._attempt(ctx, sink, gate, resume=True, tools=tools)
@@ -197,6 +202,10 @@ class ClaudeAdapter:
         attempt = _Attempt(resume=resume, normalizer=normalizer)
         control = local_claude_runner.RunControl()
         ctx.on_abort(control.kill)
+        def hold_clock():
+            control.pause_deadline()
+            return control.resume_deadline
+        ctx.hold_clock = hold_clock
         queue: asyncio.Queue = asyncio.Queue()
         answering: set[asyncio.Task] = set()
         tools_by_request: dict[str, str] = {}
@@ -326,6 +335,8 @@ class ClaudeAdapter:
         if ctx.computer is not None:
             notes.append(ctx.computer.prompt_note())
             extra["computer"] = ctx.computer.launch
+        if ctx.team_launch is not None:
+            extra["mcp_servers"] = {"team": ctx.team_launch}
         if notes:
             extra["system_prompt"] = "\n\n".join(notes)
         if ctx.images:

@@ -81,7 +81,7 @@ elif command == "run":
     i = 0
     flags_with_value = {
         "--name", "--hostname", "--label", "--user", "--cap-drop", "--security-opt", "--cpus", "--memory",
-        "--memory-swap", "--pids-limit", "--ipc", "--restart", "--network", "--tmpfs", "-e", "--mount", "-w",
+        "--memory-swap", "--shm-size", "--pids-limit", "--ipc", "--restart", "--network", "--tmpfs", "-e", "--mount", "-w",
     }
     while i < len(rest):
         flag = rest[i]
@@ -179,6 +179,19 @@ elif command == "exec":
         fail(f"Error response from daemon: No such container: {name}")
     if not container["inspect"]["State"]["Running"]:
         fail(f"Error response from daemon: container {name} is not running")
+    if cmd == ["od-ready"]:
+        sys.exit(1 if (base / "desktop-not-ready").exists() else 0)
+    if cmd and cmd[0] == "od-shot":
+        import base64
+        if "--jpeg" in cmd:
+            sys.stdout.buffer.write(b"\xff\xd8fake-jpeg\xff\xd9")
+        else:
+            sys.stdout.buffer.write(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lC8AAAAASUVORK5CYII="))
+        sys.exit(0)
+    if cmd and cmd[0] == "xdotool":
+        with (base / "screen-actions.jsonl").open("a") as f:
+            f.write(json.dumps(cmd[1:])+"\n")
+        sys.exit(0)
     if cmd[:2] == ["timeout", "-k"]:
         cmd = cmd[4:]
     mount = next((m for m in container["inspect"]["Mounts"] if m["Destination"] == "/workspace"), None)

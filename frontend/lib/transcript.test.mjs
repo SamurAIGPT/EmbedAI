@@ -332,3 +332,19 @@ test('a stopped answer keeps its partial text, marked unfinished, in order', () 
   assert.equal(t.items[1].incomplete, true);
   assert.equal(t.items[2].status, 'cancelled');
 });
+
+test('delegation events update one replay-safe card and keep its original brief', () => {
+  reset();
+  const started=ev('team.job.started',{job_id:7,assignee_agent_id:3,brief:'Review patch',status:'queued',mode:'consult'});
+  const finished=ev('team.job.finished',{job_id:7,assignee_thread_id:8,status:'completed',outcome:'done',result_preview:'Reviewed'});
+  const state=run([started,finished]);
+  assert.equal(state.items.length,1); assert.equal(state.items[0].brief,'Review patch');
+  assert.equal(state.items[0].status,'completed'); assert.equal(state.items[0].threadId,8);
+  assert.equal(applyEvent(state,finished),state);
+  assert.equal(run([ev('team.job.updated',{job_id:8,status:'needs_input'})]).items[0].status,'needs_input');
+});
+test('model-created specialist events have durable identity and malformed events only advance the cursor', () => {
+  reset();
+  const state=run([ev('team.agent.created',{agent_id:3,name:'Reviewer'}),ev('team.job.started',{job_id:'invalid'})]);
+  assert.equal(state.items.length,1); assert.equal(state.items[0].agentId,3); assert.equal(state.lastSeq,2);
+});

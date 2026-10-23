@@ -28,6 +28,8 @@ export function decisionText(entry: DecisionEntry): string {
     case "denied":
       return entry.source === "plan_mode" ? `${what} was refused: plan only changes nothing` : `You denied ${what}`;
     case "auto_allowed":
+      if (entry.source === "screen_turn_grant") return `${what} ran with your screen permission for this turn`;
+      if (entry.source === "computer_screen_read") return `${what} ran without asking: reading the computer screen`;
       if (entry.source === "computer_read") return `${what} ran without asking: reading inside the agent's computer`;
       if (entry.source === "accept_edits") return `${what} ran without asking: edits are accepted for this agent`;
       return `${what} ran without asking: a saved rule allowed it`;
@@ -79,4 +81,8 @@ const ISSUE_KIND: Record<SentinelIssue["kind"], string> = {
 
 export function issueKindLabel(kind: string): string {
   return ISSUE_KIND[kind as SentinelIssue["kind"]] ?? kind;
+}
+
+export function isScreenInput(tool: string): boolean {
+  return /^mcp__computer__(click|double_click|move|drag|type|key|scroll)$/.test(tool);
 }

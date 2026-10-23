@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-from app.computers import docker_cli, grants
+from app.computers import docker_cli, grants, screen
 
 PROTOCOL_VERSION = "2025-06-18"
 LAST_COMMAND_FILE = "last-command.json"
@@ -85,12 +85,14 @@ _TOOL_NAMES = {tool["name"] for tool in TOOLS}
 
 
 class Server:
-    def __init__(self, container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None) -> None:
+    def __init__(self, container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None, kind: str = "shell", turn_id: str = "", max_actions: int = 300) -> None:
         self.container = docker_cli.check_name(container)
         self.user = user
         self.grants_dir = grants_dir
         self.state_dir = state_dir
         self.docker = docker
+        self.kind = kind
+        self.screen = screen.Screen(self, turn_id or str(grants_dir), max_actions)
 
     # -- protocol ----------------------------------------------------------------------
 
@@ -110,7 +112,7 @@ class Server:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": TOOLS}
+                result = {"tools": TOOLS + (screen.TOOLS if self.kind == "desktop" else [])}
             elif method == "tools/call":
                 result = self.call(params.get("name"), params.get("arguments") or {})
             else:
@@ -122,15 +124,19 @@ class Server:
     # -- tools -------------------------------------------------------------------------
 
     def call(self, name: object, arguments: object) -> dict:
-        if name not in _TOOL_NAMES:
+        if name not in _TOOL_NAMES and not (self.kind == "desktop" and name in screen.DEFINITIONS):
             return _text("Unknown computer tool.", error=True)
         if not isinstance(arguments, dict):
             return _text("Tool arguments must be an object.", error=True)
-        problem = _argument_problem(name, arguments)
+        problem = screen.validate(name, arguments) if name in screen.DEFINITIONS else _argument_problem(name, arguments)
         if problem:
             return _text(problem, error=True)
         if not grants.consume(self.grants_dir, name, arguments):
             return _text(NOT_APPROVED, error=True)
+        if name not in ("read_file", "list_files") and screen.held(self.state_dir):
+            return _text(screen.CONTROL_REFUSAL, error=True)
+        if name in screen.DEFINITIONS:
+            return self.screen.run(name, arguments)
         return getattr(self, f"_{name}")(arguments)
 
     def _exec(self, args: dict) -> dict:
@@ -138,8 +144,12 @@ class Server:
         cwd = args.get("cwd")
         if cwd is not None:
             docker_cli.check_guest_path(cwd)
+        command = docker_cli.exec_args(self.container, args["command"], seconds, self.user, cwd=cwd)
+        if self.kind == "desktop":
+            command[command.index(f"HOME={docker_cli.GUEST_HOME}")] = "HOME=/home/agent"
+            command[1:1] = ["-e", "DISPLAY=:1"]
         done = docker_cli.run(
-            docker_cli.exec_args(self.container, args["command"], seconds, self.user, cwd=cwd),
+            command,
             timeout=seconds + 20,
             docker=self.docker,
         )
@@ -235,9 +245,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--grants", required=True)
     parser.add_argument("--state", required=True)
     parser.add_argument("--docker", default=None)
+    parser.add_argument("--kind", choices=docker_cli.COMPUTER_KINDS, default="shell")
+    parser.add_argument("--turn-id", default="")
+    parser.add_argument("--max-screen-actions", type=int, default=300)
     options = parser.parse_args(argv)
     try:
-        server = Server(options.container, options.user, Path(options.grants), Path(options.state), options.docker)
+        server = Server(options.container, options.user, Path(options.grants), Path(options.state), options.docker, options.kind, options.turn_id, options.max_screen_actions)
     except docker_cli.InvalidSpec as exc:
         sys.stderr.write(f"invalid computer connection: {exc}\n")
         return 2

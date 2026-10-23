@@ -89,9 +89,11 @@ async def get_thread(db: AsyncSession, thread_id: int) -> Thread | None:
 
 
 async def list_threads(
-    db: AsyncSession, owner_id: str, *, include_archived: bool = False, limit: int = 100
+    db: AsyncSession, owner_id: str, *, include_archived: bool = False, limit: int = 100, kind: str = "chat"
 ) -> list[Thread]:
     query = select(Thread).where(Thread.owner_id == owner_id)
+    if kind != "all":
+        query = query.where(Thread.kind == kind)
     if not include_archived:
         query = query.where(Thread.archived_at.is_(None))
     query = query.order_by(Thread.updated_at.desc(), Thread.id.desc()).limit(limit)
@@ -345,6 +347,9 @@ async def create_thread(
     title: str | None = None,
     workspace_path: str | None = None,
     agent_id: int | None = None,
+    kind: str = "chat",
+    job_id: int | None = None,
+    room_id: int | None = None,
 ) -> Thread:
     if not provider.strip():
         raise ValueError("provider is required")
@@ -365,7 +370,7 @@ async def create_thread(
         session_state=session_state,
         provider_state=provider_state,
         workspace_path=workspace_path,
-        agent_id=agent_id,
+        agent_id=agent_id, kind=kind, job_id=job_id, room_id=room_id,
     )
     db.add(thread)
     await db.flush()

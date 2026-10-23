@@ -83,6 +83,18 @@ class Settings(BaseSettings):
     LOCAL_CODEX_CLI_PATH: str = ""
     # Working directory for local runs. Empty means ~/.open-dots/local.
     LOCAL_WORKSPACE_ROOT: str = ""
+    TEAM_ENABLED: bool = True
+    TEAM_LEAD_AUTO: bool = True
+    TEAM_MAX_CREATED_PER_TURN: int = 4
+    TEAM_MAX_AGENTS: int = 50
+    TEAM_MAX_DEPTH: int = 3
+    TEAM_MAX_CHILDREN_PER_TURN: int = 8
+    TEAM_MAX_JOBS_PER_ROOT: int = 24
+    TEAM_MAX_EXECUTIONS_PER_ROOT: int = 48
+    TEAM_MAX_PARALLEL: int = 3
+    TEAM_JOB_WAIT_SECONDS: int = 900
+    TEAM_JOB_QUEUE_SECONDS: int = 600
+    ROOM_CHAIN_DEPTH: int = 2
     LOCAL_TASK_TIMEOUT_SECONDS: int = 300
     LOCAL_MAX_OUTPUT_BYTES: int = 1_000_000
     # Stored as a desktop preference; headless installs do not run the wizard.

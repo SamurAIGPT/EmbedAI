@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useId, useState } from "react";
-import { api, ApiError, type Agent, type Computer, type ComputerHealth, type ComputerNetwork } from "@/lib/api";
+import { api, ApiError, type Agent, type Computer, type ComputerHealth, type ComputerNetwork, type ComputerKind } from "@/lib/api";
+import { LiveDesktop } from "./LiveDesktop";
+import { DesktopPicture } from "./DesktopPicture";
 import {
   ACTION_LABEL,
   NETWORK_MODES,
@@ -63,6 +65,8 @@ export function ComputerView({
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [limits, setLimits] = useState<Limits | null>(null);
+  const [kind, setKind] = useState<ComputerKind>("shell");
+  const [advanced, setAdvanced] = useState(false);
   const [network, setNetwork] = useState<ComputerNetwork>("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +146,16 @@ export function ComputerView({
           <p className="text-warning">Docker is not available: {docker.error}</p>
         )}
         <fieldset className="space-y-1">
+          <legend className="text-xs text-muted">Computer</legend>
+          {(["shell", "desktop"] as const).map((value) => (
+            <label key={value} className="mr-4 inline-flex items-center gap-2">
+              <input type="radio" name="kind" checked={kind === value} onChange={() => setKind(value)} />
+              {value === "shell" ? "Shell only" : "Desktop"}
+            </label>
+          ))}
+          {kind === "desktop" && <p className="text-xs text-muted">Linux desktop with a browser. Build the image locally first; see docs/DESKTOP-IMAGE.md. The first build downloads several hundred MB.</p>}
+        </fieldset>
+        <fieldset className="space-y-1">
           <legend className="text-xs text-muted">Network</legend>
           {NETWORK_MODES.map((mode) => (
             <label key={mode.value} className="flex cursor-pointer items-start gap-2 text-xs">
@@ -152,6 +166,7 @@ export function ComputerView({
             </label>
           ))}
         </fieldset>
+        {kind === "desktop" && network === "default" && <p className="text-xs text-warning">The browser can reach this machine&apos;s network, including your LAN and cloud metadata addresses. Use No network unless you need the internet.</p>}
         {!createGate.enabled && (
           <p id={capabilityHelpId} className="text-xs text-warning">
             {createGate.reason}
@@ -161,7 +176,7 @@ export function ComputerView({
           disabled={busy || !createGate.enabled}
           aria-describedby={!createGate.enabled ? capabilityHelpId : undefined}
           className={PRIMARY}
-          onClick={() => act(() => api.createAgentComputer(agent.id, { network }))}
+          onClick={() => act(() => api.createAgentComputer(agent.id, { network, kind }))}
         >
           {busy ? "Working…" : "Give it a computer"}
         </button>
@@ -189,6 +204,7 @@ export function ComputerView({
   return (
     <div className="space-y-3 text-sm">
       {alert}
+      {computer.kind === "desktop" && <><DesktopPicture computer={computer} /><LiveDesktop computerId={computer.id} /></>}
       <div className="rounded-md border border-line p-3">
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{computerStateLabel(state)}</span>
@@ -250,6 +266,8 @@ export function ComputerView({
         )}
       </div>
 
+      <button className={SMALL} aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>Advanced</button>
+      {advanced && <>
       <form
         className="grid grid-cols-2 gap-2"
         onSubmit={(event) => {
@@ -323,6 +341,7 @@ export function ComputerView({
           </button>
         )}
       </div>
+      </>}
     </div>
   );
 }

@@ -18,7 +18,7 @@ MIN_QUERY_CHARS = 2
 MAX_TERMS = 6
 SNIPPET_BEFORE = 60
 SNIPPET_AFTER = 100
-MESSAGE_TYPES = {"turn.started": "user", "assistant.message": "assistant"}
+MESSAGE_TYPES = {"turn.started": "user", "assistant.message": "assistant", "room.message": "assistant"}
 
 
 @dataclass
@@ -33,6 +33,7 @@ class SearchHit:
     highlights: list[list[int]] = field(default_factory=list)
     seq: int | None = None
     turn_id: int | None = None
+    room_id: int | None = None
 
 
 def query_terms(query: str) -> list[str]:
@@ -91,6 +92,7 @@ async def search(
     since: datetime | None = None,
     until: datetime | None = None,
     include_archived: bool = False,
+    include_delegated: bool = False,
     limit: int = 40,
 ) -> list[SearchHit]:
     terms = query_terms(query)
@@ -98,7 +100,9 @@ async def search(
         return []
 
     def scoped(statement, at_column):
-        statement = statement.where(Thread.owner_id == owner_id)
+        statement = statement.where(Thread.owner_id == owner_id, Thread.kind != "room_member")
+        if not include_delegated:
+            statement = statement.where(Thread.kind != "job")
         if not include_archived:
             statement = statement.where(Thread.archived_at.is_(None))
         if agent_id is not None:
@@ -139,7 +143,7 @@ async def search(
         snippet, spans = make_snippet(body, terms)
         hits.append(
             SearchHit(
-                thread_id=thread.id,
+                thread_id=thread.id, room_id=thread.room_id,
                 thread_title=thread.title,
                 agent_id=thread.agent_id,
                 archived=thread.archived_at is not None,
@@ -160,7 +164,7 @@ async def search(
         snippet, spans = make_snippet(thread.title or "", terms)
         hits.append(
             SearchHit(
-                thread_id=thread.id,
+                thread_id=thread.id, room_id=thread.room_id,
                 thread_title=thread.title,
                 agent_id=thread.agent_id,
                 archived=thread.archived_at is not None,
@@ -219,7 +223,7 @@ async def search_any(
         out.append(
             (
                 SearchHit(
-                    thread_id=thread.id,
+                    thread_id=thread.id, room_id=thread.room_id,
                     thread_title=thread.title,
                     agent_id=thread.agent_id,
                     archived=False,

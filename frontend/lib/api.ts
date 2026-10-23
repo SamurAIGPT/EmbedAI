@@ -377,7 +377,19 @@ export type ApprovalMode = "ask" | "accept_edits" | "plan";
 // their commands and file edits. Older backends never send these fields.
 export type ComputerNetwork = "none" | "default";
 
+export type ControlSnapshot = { held: boolean; since: number | null; viewers: number };
+export type TakeControl = ControlSnapshot & { owned: boolean; lease_id?: string; ticket?: string };
+export function desktopViewerUrl(id: number, ticket: string, pageUrl: string): string {
+  const url = new URL(`${API_BASE}/computers/${id}/viewer`, pageUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("ticket", ticket);
+  return url.toString();
+}
+
+export type ComputerKind = "shell" | "desktop";
+
 export type ComputerSummary = {
+  kind?: ComputerKind;
   id: number;
   provider: string;
   name: string;
@@ -784,6 +796,8 @@ export type AppNotification = {
 };
 
 export const api = {
+  roomExportUrl: (id: number, format: "md" | "json") => requestBlobUrl(`/rooms/${id}/export?format=${format}`),
+  requestTeamLead: (agentId: number) => request<{ id: number; lead_agent_id: number }>("/team/lead", { method: "POST", body: JSON.stringify({ agent_id: agentId }) }),
   getEngines: (refresh = false) => request<Engine[]>(`/engines${refresh ? "?refresh=true" : ""}`),
   saveEngineConfig: (engineId: string, config: EngineConfigInput) =>
     request<Engine>(`/engines/${encodeURIComponent(engineId)}/config`, { method: "PUT", body: JSON.stringify(config) }),
@@ -975,7 +989,13 @@ export const api = {
   getAgentComputer: (agentId: number) => request<Computer>(`/agents/${agentId}/computer`),
 
   // Idempotent: an agent that already has a computer gets it back unchanged.
-  createAgentComputer: (agentId: number, settings: ComputerSettings & { start?: boolean } = {}) =>
+  getComputerControl: (id: number) => request<ControlSnapshot>(`/computers/${id}/control`),
+  takeComputerControl: (id: number, leaseId?: string) => request<TakeControl>(`/computers/${id}/control`, { method: "POST", body: JSON.stringify({ action: "take", start: true, ...(leaseId ? { lease_id: leaseId } : {}) }) }),
+  releaseComputerControl: (id: number, leaseId: string) => request<ControlSnapshot>(`/computers/${id}/control`, { method: "POST", keepalive: true, body: JSON.stringify({ action: "release", lease_id: leaseId }) }),
+  computerControlHeartbeat: (id: number, leaseId: string) => request<void>(`/computers/${id}/control/heartbeat`, { method: "POST", body: JSON.stringify({ lease_id: leaseId }) }),
+  computerViewerTicket: (id: number, leaseId: string) => request<{ ticket: string }>(`/computers/${id}/viewer-ticket`, { method: "POST", body: JSON.stringify({ mode: "control", lease_id: leaseId }) }),
+  computerScreenshot: (id: number) => requestBlobUrl(`/computers/${id}/screenshot`),
+  createAgentComputer: (agentId: number, settings: ComputerSettings & { kind?: ComputerKind; start?: boolean } = {}) =>
     request<Computer>(`/agents/${agentId}/computer`, { method: "POST", body: JSON.stringify(settings) }),
 
   getComputer: (computerId: number) => request<Computer>(`/computers/${computerId}`),

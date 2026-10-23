@@ -148,6 +148,10 @@ class AgentResponse(BaseModel):
     updated_at: datetime
     # The agent's own computer (docs/COMPUTERS.md), or null: its turns then
     # run on this machine. Manage it under /agents/{id}/computer.
+    team_id: int | None = None
+    delegation_enabled: bool = True
+    created_by_agent_id: int | None = None
+    instructions_reviewed_at: datetime | None = None
     computer_id: int | None = None
     computer: ComputerSummary | None = None
 

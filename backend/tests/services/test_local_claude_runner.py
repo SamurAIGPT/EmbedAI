@@ -232,3 +232,26 @@ def test_build_args_asks_for_a_partial_message_stream_and_keeps_the_lockdown():
     assert args[args.index("--permission-mode") + 1] == "dontAsk"
     for flag in ("--strict-mcp-config", "--disable-slash-commands"):
         assert flag in args
+
+
+def test_many_inline_images_do_not_exhaust_the_text_budget(tmp_path):
+    script = (
+        "import json\n"
+        "block = {'type':'image','source':{'type':'base64','media_type':'image/png','data':'A' * 1000000}}\n"
+        "line = json.dumps({'type':'user','message':{'content':[{'type':'tool_result','content':[block]}]}})\n"
+        "for i in range(40): print(line, flush=True)\n"
+        "print(json.dumps({'type':'result','result':'done'}))\n"
+    )
+    sizes = []
+    out = run_lines(script, tmp_path=tmp_path, handler=lambda line: sizes.append(len(line)), cap=20_000)
+    assert out.exit_code == 0 and not out.output_truncated
+    assert sum(sizes) > 40_000_000
+
+
+def test_large_text_and_image_metadata_still_count(tmp_path):
+    script = (
+        "import json\n"
+        "print(json.dumps({'type':'user','message':{'content':[{'type':'image','source':{'type':'base64','data':'AAAA'},'text':'x'*40000000}]}}))\n"
+    )
+    out = run_lines(script, tmp_path=tmp_path, handler=lambda line: False, cap=20_000)
+    assert out.output_truncated

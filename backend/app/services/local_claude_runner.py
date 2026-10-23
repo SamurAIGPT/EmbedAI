@@ -82,6 +82,46 @@ _NOT_FOUND_DESKTOP = (
 # bookkeeping events, so the raw stream is allowed to be larger than the text
 # it carries. The text itself is capped separately, at LOCAL_MAX_OUTPUT_BYTES.
 RAW_STREAM_SIZE_FACTOR = 8
+# Binary results do not count as answer text, but the wire still has finite
+# limits so an unfinished or repeated image cannot exhaust the backend.
+MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
+MAX_RAW_STREAM_BYTES = 256 * 1024 * 1024
+
+
+def _stream_text_bytes(line: bytes) -> int:
+    """Charge protocol overhead and text, excluding inline image payloads."""
+    if b'"image"' not in line or b'"base64"' not in line:
+        return len(line)
+    try:
+        message = json.loads(line)
+    except (ValueError, RecursionError):
+        return len(line)
+    if not isinstance(message, dict) or message.get("type") not in ("user", "assistant"):
+        return len(line)
+    removed = 0
+
+    def visit(value):
+        nonlocal removed
+        if isinstance(value, dict):
+            source = value.get("source")
+            if value.get("type") == "image" and isinstance(source, dict) and source.get("type") == "base64":
+                data = source.get("data")
+                if isinstance(data, str) and data.isascii():
+                    # Keep all metadata and structure in the text budget.
+                    # Base64 has no escapes in ordinary stream-json output.
+                    removed += len(data)
+                    return
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    try:
+        visit(message)
+    except RecursionError:
+        return len(line)
+    return max(0, len(line) - removed)
 
 # Return True to stop the run (the process tree is killed and the run is
 # reported as having produced too much output).
@@ -358,6 +398,7 @@ def run_blocking(
 
     def drain_lines(stream) -> None:
         total = 0
+        raw_total = 0
         pending = b""
 
         def handle(line: bytes) -> bool:
@@ -372,19 +413,24 @@ def run_blocking(
             chunk = stream.read1(65536)
             if not chunk:
                 break
-            total += len(chunk)
-            if total > max_output_bytes:
+            raw_total += len(chunk)
+            if raw_total > MAX_RAW_STREAM_BYTES:
                 state["truncated"] = True
                 _kill_tree(proc)
                 return
             pending += chunk
             *lines, pending = pending.split(b"\n")
+            if len(pending) > MAX_STREAM_LINE_BYTES:
+                state["truncated"] = True
+                _kill_tree(proc)
+                return
             for line in lines:
-                if handle(line):
+                total += _stream_text_bytes(line) + 1
+                if len(line) > MAX_STREAM_LINE_BYTES or total > max_output_bytes or handle(line):
                     state["truncated"] = True
                     _kill_tree(proc)
                     return
-        if pending and handle(pending):
+        if pending and (total + _stream_text_bytes(pending) > max_output_bytes or handle(pending)):
             state["truncated"] = True
             _kill_tree(proc)
 

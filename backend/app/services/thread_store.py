@@ -614,7 +614,7 @@ async def finish_turn(
 
 
 # Events a turn stores that are not the engine's own work.
-NOT_ENGINE_EVENTS = ("turn.started", "memory.recalled", "context.compacted", "engine.switched", "approval.resolved")
+NOT_ENGINE_EVENTS = ("turn.started", "memory.recalled", "skill.used", "context.compacted", "engine.switched", "approval.resolved")
 
 # How far a turn cut by a crash or a stop had got (docs/RELIABILITY.md):
 # before_accept  the prompt never reached the engine: nothing ran, safe to send again;

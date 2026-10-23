@@ -29,6 +29,7 @@ from app.schemas.thread import (
     TurnResponse,
 )
 from app.services import approval_allowlist, attachments
+from app.services.agent_skills import SkillError
 from app.services.attachments import AttachmentError
 from app.services import thread_store as store
 from app.services.local_access_policy import require_local_access
@@ -215,8 +216,10 @@ async def send_turn(
         raise _error(409, thread.kind + "_thread", "Talk to this agent in the room.")
     try:
         return await rt.send_turn(
-            thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids
+            thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids, skills=payload.skills
         )
+    except SkillError as error:
+        raise _error(error.status, error.code, error.message)
     except AttachmentError as error:
         raise _error(error.status, error.code, error.message)
     except ImagesUnsupported as exc:

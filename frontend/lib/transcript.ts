@@ -25,7 +25,7 @@ export type TranscriptItem =
   | { kind: "team_notice"; key: string; turnId: number | null; tone: "incident" | "escalation" | "refused" | "retried"; text: string; threadId: number | null }
   | { kind: "team_setup"; key: string; turnId: number | null; requestId: string; undoAvailable: boolean; rows: { action: string; agentId: number; name: string }[] }
   | { kind: "agent_created"; key: string; turnId: number | null; agentId: number; name: string; title: string }
-  | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[] }
+  | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[]; skills?: string[] }
   | {
       kind: "assistant";
       key: string;
@@ -318,6 +318,16 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
         ...base,
         items: [...state.items, { kind: "session_reset", key, message: text(data.message) }],
       };
+
+    case "skill.used": {
+      // The skills the person picked for this turn's message, shown on that message.
+      const names = Array.isArray(data.names) ? data.names.filter((n): n is string => typeof n === "string") : [];
+      if (id === null || names.length === 0) return base;
+      return {
+        ...base,
+        items: state.items.map((item) => (item.kind === "user" && item.turnId === id ? { ...item, skills: names } : item)),
+      };
+    }
 
     case "memory.recalled": {
       const list = (value: unknown) => (Array.isArray(value) ? value.map(record) : []);

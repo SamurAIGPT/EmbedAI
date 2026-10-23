@@ -6,6 +6,7 @@ from app.routers.permission import router as permissions_router
 from app.routers.local import router as local_router
 from app.routers.providers import router as providers_router
 from app.routers.agents import router as agents_router
+from app.routers.agent_skills import router as agent_skills_router
 from app.routers.threads import router as threads_router
 from app.routers.settings import router as settings_router
 from app.routers.decisions import router as decisions_router
@@ -40,6 +41,7 @@ router.include_router(schedule_router)
 router.include_router(local_router)
 router.include_router(providers_router)
 router.include_router(agents_router)
+router.include_router(agent_skills_router)
 router.include_router(threads_router)
 router.include_router(settings_router)
 router.include_router(decisions_router)
@@ -53,6 +55,8 @@ router.include_router(search_router)
 router.include_router(attachments_router)
 router.include_router(workspace_files_router)
 router.include_router(usage_router)
+from app.routers.templates import router as templates_router
+router.include_router(templates_router)
 
 from app.routers.team import router as team_router
 from app.routers.rooms import router as rooms_router

@@ -1,3 +1,5 @@
+import type { SkillDoc, SkillPreview, SkillSave, SkillSummary } from "./skills";
+import type { TemplateCatalog, TemplateSkill } from "./templates";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -974,6 +976,17 @@ export const api = {
   updateAgent: (agentId: number, change: Partial<AgentInput> & { archived?: boolean }) =>
     request<Agent>(`/agents/${agentId}`, { method: "PATCH", body: JSON.stringify(change) }),
 
+  // Ready-made agents (/templates): a bundled, read-only catalog.
+  listTemplates: () => request<TemplateCatalog>("/templates"),
+
+  // A template's suggested skill, saved on the new agent after it exists. An older
+  // backend with no skills library answers 404.
+  installTemplateSkill: (agentId: number, templateId: string, skill: TemplateSkill) =>
+    request<unknown>(`/agents/${agentId}/skills/${encodeURIComponent(skill.name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ description: skill.description, body: skill.body, enabled: true, source: `template:${templateId}` }),
+    }),
+
   deleteAgent: (agentId: number) => request<void>(`/agents/${agentId}`, { method: "DELETE" }),
 
   // A copy with the same settings, named "<name> copy". Notes are not copied.
@@ -1089,16 +1102,31 @@ export const api = {
   deleteComputer: (computerId: number) =>
     request<{ removed: boolean }>(`/computers/${computerId}`, { method: "DELETE" }),
 
+  // An agent's saved skills (docs/SKILLS.md). Preview reads a pasted SKILL.md and saves nothing.
+  listSkills: (agentId: number) => request<SkillSummary[]>(`/agents/${agentId}/skills`),
+  getSkill: (agentId: number, name: string) =>
+    request<SkillDoc>(`/agents/${agentId}/skills/${encodeURIComponent(name)}`),
+  saveSkill: (agentId: number, name: string, body: SkillSave) =>
+    request<SkillDoc>(`/agents/${agentId}/skills/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteSkill: (agentId: number, name: string) =>
+    request<void>(`/agents/${agentId}/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  previewSkill: (agentId: number, markdown: string) =>
+    request<SkillPreview>(`/agents/${agentId}/skills/import`, { method: "POST", body: JSON.stringify({ markdown }) }),
+
   // 202 once the turn has started; its answer arrives on the stream. Errors with
   // a code: turn_running, session_broken, provider_unavailable (see ApiError.code).
   // `attachmentIds` from uploadAttachment. 422 images_unsupported: this
   // conversation's engine cannot read images.
-  sendTurn: (threadId: number, promptText: string, attachmentIds: string[] = []) =>
+  // `skills`: names of the agent's enabled skills the person picked for this message
+  // (at most 3); 422 skill_unavailable when one is missing or off.
+  sendTurn: (threadId: number, promptText: string, attachmentIds: string[] = [], skills: string[] = []) =>
     request<ThreadTurn>(`/threads/${threadId}/turns`, {
       method: "POST",
-      body: JSON.stringify(
-        attachmentIds.length ? { prompt_text: promptText, attachment_ids: attachmentIds } : { prompt_text: promptText }
-      ),
+      body: JSON.stringify({
+        prompt_text: promptText,
+        ...(attachmentIds.length ? { attachment_ids: attachmentIds } : {}),
+        ...(skills.length ? { skills } : {}),
+      }),
     }),
 
   // Stop the running answer. 202 once Claude was told to stop; the end arrives as

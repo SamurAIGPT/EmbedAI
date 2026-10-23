@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUp, Paperclip, Square } from "lucide-react";
+import { ArrowUp, Paperclip, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { MAX_SKILLS_PER_MESSAGE, skillCompletions, type SkillSummary } from "@/lib/skills";
 import { PendingAttachments } from "./Attachments";
 
 const MAX_HEIGHT_PX = 200;
@@ -26,6 +27,10 @@ export function Composer({
   attachNotice = null,
   focusRequested = false,
   onFocused,
+  skills,
+  chosenSkills = [],
+  onToggleSkill,
+  onSaveAsSkill,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -50,10 +55,25 @@ export function Composer({
   // New chat asks for the box to take focus; onFocused clears the request.
   focusRequested?: boolean;
   onFocused?: () => void;
+  // The agent's skills. With onToggleSkill the box offers a picker and `/name` completion;
+  // chosen ones are sent with the next message only. A skill never starts on its own.
+  skills?: SkillSummary[];
+  chosenSkills?: string[];
+  onToggleSkill?: (name: string) => void;
+  // Opens the skill editor seeded from this conversation. Sends and saves nothing.
+  onSaveAsSkill?: () => void;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const enabledSkills = (skills ?? []).filter((s) => s.enabled);
+  const completions = onToggleSkill ? skillCompletions(value, enabledSkills, chosenSkills) : [];
+  const pick = (name: string) => {
+    onToggleSkill?.(name);
+    if (value.startsWith("/")) onChange("");
+    box.current?.focus();
+  };
 
   useEffect(() => {
     if (!focusRequested) return;
@@ -100,6 +120,53 @@ export function Composer({
           {onRemoveFile && files.length > 0 && (
             <div className="px-2 pt-1"><PendingAttachments files={files} onRemove={onRemoveFile} disabled={sending} /></div>
           )}
+          {chosenSkills.length > 0 && onToggleSkill && (
+            <ul aria-label="Skills for this message" className="flex flex-wrap gap-1.5 px-2 pt-1">
+              {chosenSkills.map((name) => (
+                <li key={name} className="inline-flex max-w-full items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-0.5 pl-2.5 pr-1 text-xs text-ink">
+                  <Sparkles size={12} aria-hidden="true" className="shrink-0 text-accent" />
+                  <span className="truncate font-mono">{name}</span>
+                  <button type="button" onClick={() => onToggleSkill(name)} aria-label={`Remove skill ${name}`} className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-hover hover:text-ink">
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {completions.length > 0 && (
+            <ul role="listbox" aria-label="Skills" className="mx-2 mt-1 max-h-48 overflow-y-auto rounded-field border border-line bg-raised text-sm">
+              {completions.map((s, i) => (
+                <li key={s.name} role="option" aria-selected={i === 0}>
+                  <button type="button" onClick={() => pick(s.name)} className={cn("flex w-full min-w-0 cursor-pointer flex-col px-3 py-1.5 text-left hover:bg-hover", i === 0 && "bg-hover")}>
+                    <span className="font-mono text-xs">/{s.name}</span>
+                    <span className="truncate text-xs text-muted">{s.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {pickerOpen && onToggleSkill && (
+            <div role="group" aria-label="Pick skills" className="mx-2 mt-1 max-h-48 overflow-y-auto rounded-field border border-line bg-raised text-sm">
+              {enabledSkills.length === 0 ? (
+                <p className="px-3 py-2 text-xs text-muted">No skills are switched on for this agent. Add one in the agent&apos;s settings.</p>
+              ) : (
+                enabledSkills.map((s) => {
+                  const on = chosenSkills.includes(s.name);
+                  const full = !on && chosenSkills.length >= MAX_SKILLS_PER_MESSAGE;
+                  return (
+                    <label key={s.name} className={cn("flex min-w-0 items-start gap-2 px-3 py-1.5", full ? "opacity-50" : "cursor-pointer hover:bg-hover")}>
+                      <input type="checkbox" className="mt-1" checked={on} disabled={full} onChange={() => onToggleSkill(s.name)} />
+                      <span className="min-w-0">
+                        <span className="block font-mono text-xs">/{s.name}</span>
+                        <span className="block truncate text-xs text-muted">{s.description}</span>
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+              {enabledSkills.length > 0 && <p className="px-3 py-1 text-xs text-faint">Up to {MAX_SKILLS_PER_MESSAGE} per message, used for the next message only.</p>}
+            </div>
+          )}
           {dragging && <p className="px-3 pb-1 text-xs text-accent">Drop to attach</p>}
           <div className="flex items-end gap-1">
             {onAddFiles && (
@@ -129,6 +196,19 @@ export function Composer({
                 </button>
               </>
             )}
+            {onToggleSkill && (
+              <button
+                type="button"
+                onClick={() => setPickerOpen((open) => !open)}
+                disabled={sending}
+                aria-label="Pick skills"
+                aria-expanded={pickerOpen}
+                title="Use a saved skill for this message (or type / and a name)"
+                className={cn("inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition-colors duration-(--dur-fast) hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 touch:size-11", (pickerOpen || chosenSkills.length > 0) && "text-accent")}
+              >
+                <Sparkles size={18} aria-hidden="true" />
+              </button>
+            )}
             <textarea
               ref={box}
               value={value}
@@ -140,6 +220,12 @@ export function Composer({
                 onAddFiles(pasted);
               }}
               onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && completions.length > 0) {
+                  e.preventDefault();
+                  pick(completions[0].name);
+                  return;
+                }
+                if (e.key === "Escape" && pickerOpen) setPickerOpen(false);
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   if (canSend) onSend();
@@ -173,6 +259,13 @@ export function Composer({
             )}
           </div>
         </div>
+        {onSaveAsSkill && (
+          <div className="mt-1 flex justify-end px-3">
+            <button type="button" onClick={onSaveAsSkill} className="cursor-pointer text-xs text-muted underline-offset-2 hover:text-ink hover:underline">
+              Save as skill
+            </button>
+          </div>
+        )}
         {blockedReason && value.trim() !== "" && <p className="mt-1.5 px-3 text-xs text-muted">{blockedReason}</p>}
       </div>
     </div>

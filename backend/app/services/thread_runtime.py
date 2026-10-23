@@ -27,7 +27,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_journal, memory_log, memory_recall, recent_work
+from app.services import agent_memory, agent_skills, agent_store, attachments, context_compaction, memory_entries, memory_journal, memory_log, memory_recall, recent_work
 from app.db.models import Room
 from app.db.transactions import begin_write
 from app.services import side_jobs
@@ -88,7 +88,7 @@ RATE_LIMIT_SECONDS = 60.0
 
 # Events the runtime itself stores for a turn: not a sign the engine started
 # working on the prompt.
-RUNTIME_EVENTS = frozenset({"context.compacted", "memory.recalled", "engine.switched", "team.agent.created", "team.job.started", "team.job.updated", "team.job.finished"})
+RUNTIME_EVENTS = frozenset({"context.compacted", "memory.recalled", "skill.used", "engine.switched", "team.agent.created", "team.job.started", "team.job.updated", "team.job.finished"})
 
 
 # Every thread belongs to the person at this machine. A runtime can be given
@@ -631,6 +631,7 @@ class ThreadRuntime:
         approval_mode: str | None = None,
         approval_timeout: float | None = None,
         attachment_ids: list[str] | None = None,
+        skills: list[str] | None = None,
         team_origin: str = "person",
         internal: bool = False,
     ) -> store.Turn:
@@ -660,6 +661,9 @@ class ThreadRuntime:
         if thread.session_state == "broken":
             raise SessionBroken(thread_id)
         attached = attachments.resolve_for_turn(thread_id, attachment_ids or [])
+        # Skills the person chose for this message; SkillError (422) when one
+        # is unknown or off. They add background to this message only.
+        chosen_skills = agent_skills.resolve(thread.agent_id, skills or [])
         if any(a.kind == "image" for a, _ in attached) and not capabilities_of(adapter).images:
             raise ImagesUnsupported(getattr(adapter, "label", None) or thread.provider)
         if not thread.workspace_path:
@@ -701,6 +705,11 @@ class ThreadRuntime:
                 attachments=[a.public() for a, _ in attached] or None,
                 origin=team_origin,
             )
+        if chosen_skills:
+            async with self.session() as db:
+                await store.append_turn_event(
+                    db, turn.id, turn.owner_token, "skill.used", {"skills": [s.name for s in chosen_skills]}
+                )
         if recall is not None:
             # Shown as the "Recalled" chip; never hidden (docs/MEMORY.md).
             async with self.session() as db:
@@ -753,7 +762,7 @@ class ThreadRuntime:
         ctx = TurnContext(
             thread_id=thread_id,
             turn_id=turn.id,
-            prompt=handoff + memory_recall.with_recall(recall, attachments.prompt_with_text_files(prompt_text, attached)),
+            prompt=handoff + agent_skills.prompt_block(chosen_skills) + memory_recall.with_recall(recall, attachments.prompt_with_text_files(prompt_text, attached)),
             images=[
                 {"path": str(path), "mime": a.mime, "name": a.name}
                 for a, path in attached

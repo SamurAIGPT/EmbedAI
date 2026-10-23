@@ -17,6 +17,9 @@ import { computerStateLabel } from "@/lib/computers";
 import { ComputerView } from "./ComputerPanel";
 import { EngineModelFields } from "./EngineModelFields";
 import { MemoryPanel } from "./MemoryPanel";
+import { TemplateSkillChoices, TemplatesGallery } from "./TemplatesGallery";
+import { installTemplateSkills, skillInstallNotice, uniqueAgentName, type AgentTemplate } from "@/lib/templates";
+import { SkillsPanel } from "./SkillsPanel";
 
 type Draft = {
   id: number | null;
@@ -128,6 +131,7 @@ export function AgentsPanel({
   onClose,
   onChanged,
   startCreating = false,
+  onCreated,
 }: {
   agents: Agent[];
   onClose: () => void;
@@ -135,12 +139,18 @@ export function AgentsPanel({
   startCreating?: boolean;
   // Called after any change, so the page reads the agent list again.
   onChanged: () => void;
+  // Called with an agent made from a template, so the page can select it.
+  onCreated?: (agent: Agent) => void;
 }) {
+  // The template browser, and the template (with the suggested skills still ticked) the form was filled from.
+  const [gallery, setGallery] = useState(false);
+  const [fromTemplate, setFromTemplate] = useState<{ template: AgentTemplate; skills: string[] } | null>(null);
   const [draft, setDraft] = useState<Draft | null>(startCreating ? EMPTY : null);
   const [notes, setNotes] = useState<NotesState | null>(null);
   const [exporting, setExporting] = useState<ExportState | null>(null);
   const [importing, setImporting] = useState<ImportState | null>(null);
   const [computerOf, setComputerOf] = useState<Agent | null>(null);
+  const [skillsOf, setSkillsOf] = useState<Agent | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -179,10 +189,46 @@ export function AgentsPanel({
   const save = () => {
     if (!draft || draft.name.trim() === "") return;
     const input = toInput(draft);
+    if (draft.id === null && fromTemplate) return createFromTemplate(input, fromTemplate);
     run(
       () => (draft.id === null ? api.createAgent(input) : api.updateAgent(draft.id, input)),
       () => setDraft(null)
     );
+  };
+
+  // Creates the agent, then adds the ticked skills; a skills failure never undoes the agent.
+  const createFromTemplate = async (input: AgentInput, source: { template: AgentTemplate; skills: string[] }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const agent = await api.createAgent(input);
+      const chosen = source.template.skills.filter((skill) => source.skills.includes(skill.name));
+      const notice = skillInstallNotice(await installTemplateSkills(agent.id, source.template.id, chosen, api.installTemplateSkill));
+      setDraft(null);
+      setFromTemplate(null);
+      onChanged();
+      onCreated?.(agent);
+      if (notice) setError(notice);
+      else onClose();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addTemplate = (template: AgentTemplate) => {
+    const taken = agents.filter((agent) => agent.archived_at === null).map((agent) => agent.name);
+    setGallery(false);
+    setFromTemplate({ template, skills: template.skills.map((skill) => skill.name) });
+    setDraft({
+      ...EMPTY,
+      name: uniqueAgentName(template.name, taken),
+      title: template.role,
+      description: template.description,
+      instructions: template.instructions,
+      starter_notes: template.starter_notes ?? "",
+    });
   };
 
   const openNotes = async (agent: Agent) => {
@@ -274,9 +320,11 @@ export function AgentsPanel({
   const modeInfo = APPROVAL_MODES.find((m) => m.value === draft?.approval_mode);
   const heading = draft
     ? draft.id === null
-      ? "New agent"
+      ? fromTemplate ? `New agent · ${fromTemplate.template.name}` : "New agent"
       : "Edit agent"
-    : notes
+    : gallery
+      ? "Templates"
+      : notes
       ? `Notes · ${notes.agent.name}`
       : exporting
         ? `Export · ${exporting.agent.name}`
@@ -284,18 +332,23 @@ export function AgentsPanel({
           ? "Import agent"
           : computerOf
             ? `Computer · ${computerOf.name}`
-            : "Agents";
+            : skillsOf
+              ? `Skills · ${skillsOf.name}`
+              : "Agents";
   const back = () => {
+    setGallery(fromTemplate !== null && draft !== null);
+    setFromTemplate(null);
     setDraft(null);
     setNotes(null);
     setExporting(null);
     setImporting(null);
     setComputerOf(null);
+    setSkillsOf(null);
     setError(null);
   };
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={heading} size="wide">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={heading} size={gallery ? "lg" : "wide"}>
           {error && (
             <p role="alert" className="mb-3 text-sm text-danger">
               {error}
@@ -364,6 +417,14 @@ export function AgentsPanel({
                   />
                   <span className="mt-1 block">The agent&apos;s first notes (MEMORY.md). It keeps them up to date itself.</span>
                 </label>
+              )}
+              {draft.id === null && fromTemplate && fromTemplate.template.skills.length > 0 && (
+                <TemplateSkillChoices
+                  skills={fromTemplate.template.skills}
+                  chosen={fromTemplate.skills}
+                  disabled={busy}
+                  onChange={(skills) => setFromTemplate({ ...fromTemplate, skills })}
+                />
               )}
               <EngineModelFields engines={engines} provider={draft.provider} model={draft.model} disabled={busy} hasComputer={agents.some((agent) => agent.id === draft.id && agent.computer != null)} onChange={(provider, model) => setDraft({ ...draft, provider, model })} />
               <p className="text-xs text-muted">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
@@ -447,6 +508,13 @@ export function AgentsPanel({
                 </button>
               </div>
             </form>
+          ) : gallery ? (
+            <div className="space-y-3">
+              <TemplatesGallery onAdd={addTemplate} />
+              <button type="button" onClick={back} className={BUTTON}>
+                Back to agents
+              </button>
+            </div>
           ) : computerOf ? (
             <div className="space-y-3">
               <ComputerView
@@ -455,6 +523,13 @@ export function AgentsPanel({
                 engineSupportsComputers={engines.find((engine) => engine.id === computerOf.provider)?.capabilities.computers}
                 engineLabel={engines.find((engine) => engine.id === computerOf.provider)?.label ?? computerOf.provider}
               />
+              <button onClick={back} className={BUTTON}>
+                Back
+              </button>
+            </div>
+          ) : skillsOf ? (
+            <div className="space-y-3">
+              <SkillsPanel key={skillsOf.id} agent={skillsOf} />
               <button onClick={back} className={BUTTON}>
                 Back
               </button>
@@ -564,6 +639,9 @@ export function AgentsPanel({
                           <button onClick={() => openNotes(agent)} disabled={busy} className={SMALL}>
                             Notes
                           </button>
+                          <button onClick={() => setSkillsOf(agent)} disabled={busy} className={SMALL}>
+                            Skills
+                          </button>
                           {!archived && (
                             <button onClick={() => setComputerOf(agent)} disabled={busy} className={SMALL}>
                               Computer
@@ -606,6 +684,9 @@ export function AgentsPanel({
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button onClick={() => setDraft(EMPTY)} className={PRIMARY}>
                   New agent
+                </button>
+                <button onClick={() => setGallery(true)} className={BUTTON}>
+                  Templates…
                 </button>
                 <button onClick={() => fileInput.current?.click()} className={BUTTON}>
                   Import…
@@ -713,6 +794,7 @@ function NotesEditor({
         </button>
       </div>
       <MemoryPanel agent={notes.agent} onAgentChange={onAgentChange} onNotesChanged={() => !dirty && onReload()} />
+      <SkillsPanel key={notes.agent.id} agent={notes.agent} />
     </div>
   );
 }

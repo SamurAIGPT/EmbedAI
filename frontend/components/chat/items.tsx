@@ -48,6 +48,11 @@ export function UserMessage({ item, threadId = null }: { item: Item<"user">; thr
       <p className="max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-bubble px-4 py-2.5 text-[15px] leading-relaxed text-ink sm:max-w-[80%]">
         {item.text}
       </p>
+      {item.skills && item.skills.length > 0 && (
+        <p className="max-w-[88%] break-words text-xs text-muted sm:max-w-[80%]">
+          Skill: <span className="font-mono">{item.skills.map((name) => `/${name}`).join(" ")}</span>
+        </p>
+      )}
     </div>
   );
 }

@@ -29,7 +29,7 @@ from app.schemas.agent import (
     TopicListResponse,
     TopicWriteRequest,
 )
-from app.services import agent_memory, agent_package, memory_entries, memory_journal, memory_log, memory_proposals, memory_topics
+from app.services import agent_memory, agent_package, agent_skills, memory_entries, memory_journal, memory_log, memory_proposals, memory_topics
 from app.services import agent_store as store
 from app.services.agent_removal import remove_agent
 from app.services.local_access_policy import require_local_access
@@ -92,6 +92,19 @@ def _start_notes(agent_id: int, notes: str | None) -> None:
         agent_memory.write_memory(agent_id, notes)
     else:
         agent_memory.remove_memory(agent_id)
+
+
+def _start_imported_skills(agent_id: int, items: list[dict]) -> None:
+    """An imported agent is new: it starts with exactly the file's skills, all
+    turned off until the person reviews and turns them on. Text only."""
+    agent_skills.remove_all(agent_id)
+    for item in items:
+        try:
+            agent_skills.write_skill(
+                agent_id, item["name"], item["description"], item["body"], enabled=False, source="imported"
+            )
+        except agent_skills.SkillError:
+            continue
 
 
 def _start_imported_notes(agent_id: int, parsed: dict | None) -> None:
@@ -630,7 +643,10 @@ async def reject_proposal(agent_id: int, proposal_id: str, rt: ThreadRuntime = D
 
 @router.get("/{agent_id}/export", response_model=AgentExportResponse)
 async def export_agent(
-    agent_id: int, include_notes: bool = False, rt: ThreadRuntime = Depends(get_runtime)
+    agent_id: int,
+    include_notes: bool = False,
+    include_skills: bool = False,
+    rt: ThreadRuntime = Depends(get_runtime),
 ):
     """The agent as one file: name, title, description, instructions and, with
     `include_notes`, its notes. Never its model, folder, approval mode or
@@ -648,7 +664,8 @@ async def export_agent(
         else None
     )
     skipped: list[str] = []
-    document, redacted = agent_package.export_package(agent, notes, topics, skipped)
+    saved_skills = agent_skills.export_items(agent.id) if include_skills else None
+    document, redacted = agent_package.export_package(agent, notes, topics, skipped, saved_skills)
     return AgentExportResponse(
         file_name=agent_package.file_name(agent.name), document=document, redacted=redacted, skipped=skipped
     )
@@ -678,5 +695,6 @@ async def import_agent(payload: AgentImportRequest, rt: ThreadRuntime = Depends(
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "Try again: that name was just taken.") from None
     _start_imported_notes(agent.id, parsed if payload.include_notes else None)
+    _start_imported_skills(agent.id, parsed["skills"] if payload.include_skills else [])
     return agent
 

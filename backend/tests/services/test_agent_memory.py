@@ -213,6 +213,7 @@ def test_an_import_reads_the_allowlist_and_drops_everything_else():
         "instructions": "Use the checklist. token=[redacted]",
         "notes": "- remembered",
         "topics": {},
+        "skills": [],
     }
 
 

@@ -213,6 +213,8 @@ class AgentImportRequest(BaseModel):
     document: dict
     # False leaves the file's notes out even when it carries some.
     include_notes: bool = True
+    # False leaves the file's skills out. Imported skills always start off.
+    include_skills: bool = True
 
 
 # --- topic notes, the journal and proposed notes (docs/MEMORY.md) ------------------------

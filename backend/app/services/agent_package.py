@@ -3,7 +3,9 @@
 The file is an allowlist, not a dump of the row. It can carry only:
 
 - the agent's name, title, description and instructions;
-- optionally its notes (MEMORY.md), as starter notes for the copy.
+- optionally its notes (MEMORY.md), as starter notes for the copy;
+- optionally its saved skills, as text only (name, description, instructions).
+  An imported skill always starts turned off.
 
 It has no field for a model, a provider, a folder, an approval mode, a pin,
 conversation history, or anything about this computer. Whatever a file says
@@ -20,7 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.schemas.agent import INSTRUCTIONS_MAX_BYTES
-from app.services import memory_topics
+from app.services import agent_skills, memory_topics
 from app.services.agent_memory import FILE_MAX_BYTES, redact_secrets
 
 FORMAT = "open-dots.agent"
@@ -29,6 +31,8 @@ VERSION = 1
 TOPICS_MAX_BYTES = 600_000
 # The whole file, as JSON text.
 PACKAGE_MAX_BYTES = 1_000_000
+# All skills together.
+SKILLS_MAX_BYTES = 300_000
 
 _LIMITS = {"name": 80, "title": 200, "description": 4000}
 
@@ -45,7 +49,11 @@ def _clean(value: str | None) -> tuple[str | None, bool]:
 
 
 def export_package(
-    agent, notes: str | None, topics: dict[str, str] | None = None, skipped: list[str] | None = None
+    agent,
+    notes: str | None,
+    topics: dict[str, str] | None = None,
+    skipped: list[str] | None = None,
+    skills: list[dict] | None = None,
 ) -> tuple[dict, list[str]]:
     """The file for `agent`, and the names of the parts that had something
     redacted. `notes` None leaves the notes out; `topics` (file name -> text)
@@ -92,6 +100,22 @@ def export_package(
                 redacted.append("topic notes")
         if clean:
             document.setdefault("notes", {})["topics"] = clean
+    if skills:
+        kept, total = [], 0
+        for item in skills:
+            description, d_changed = _clean(item["description"])
+            body_text, b_changed = _clean(item["body"])
+            size = len(body_text.encode("utf-8"))
+            if len(kept) >= agent_skills.MAX_SKILLS or total + size > SKILLS_MAX_BYTES:
+                if skipped is not None:
+                    skipped.append("skill " + item["name"])
+                continue
+            kept.append({"name": item["name"], "description": description, "body": body_text})
+            total += size
+            if (d_changed or b_changed) and "skills" not in redacted:
+                redacted.append("skills")
+        if kept:
+            document["skills"] = kept
     return document, redacted
 
 
@@ -113,9 +137,39 @@ def _text(container: dict, field: str, *, required: bool = False) -> str | None:
     return value
 
 
+def _parse_skills(raw: Any) -> list[dict]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > agent_skills.MAX_SKILLS:
+        raise PackageError(f"skills must be a list of at most {agent_skills.MAX_SKILLS} skills")
+    out, seen, total = [], set(), 0
+    for item in raw:
+        if not isinstance(item, dict):
+            raise PackageError("each skill must be an object")
+        name, description, body = item.get("name"), item.get("description"), item.get("body")
+        try:
+            agent_skills.check_name(name)
+        except agent_skills.SkillError:
+            raise PackageError(f"{name!r} is not a skill name") from None
+        if name in seen:
+            raise PackageError(f"skill {name} appears twice")
+        seen.add(name)
+        if not isinstance(description, str) or not isinstance(body, str):
+            raise PackageError(f"skill {name} needs a description and instructions as text")
+        try:
+            description, body, _, _ = agent_skills._clean(description, body, "imported")
+        except agent_skills.SkillError as exc:
+            raise PackageError(f"skill {name}: {exc.message}") from None
+        total += len(body.encode("utf-8"))
+        if total > SKILLS_MAX_BYTES:
+            raise PackageError("The skills are larger than 300 KB together.")
+        out.append({"name": name, "description": description, "body": body})
+    return out
+
+
 def parse_package(document: Any) -> dict:
     """What an import may use from `document`:
-    `{name, title, description, instructions, notes, topics}`. Raises PackageError."""
+    `{name, title, description, instructions, notes, topics, skills}`. Raises PackageError."""
     if not isinstance(document, dict):
         raise PackageError("This is not an agent file.")
     if document.get("format") != FORMAT:
@@ -172,7 +226,10 @@ def parse_package(document: Any) -> dict:
                 raise PackageError("The topic notes are larger than 600 KB together.")
             topics = {n: _clean(v)[0] for n, v in raw_topics.items() if v.strip()}
 
+    skills = _parse_skills(document.get("skills"))
+
     return {
+        "skills": skills,
         "name": name,
         "title": title or None,
         "description": _clean(description)[0] or None,

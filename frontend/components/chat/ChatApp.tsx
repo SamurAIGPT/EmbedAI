@@ -9,6 +9,7 @@ import { pendingApprovals } from "@/lib/transcript";
 import { attachmentProblem, conversationUsage, formatCost, formatTokens, MAX_ATTACHMENTS } from "@/lib/everyday";
 import { FilesPanel } from "./FilesPanel";
 import { UsageView } from "./UsagePanel";
+import { SkillsPanel } from "./SkillsPanel";
 import { Inspector } from "@/components/shell/Inspector";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -29,6 +30,7 @@ import { SIDEBAR_AND_PANEL_FIT, SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-
 import { t } from "@/lib/i18n";
 import { reportPresence } from "@/lib/presence";
 import { chatHref, parsePanel, type Panel } from "@/lib/panel";
+import { parseSkillCommand, skillErrorText, toggleSkill, type SkillSummary } from "@/lib/skills";
 import { RoomList } from "./RoomList";
 import { RoomView } from "./RoomView";
 import { TeamPanel } from "./TeamPanel";
@@ -59,8 +61,14 @@ function manageErrorText(err: unknown): string {
 }
 
 // Says what went wrong in words a person can act on.
+// A typed `/name` adds that skill to the ones already picked, within the limit.
+function toggleSkillOn(chosen: string[], name: string): string[] {
+  return chosen.includes(name) ? chosen : toggleSkill(chosen, name);
+}
+
 function sendErrorText(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.code === "skill_unavailable") return skillErrorText(err);
     if (err.code === "turn_running") return "An answer to the last message is still running.";
     if (err.code === "session_broken")
       return "The engine can no longer find this conversation. Start a new session to continue.";
@@ -146,6 +154,11 @@ export function ChatApp() {
   // Files chosen for the next message, and why one was refused.
   const [attached, setAttached] = useState<File[]>([]);
   const [attachNotice, setAttachNotice] = useState<string | null>(null);
+  // Skills picked for the next message only, and the text a Save as skill opened the editor with.
+  // Both are tied to the agent they were made for, so another agent starts clean.
+  const [picked, setPicked] = useState<{ agentId: number | null; names: string[] }>({ agentId: null, names: [] });
+  const [skillSeed, setSkillSeed] = useState<{ text: string; nonce: number } | null>(null);
+  const [loadedSkills, setLoadedSkills] = useState<{ agentId: number; list: SkillSummary[] } | null>(null);
   // What "Always allow this command" did, by approval id, and rules undone here.
   const [remembered, setRemembered] = useState<Record<string, Remembered>>({});
   const [undoneRules, setUndoneRules] = useState<number[]>([]);
@@ -323,6 +336,25 @@ export function ChatApp() {
   const selectedEngine = engines?.find((engine) => engine.id === selectedProvider);
   const selectedAgent = threadId === null ? startingAgent : threadAgent?.provider === thread?.provider ? threadAgent : null;
   const selectedModel = (threadId === null ? newModel : thread?.model) ?? selectedAgent?.model ?? null;
+  const skillAgent = threadId === null ? startingAgent : threadAgent;
+  const skillAgentId = skillAgent?.id ?? null;
+  const [skillsTick, setSkillsTick] = useState(0);
+  useEffect(() => {
+    if (!ready || skillAgentId === null) return;
+    let live = true;
+    api.listSkills(skillAgentId).then(
+      (list) => live && setLoadedSkills({ agentId: skillAgentId, list }),
+      () => live && setLoadedSkills({ agentId: skillAgentId, list: [] }),
+    );
+    return () => { live = false; };
+  }, [ready, skillAgentId, skillsTick]);
+  const agentSkills = loadedSkills !== null && loadedSkills.agentId === skillAgentId ? loadedSkills.list : [];
+  const chosenSkills = picked.agentId === skillAgentId ? picked.names.filter((n) => agentSkills.some((s) => s.name === n && s.enabled)) : [];
+  const setChosenSkills = (update: (names: string[]) => string[]) =>
+    setPicked({ agentId: skillAgentId, names: update(chosenSkills) });
+  // The last thing the person asked in this conversation: the seed for Save as skill.
+  const lastRequest = [...transcript.items].reverse().find((item) => item.kind === "user");
+  const canSaveSkill = threadAgent !== null && lastRequest?.kind === "user" && transcript.runningTurnId === null;
   const waiting = pendingApprovals(transcript).length > 0;
   const totals = conversationUsage(
     transcript.items.flatMap((item) => (item.kind === "turn_end" ? [{ usage: item.usage }] : []))
@@ -361,7 +393,11 @@ export function ChatApp() {
   };
 
   const send = async () => {
-    const text = draft.trim();
+    // `/name rest` for a skill that is on selects it; anything else is sent as typed.
+    const command = parseSkillCommand(draft, agentSkills.filter((s) => s.enabled).map((s) => s.name));
+    const usedSkills = command ? toggleSkillOn(chosenSkills, command.name) : chosenSkills;
+    const message = command ? command.rest : draft.trim();
+    const text = message;
     if (!text) return;
     setSendError(null);
     setSending(true);
@@ -374,12 +410,14 @@ export function ChatApp() {
       }
       const ids: string[] = [];
       for (const file of attached) ids.push((await api.uploadAttachment(id, file)).id);
-      await api.sendTurn(id, text, ids);
+      await api.sendTurn(id, message, ids, usedSkills);
       setDraft("");
+      setChosenSkills(() => []);
       setAttached([]);
       setAttachNotice(null);
     } catch (err) {
       setSendError(sendErrorText(err));
+      if (err instanceof ApiError && err.code === "skill_unavailable") setSkillsTick((n) => n + 1);
     } finally {
       setSending(false);
       setListTick((n) => n + 1);
@@ -690,6 +728,7 @@ export function ChatApp() {
           startCreating={agentsCreate}
           onClose={() => setAgentsOpen(false)}
           onChanged={() => setAgentTick((n) => n + 1)}
+          onCreated={(agent) => setNewAgentId(agent.id)}
         />
       )}
         <main id="conversation" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
@@ -748,12 +787,23 @@ export function ChatApp() {
               setAttachNotice(null);
             }}
             attachNotice={attachNotice}
+            skills={skillAgentId !== null ? agentSkills : undefined}
+            chosenSkills={chosenSkills}
+            onToggleSkill={skillAgentId !== null ? (name) => setChosenSkills((names) => toggleSkill(names, name)) : undefined}
+            onSaveAsSkill={canSaveSkill ? () => { setSkillSeed({ text: lastRequest.text, nonce: Date.now() }); setPanel("skills"); } : undefined}
           />
         </main>
       </div>
       {panel === "usage" && (
         <Inspector title="Usage" inline={inspectorInline} onClose={() => setPanel(null)}>
           <UsageView />
+        </Inspector>
+      )}
+      {panel === "skills" && threadAgent && (
+        <Inspector title={`Skills · ${threadAgent.name}`} inline={inspectorInline} onClose={() => { setSkillSeed(null); setPanel(null); }}>
+          <div className="p-4">
+            <SkillsPanel key={`${threadAgent.id}-${skillSeed?.nonce ?? 0}`} agent={threadAgent} seed={skillSeed?.text ?? null} onChanged={() => setSkillsTick((n) => n + 1)} />
+          </div>
         </Inspector>
       )}
       {panel === "computer" && threadAgent && (

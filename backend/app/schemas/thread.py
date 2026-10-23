@@ -105,6 +105,9 @@ class TurnCreateRequest(BaseModel):
     prompt_text: str = Field(min_length=1, max_length=100_000)
     # Ids from POST /threads/{id}/attachments (docs/EVERYDAY.md), at most 8.
     attachment_ids: list[str] = Field(default_factory=list, max_length=8)
+    # Names of the agent's saved skills the person chose for this message
+    # (docs/SKILLS.md), at most 3. Never applied unless named here.
+    skills: list[str] = Field(default_factory=list, max_length=3)
 
     @field_validator("prompt_text")
     @classmethod

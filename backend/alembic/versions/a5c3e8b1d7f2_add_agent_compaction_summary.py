@@ -1,13 +1,13 @@
 """A model-written summary of a folded conversation can be switched off per agent.
 
 Revision ID: a5c3e8b1d7f2
-Revises: c4d8f1a6e903
+Revises: d6a9f2c1b803
 """
 from alembic import context, op
 import sqlalchemy as sa
 
 revision = "a5c3e8b1d7f2"
-down_revision = "c4d8f1a6e903"
+down_revision = "d6a9f2c1b803"
 branch_labels = None
 depends_on = None
 

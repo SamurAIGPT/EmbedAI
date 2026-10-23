@@ -123,9 +123,11 @@ def test_real_profile_survives_restart_and_stop_start(machine):
     call(s, "browser_restart")
     check = "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.connect_over_cdp('http://127.0.0.1:9222'); print(b.contexts[0].cookies()); p.stop()"
     assert "retained" in docker_cli.run(["exec", "-u", spec.run_as, spec.name, "python", "-c", check], timeout=20).stdout
-    call(s, "browser_close")
     provider.stop(spec)
     provider.start(spec)
+    deadline = time.monotonic()+20
+    while time.monotonic() < deadline and not provider.status(spec).desktop_ready:
+        time.sleep(.2)
     call(s, "browser_open", {"url": "about:blank"})
     assert "retained" in docker_cli.run(["exec", "-u", spec.run_as, spec.name, "python", "-c", check], timeout=20).stdout
     permissions = docker_cli.run(["exec", "-u", spec.run_as, spec.name, "stat", "-c", "%a", "/home/agent/browser-profile"], timeout=10).stdout

@@ -13,7 +13,14 @@ done
 rm -f /tmp/od-ready
 Xtigervnc :1 -geometry 1280x800 -depth 24 -SecurityTypes None -localhost yes -rfbport 5900 -AlwaysShared -nolisten tcp -ac &
 vnc=$!
-trap 'kill "$vnc" 2>/dev/null || true' EXIT INT TERM
+cleanup() {
+  trap - EXIT INT TERM
+  if [ -S /tmp/od-browser.sock ]; then
+    printf '%s\n' '{"name":"browser_close","args":{},"owner":"shutdown","epoch":""}' | timeout 7 od-browser >/dev/null 2>&1 || true
+  fi
+  kill "$vnc" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 attempt=0
 until xdpyinfo -display :1 >/dev/null 2>&1; do
   kill -0 "$vnc"

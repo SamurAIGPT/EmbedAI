@@ -119,12 +119,24 @@ test("two agents cannot share a lease, foreign releases and old capabilities can
 test("permissions revoked, disabled agents and disconnected drivers fail closed", async t => {
   const f = fixture(t), cap = await f.acquire();
   f.permissions(false);
+  assert.equal(f.service.status(1).ready, false);
+  assert.match(f.service.status(1).reason, /Screen Recording/);
   await assert.rejects(f.service.call(cap, { method: "tools/list" }));
   f.permissions(true);
   f.service.driver.close();
   await assert.rejects(f.service.call(cap, { method: "tools/list" }));
   await f.service.configure(1, false);
   await assert.rejects(f.service.call(cap, { method: "tools/list" }));
+});
+
+test("application shutdown during SDK loading cannot start an orphan driver", async t => {
+  const f = fixture(t);
+  let finish;
+  f.service.loadSdk = () => new Promise(resolve => { finish = resolve; });
+  const starting = f.service.start();
+  await f.service.close();
+  finish({ createHost: () => assert.fail("driver started after shutdown") });
+  await assert.rejects(starting);
 });
 
 test("unknown arguments, output paths, excessive typing, coordinates and action counts are rejected", () => {

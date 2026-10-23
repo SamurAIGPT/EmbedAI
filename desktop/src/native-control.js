@@ -143,7 +143,8 @@ class NativeControl {
     this.admin = token();
   }
   status(agent) {
-    return { supported: this.platform === "darwin", enabled: this.enabled.has(agent), held: this.held, busy: !!this.owner, ready: !!this.driver && !this.driver.closed, reason: this.reason || null };
+    const permitted = this.platform === "darwin" && this.permissions(false);
+    return { supported: this.platform === "darwin", enabled: this.enabled.has(agent), held: this.held, busy: !!this.owner, ready: permitted && !!this.driver && !this.driver.closed, reason: this.reason || (this.enabled.has(agent) && !permitted ? "Grant Accessibility and Screen Recording to Open Duet in System Settings, then retry." : null) };
   }
   async configure(agent, enabled) {
     if (!Number.isSafeInteger(agent) || agent < 1 || typeof enabled !== "boolean" || this.platform !== "darwin") fail();
@@ -162,11 +163,13 @@ class NativeControl {
     return this.status(agent);
   }
   async start(prompt = false) {
-    if (this.held || this.platform !== "darwin") fail();
+    if (this.closing || this.held || this.platform !== "darwin") fail();
     if (this.starting) return this.starting;
     this.starting = (async () => {
+      const generation = this.generation;
       verifyBundle(this.root, this.pin);
       const sdk = await this.loadSdk(pathToFileURL(path.join(this.root, "sdk.mjs")).href);
+      if (this.closing || this.held || generation !== this.generation) fail();
       if (prompt) sdk.requestPermissions();
       if (!this.permissions(false)) { await this.stop(); throw new Error("Grant Accessibility and Screen Recording to Open Duet in System Settings, then retry."); }
       if (this.driver && !this.driver.closed) return;
@@ -262,10 +265,11 @@ class NativeControl {
       } catch { res.statusCode = 409; res.end(JSON.stringify({ error: "Native desktop unavailable or action refused. Check its permissions, approval and control state in the desktop app." })); }
     });
     this.server.requestTimeout = 25_000;
-    await new Promise(resolve => this.server.listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve, reject) => { this.server.once("error", reject); this.server.listen(0, "127.0.0.1", resolve); });
     return { port: this.server.address().port, token: this.admin };
   }
   async close() {
+    this.closing = true;
     this.admin = token(); this.owner = null;
     this.server?.closeAllConnections();
     this.server?.close();

@@ -9,7 +9,7 @@ import pytest
 from app.core.config import settings
 from app.server import database
 from tests.conftest import using_sqlite
-from tests.db.sqlite_helpers import run_alembic
+from tests.db.sqlite_helpers import run_alembic, one_revision_back
 
 pytestmark = pytest.mark.skipif(not using_sqlite(), reason="these checks use their own SQLite files")
 
@@ -47,7 +47,7 @@ def test_running_it_again_changes_nothing_and_copies_nothing(target):
 
 def test_a_database_behind_is_copied_aside_first_then_updated(target):
     database.prepare_database()
-    assert run_alembic(target, "downgrade", "-1").returncode == 0
+    assert run_alembic(target, "downgrade", one_revision_back()).returncode == 0
     behind = revision(target)
     assert behind != database.newest_revision()
     connection = sqlite3.connect(target)
@@ -91,7 +91,7 @@ def test_a_file_that_is_not_a_database_is_refused_and_left_alone(target):
 
 def test_a_wrong_encryption_key_is_reported_before_anything_changes(target):
     database.prepare_database()
-    assert run_alembic(target, "downgrade", "-1").returncode == 0
+    assert run_alembic(target, "downgrade", one_revision_back()).returncode == 0
     connection = sqlite3.connect(target)
     connection.execute(
         "INSERT INTO user_credential (user_id, provider, file_path, ciphertext) VALUES ('u1', 'claude', 'f', 'not-a-valid-token')"

@@ -27,3 +27,15 @@ def run_alembic(
         [sys.executable, "-m", "alembic", *config, *args],
         cwd=BACKEND_DIR, env=environment, capture_output=True, text=True, timeout=120,
     )
+
+
+def one_revision_back() -> str:
+    """The revision just before the head. `downgrade -1` is ambiguous when the
+    head is a merge of two branches, so name the first parent instead."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(BACKEND_DIR / "alembic.ini")))
+    (head,) = script.get_heads()
+    parent = script.get_revision(head).down_revision
+    return parent[0] if isinstance(parent, tuple) else parent

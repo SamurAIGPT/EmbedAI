@@ -79,12 +79,13 @@ def schema_state() -> str:
     engine = create_app_sync_engine()
     try:
         with engine.connect() as connection:
-            revision = MigrationContext.configure(connection).get_current_revision()
+            revisions = MigrationContext.configure(connection).get_current_heads()
     finally:
         engine.dispose()
-    if revision is None:
+    if not revisions:
         return "new"
-    return "current" if revision == newest_revision() else "behind"
+    # Two stored heads (both branches applied, the merge not yet) is behind too.
+    return "current" if revisions == (newest_revision(),) else "behind"
 
 
 def prepare_database() -> MigrationReport:

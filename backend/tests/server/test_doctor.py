@@ -16,7 +16,7 @@ from app.server import doctor
 from app.server.doctor import FAIL, INFO, OK, WARN, Check
 from app.server.entry import main as server_main
 from tests.conftest import BACKEND_DIR, using_sqlite
-from tests.db.sqlite_helpers import run_alembic
+from tests.db.sqlite_helpers import run_alembic, one_revision_back
 
 pytestmark = pytest.mark.skipif(not using_sqlite(), reason="these checks use their own SQLite files")
 
@@ -104,7 +104,7 @@ def test_the_database_in_each_state(target):
     check, state = doctor.check_database(settings)
     assert state == "current" and check.status == OK
 
-    assert run_alembic(target, "downgrade", "-1").returncode == 0
+    assert run_alembic(target, "downgrade", one_revision_back()).returncode == 0
     check, state = doctor.check_database(settings)
     assert state == "behind" and check.status == FAIL and "older version" in check.detail
 

@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.server import database
 from app.server.entry import EXIT_DATABASE, EXIT_KEY_MISMATCH, main
 from tests.conftest import using_sqlite
-from tests.db.sqlite_helpers import run_alembic
+from tests.db.sqlite_helpers import run_alembic, one_revision_back
 
 pytestmark = pytest.mark.skipif(not using_sqlite(), reason="these checks use their own SQLite files")
 
@@ -38,7 +38,7 @@ def test_schema_state_reads_without_creating_the_file(target):
 def test_schema_state_tells_current_from_behind(target):
     assert main(["migrate"]) == 0
     assert database.schema_state() == "current"
-    assert run_alembic(target, "downgrade", "-1").returncode == 0
+    assert run_alembic(target, "downgrade", one_revision_back()).returncode == 0
     assert database.schema_state() == "behind"
 
 
@@ -51,7 +51,7 @@ def test_migrate_creates_then_reports_up_to_date(target, capsys):
 
 def test_migrate_says_where_the_copy_went(target, capsys):
     main(["migrate"])
-    run_alembic(target, "downgrade", "-1")
+    run_alembic(target, "downgrade", one_revision_back())
     capsys.readouterr()
     assert main(["migrate"]) == 0
     out = capsys.readouterr().out
@@ -91,7 +91,7 @@ def test_the_server_will_not_start_on_a_database_that_was_never_migrated(target,
 
 def test_the_server_will_not_start_on_a_database_that_is_behind(target, ui, capsys):
     main(["migrate"])
-    run_alembic(target, "downgrade", "-1")
+    run_alembic(target, "downgrade", one_revision_back())
     capsys.readouterr()
     assert main(["--ui-dir", str(ui)], {}) == EXIT_DATABASE
     assert "older version" in capsys.readouterr().err

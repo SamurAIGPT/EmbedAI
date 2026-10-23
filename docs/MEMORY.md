@@ -12,7 +12,9 @@ has no notes, no recall and no proposals (compaction still applies).
 ├── MEMORY.md           loads into every turn (first 200 lines / 24 KB)
 └── memory/
     ├── <topic>.md      one subject each; never loaded whole
-    └── archive.md      older entries moved out of MEMORY.md to make room
+    ├── archive.md      older entries moved out of MEMORY.md to make room
+    └── log/
+        └── 2026-10-23.md   one line per finished turn that day (never loaded)
 
 <data folder>/memory-state/            (beside the attachments folder)
 ├── journal/<agent id>.ndjson          every change made through the app
@@ -275,6 +277,33 @@ off too, and `MEMORY_CAPTURE_QUIET_SECONDS=0` switches it off for everyone.
 `GET /api/v1/agents/{id}/memory/upkeep` reports whether it is on, whether the
 engine can make the call, and what the last capture did.
 
+## What an agent knows about its other conversations
+
+An agent's one-to-one chats and its rooms are separate conversations, and its
+notes hold only what stays true. Two things close the gap without attaching
+transcripts:
+
+- **The recent-work brief.** Every turn's system prompt, one-to-one or room,
+  carries a short block while the agent's notes are on: the newest thing the
+  agent said in each of its *other* conversations over the last 48 hours, newest
+  first, for example `today 09:05 · 1:1 chat "Invoices" · you said: "Sent the
+  three flagged invoices…"`. At most ten lines and 1,400 characters; the current
+  conversation is never listed; archived conversations, delegated-task threads,
+  routine runs and turns that did not succeed are left out; lines are redacted.
+  When a **room** turn's brief names a private one-to-one chat, the room gets a
+  notice once per chat (*Scout's recent-work brief covers 1 private chat with
+  you*), the same rule as recalled messages: a private chat reaches a room only
+  openly. A brief rides in the system prompt (it changes only when another
+  conversation says something new); recall rides in the message.
+- **One log line per finished turn.** With the agent's notes on, every finished
+  turn (including a failed or stopped one, and a routine run) appends a line to
+  `memory/log/YYYY-MM-DD.md`: the time, the conversation (`chat "…"`, `room "…"`),
+  what the agent said last (240 characters), the tools it used, and whether it
+  failed or was stopped. Logs are never loaded into a prompt and never recalled
+  automatically; a day's log stops growing at 64 KB; text is redacted; a link
+  where the folder or file should be is never followed. They are read-only in the
+  API (list, read, delete); deleting an agent deletes them.
+
 ## The journal
 
 Every change made through the app to `MEMORY.md` or a topic note (an editor
@@ -302,6 +331,9 @@ chat-scope device), with sign-in like every route.
 | `DELETE` | `/memory/topics/{name}` | Delete a note (`?expected_hash=` optional); 404 when there is none. |
 | `GET` | `/memory/journal?limit=` | Changes, newest first. |
 | `POST` | `/memory/journal/{entry}/undo` | Put the file back; `409 cannot_undo` with the reason. |
+| `GET` | `/memory/logs` | The days that have a daily log. |
+| `GET` | `/memory/logs/{day}` | One day's log (read-only, redacted); 404 when none. |
+| `DELETE` | `/memory/logs/{day}` | Delete one day's log. |
 | `GET` | `/memory/upkeep` | Whether quiet upkeep is on, whether the engine can make its call, the last capture. |
 | `GET` | `/memory/proposals` | Proposed notes (reads quiet conversations first). |
 | `POST` | `/memory/proposals/{id}/accept` | `{line?, target?}`: save it, or your edited line, into `MEMORY.md` or a topic. |

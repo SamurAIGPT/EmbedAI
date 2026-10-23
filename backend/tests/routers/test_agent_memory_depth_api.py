@@ -2,7 +2,7 @@
 child process playing the Claude CLI (docs/MEMORY.md)."""
 
 from app.auth import policy
-from app.services import memory_proposals, memory_recall, memory_topics
+from app.services import memory_log, memory_proposals, memory_recall, memory_topics
 from tests.routers.test_agents_api import (  # noqa: F401
     agent_cleanup,
     api,
@@ -128,6 +128,20 @@ async def test_upkeep_switch_is_on_by_default_copied_and_reported(api):
     assert (await api.get(f"/api/v1/agents/{agent['id']}/memory/upkeep")).json()["enabled"] is False
 
 
+async def test_daily_logs_are_listed_read_and_deleted(api):
+    agent = await make(api)
+    base = f"/api/v1/agents/{agent['id']}/memory/logs"
+    assert (await api.get(base)).json() == {"logs": []}
+    memory_log.append(agent["id"], "Sent the invoices", source='chat "A"')
+    (item,) = (await api.get(base)).json()["logs"]
+    text = (await api.get(f"{base}/{item['day']}")).json()["text"]
+    assert "Sent the invoices" in text
+    assert (await api.get(f"{base}/..%2Fx")).status_code in (404, 422)
+    assert (await api.get(f"{base}/2020-01-01")).status_code == 404
+    assert (await api.delete(f"{base}/{item['day']}")).status_code == 204
+    assert (await api.delete(f"{base}/{item['day']}")).status_code == 404
+
+
 def test_memory_routes_are_admin_only():
     for method, path in (
         ("GET", "/api/v1/agents/1/memory/topics"),
@@ -136,6 +150,9 @@ def test_memory_routes_are_admin_only():
         ("POST", "/api/v1/agents/1/memory/journal/x/undo"),
         ("GET", "/api/v1/agents/1/memory/proposals"),
         ("GET", "/api/v1/agents/1/memory/upkeep"),
+        ("GET", "/api/v1/agents/1/memory/logs"),
+        ("GET", "/api/v1/agents/1/memory/logs/2026-10-01"),
+        ("DELETE", "/api/v1/agents/1/memory/logs/2026-10-01"),
         ("POST", "/api/v1/agents/1/memory/proposals/x/accept"),
     ):
         assert policy.required_scope(method, path) == "admin", path

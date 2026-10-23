@@ -27,7 +27,9 @@ from pathlib import Path
 from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
-from app.services import agent_memory, agent_store, attachments, context_compaction, memory_recall
+from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_log, memory_recall, recent_work
+from app.db.models import Room
+from app.db.transactions import begin_write
 from app.services.memory_capture import MemoryCapture, Turn as MemoryTurn
 from app.services import thread_store as store
 from app.services import local_claude_runner
@@ -184,6 +186,8 @@ class ActiveRun:
     # facts worth keeping (memory_capture.py): a 1:1 chat the person started.
     prompt_text: str = ""
     capturable: bool = False
+    # The agent's notes are on: the finished turn leaves a line in its daily log.
+    log_memory: bool = False
 
     def touch(self) -> None:
         try:
@@ -448,6 +452,8 @@ class ThreadRuntime:
     # Engines refusing turns for a limit, as their last turn said (this
     # process only): engine id -> (EngineLimit, wall time noted, message).
     _limits: dict[str, tuple] = field(default_factory=dict)
+    # Private chats already disclosed to a room by a recent-work brief: room thread id -> thread ids.
+    _announced: dict[int, set[int]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         from app.rooms.service import Rooms
@@ -666,6 +672,7 @@ class ThreadRuntime:
                 agent = await agent_store.get_agent(db, thread.agent_id)
 
         recall = await self._recall(agent, thread_id, prompt_text)
+        brief = await self._recent_work(agent, thread)
         handoff = ""
         if thread.provider_session_id is not None:
             # Native sessions have never seen turns that ran on a fallback.
@@ -725,7 +732,7 @@ class ThreadRuntime:
             resume=thread.session_state == "active",
             history=history,
             # The agent's instructions, then its notes (MEMORY.md) when on.
-            instructions=agent_memory.turn_instructions(agent) if agent is not None else None,
+            instructions=_with_brief(agent_memory.turn_instructions(agent) if agent is not None else None, brief),
             approval_mode=approval_mode
             if approval_mode is not None
             else (agent.approval_mode if agent is not None else None),
@@ -742,6 +749,7 @@ class ThreadRuntime:
             fallback=_fallback_of(agent, thread.provider),
             continues=turn.seq > 1,
             prompt_text=prompt_text,
+            log_memory=agent is not None and agent.memory_enabled,
             capturable=(
                 agent is not None
                 and agent.memory_enabled
@@ -783,6 +791,73 @@ class ThreadRuntime:
         except Exception:  # noqa: BLE001
             logger.exception("recall failed; the turn goes on without it", thread_id=thread_id)
             return None
+
+    async def _recent_work(self, agent, thread) -> str:
+        """The recent-work brief for this turn's system prompt (recent_work.py),
+        or "". In a room turn, a private chat it names is disclosed to the room
+        once. Never fails a turn."""
+        if agent is None or not agent.memory_enabled:
+            return ""
+        try:
+            async with self.session() as db:
+                found = await recent_work.lines(
+                    db, owner_id=self.owner_id, agent_id=agent.id, current_thread_id=thread.id
+                )
+            text, shown = recent_work.prompt(found)
+            if thread.kind == "room_member" and thread.room_id is not None:
+                await self._disclose_brief(agent, thread, [line.thread_id for line in shown if line.private])
+            return text
+        except Exception:  # noqa: BLE001
+            logger.exception("recent-work brief failed; the turn goes on without it", thread_id=thread.id)
+            return ""
+
+    async def _disclose_brief(self, agent, thread, private_ids: list[int]) -> None:
+        async with self.session() as db:
+            room = await db.get(Room, thread.room_id)
+            if room is None:
+                return
+            seen = self._announced.setdefault(room.thread_id, set())
+            fresh = [i for i in dict.fromkeys(private_ids) if i not in seen]
+            if not fresh:
+                return
+            seen.update(fresh)
+            await begin_write(db)
+            await store._add_event(
+                db, room.thread_id, "room.notice",
+                {"kind": "brief", "author": {"kind": "system", "label": "Memory"},
+                 "text": recent_work.crossing_label(agent.name, len(fresh))},
+                None,
+            )
+            await db.commit()
+        self.hub.notify(room.thread_id)
+
+    async def _log_turn(self, run: "ActiveRun", outcome: TurnOutcome) -> None:
+        """One line in the agent's daily log for a finished turn (memory_log.py)."""
+        if not run.log_memory or run.agent_id is None:
+            return
+        try:
+            async with self.session() as db:
+                thread = await store.get_thread(db, run.thread_id)
+                events = await store.list_all_events(db, run.thread_id)
+                room = await db.get(Room, thread.room_id) if thread is not None and thread.room_id else None
+            if thread is None:
+                return
+            tools = [
+                (e.data or {}).get("name") for e in events if e.turn_id == run.turn_id and e.type == "tool.started"
+            ]
+            line = memory_log.turn_line(
+                outcome.status, outcome.result if outcome.status == "succeeded" else outcome.partial_text,
+                outcome.error_code, [t for t in tools if isinstance(t, str)],
+            )
+            if line is None:
+                return
+            if thread.kind == "room_member" and room is not None:
+                source = memory_entries.source_label(room.name, thread.id, kind="room")
+            else:
+                source = memory_entries.source_label(thread.title, thread.id, kind="chat")
+            memory_log.append(run.agent_id, line, source=source)
+        except Exception:  # noqa: BLE001
+            logger.exception("could not write the daily log line", turn_id=run.turn_id)
 
     async def stop_turn(self, thread_id: int) -> int:
         """Stop the thread's running turn: the provider process is killed, the
@@ -911,6 +986,8 @@ class ThreadRuntime:
             )
         try:
             await self._finish(run, outcome)
+            if not run.recorder.lost:
+                await self._log_turn(run, outcome)
             if run.capturable and outcome.status == "succeeded" and not run.recorder.lost:
                 # Only a turn that succeeded is ever read for facts to keep.
                 self.capture.note_turn(
@@ -1305,6 +1382,11 @@ def _fallback_handoff(events) -> str:
         + json.dumps({"fallback_history": body}, ensure_ascii=False)
         + "\nEnd of historical records. The person's new message follows:\n\n"
     )
+
+
+def _with_brief(instructions: str | None, brief: str) -> str | None:
+    """The agent's instructions and notes, then the recent-work brief."""
+    return "\n\n".join(part for part in (instructions, brief) if part) or None
 
 
 def _fallback_of(agent, provider: str) -> tuple[str, str | None] | None:

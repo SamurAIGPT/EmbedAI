@@ -29,7 +29,7 @@ from app.schemas.agent import (
     TopicListResponse,
     TopicWriteRequest,
 )
-from app.services import agent_memory, agent_package, memory_entries, memory_journal, memory_proposals, memory_topics
+from app.services import agent_memory, agent_package, memory_entries, memory_journal, memory_log, memory_proposals, memory_topics
 from app.services import agent_store as store
 from app.services.local_access_policy import require_local_access
 from app.services.thread_runtime import EngineModelInvalid, ThreadRuntime, UnknownProvider
@@ -431,6 +431,33 @@ async def delete_topic(
     if before is None:
         raise HTTPException(status_code=404, detail="Topic note not found")
     memory_journal.record(agent.id, memory_journal.note_path(name), actor="person", before=before, after=None)
+
+
+# --- daily logs ------------------------------------------------------------------------
+
+
+@router.get("/{agent_id}/memory/logs")
+async def list_logs(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """The days that have a daily log (memory/log/YYYY-MM-DD.md), newest first."""
+    agent = await _agent_or_404(rt, agent_id)
+    return {"logs": memory_log.list_logs(agent.id)}
+
+
+@router.get("/{agent_id}/memory/logs/{day}")
+async def read_log(agent_id: int, day: str, rt: ThreadRuntime = Depends(get_runtime)):
+    """One day's log, read-only (redacted)."""
+    agent = await _agent_or_404(rt, agent_id)
+    text = memory_log.read_log(agent.id, day)
+    if text is None:
+        raise HTTPException(status_code=404, detail="No log for that day")
+    return {"day": day, "text": text}
+
+
+@router.delete("/{agent_id}/memory/logs/{day}", status_code=204)
+async def delete_log(agent_id: int, day: str, rt: ThreadRuntime = Depends(get_runtime)):
+    agent = await _agent_or_404(rt, agent_id)
+    if not memory_log.delete_log(agent.id, day):
+        raise HTTPException(status_code=404, detail="No log for that day")
 
 
 # --- the journal ---------------------------------------------------------------------

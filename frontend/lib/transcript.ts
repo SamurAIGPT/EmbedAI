@@ -77,7 +77,7 @@ export type TranscriptItem =
   // The turn moved to the agent's fallback engine because its own was limited.
   | { kind: "engine_switched"; key: string; turnId: number | null; from: string; to: string; model: string; message: string }
   // Earlier messages were folded into a summary for an engine that replays the transcript.
-  | { kind: "compacted"; key: string; turnId: number | null; folded: number; summary: string };
+  | { kind: "compacted"; key: string; turnId: number | null; folded: number; summary: string; writtenBy?: string };
 
 export type Transcript = {
   items: TranscriptItem[];
@@ -374,6 +374,9 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
             turnId: id,
             folded: typeof data.folded_messages === "number" ? data.folded_messages : 0,
             summary: text(data.summary),
+            ...(record(data.written_by).via === "helper"
+              ? { writtenBy: `${text(record(data.written_by).engine)}${text(record(data.written_by).model) ? ` (${text(record(data.written_by).model)})` : ""}` }
+              : {}),
           },
         ],
       };

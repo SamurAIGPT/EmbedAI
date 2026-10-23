@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Thread, Turn
+from app.services import helper_usage
 
 TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
@@ -135,7 +136,33 @@ async def month_summary(db: AsyncSession, owner_id: str, month: str | None) -> d
         "by_thread": ordered(threads),
         "by_engine": ordered(engines),
         "by_day": [days[k].as_dict() for k in sorted(days)],
+        "helper": helper_summary(start, end),
     }
+
+
+def helper_summary(start: datetime, end: datetime) -> dict:
+    """The calls the helper model made in the month (helper_usage.py): how many, for
+    which jobs, on which engine and model, with the tokens the engine reported."""
+    rows = helper_usage.rows(start, end)
+    groups: dict[tuple, dict] = {}
+    totals = {"calls": 0, "failed": 0, "input_tokens": 0, "output_tokens": 0, "reported_calls": 0}
+
+    def add(target: dict, row: dict) -> None:
+        target["calls"] += 1
+        target["failed"] += 0 if row.get("ok") else 1
+        if row.get("input_tokens") is not None or row.get("output_tokens") is not None:
+            target["reported_calls"] += 1
+            target["input_tokens"] += row.get("input_tokens") or 0
+            target["output_tokens"] += row.get("output_tokens") or 0
+
+    for row in rows:
+        add(totals, row)
+        key = (row.get("engine") or "", row.get("model") or "", row.get("job") or "", row.get("agent") or "")
+        add(groups.setdefault(key, {
+            "engine": key[0], "model": key[1], "job": key[2], "agent": key[3],
+            "calls": 0, "failed": 0, "input_tokens": 0, "output_tokens": 0, "reported_calls": 0,
+        }), row)
+    return {**totals, "groups": sorted(groups.values(), key=lambda g: (-g["calls"], g["engine"], g["agent"]))}
 
 
 def _cell(value) -> str:
@@ -166,6 +193,24 @@ async def month_csv(db: AsyncSession, owner_id: str, month: str | None) -> tuple
                     turn.status,
                     *(numbers[key] for key in TOKEN_KEYS),
                     numbers["cost_usd"],
+                )
+            ]
+        )
+    # The helper model's calls, one row each, marked by the status "helper" (no thread).
+    for row in helper_usage.rows(start, end):
+        job = helper_usage.JOBS.get(row.get("job"), row.get("job") or "")
+        writer.writerow(
+            [
+                _cell(value)
+                for value in (
+                    datetime.fromtimestamp(float(row["at"]), UTC).isoformat(),
+                    "",
+                    f"Helper model: {job} for {row.get('agent') or 'an agent'}",
+                    row.get("engine") or "",
+                    row.get("model") or "",
+                    "helper" if row.get("ok") else "helper_failed",
+                    *(row.get(key) for key in TOKEN_KEYS),
+                    None,
                 )
             ]
         )

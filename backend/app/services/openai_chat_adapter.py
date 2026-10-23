@@ -235,7 +235,8 @@ class OpenAIChatAdapter:
     # -- a turn ----------------------------------------------------------------------------
 
     async def generate_text(
-        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60
+        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60,
+        on_usage=None,
     ) -> str:
         """One quick answer to `prompt` for background work (memory upkeep):
         a single non-streamed request to the same endpoint and key as the
@@ -251,7 +252,15 @@ class OpenAIChatAdapter:
                 response = await client.post(f"{base}/chat/completions", headers=self._headers(config), json=body)
             if response.status_code != 200:
                 raise RuntimeError(f"The endpoint refused the background call ({response.status_code}).")
-            choices = response.json().get("choices") or []
+            answer = response.json()
+            usage = answer.get("usage")
+            if on_usage is not None and isinstance(usage, dict):
+                on_usage({
+                    ours: usage[theirs]
+                    for theirs, ours in (("prompt_tokens", "input_tokens"), ("completion_tokens", "output_tokens"))
+                    if isinstance(usage.get(theirs), int)
+                })
+            choices = answer.get("choices") or []
             text = ((choices[0] or {}).get("message") or {}).get("content") if choices else None
         except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
             raise RuntimeError(f"The background call failed ({exc.__class__.__name__}).") from None

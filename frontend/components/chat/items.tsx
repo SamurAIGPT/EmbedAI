@@ -357,7 +357,7 @@ export function CompactedMarker({ item }: { item: Item<"compacted"> }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border-y border-dashed border-line py-2 text-center text-xs text-muted">
-      <p>{compactedLabel(item.folded)}</p>
+      <p>{compactedLabel(item.folded, item.writtenBy)}</p>
       {item.summary && (
         <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="mt-1 cursor-pointer underline">
           {open ? "Hide the summary" : "Show the summary"}

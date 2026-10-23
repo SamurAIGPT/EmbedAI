@@ -15,6 +15,7 @@ CREATE TABLE agent (
 	recall_enabled BOOLEAN DEFAULT true NOT NULL, 
 	memory_upkeep BOOLEAN DEFAULT true NOT NULL, 
 	compaction_summary BOOLEAN DEFAULT true NOT NULL, 
+	use_helper BOOLEAN DEFAULT true NOT NULL, 
 	pinned BOOLEAN DEFAULT false NOT NULL, 
 	team_id BIGINT, 
 	delegation_enabled BOOLEAN DEFAULT true NOT NULL, 

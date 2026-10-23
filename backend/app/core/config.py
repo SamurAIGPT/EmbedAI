@@ -151,6 +151,13 @@ class Settings(BaseSettings):
     # it has a quick call (the folded text is redacted first, 20 seconds at most, a
     # failure keeps the excerpt summary). False switches it off for every agent.
     COMPACTION_MODEL_SUMMARY: bool = True
+    # The helper model (docs/MEMORY.md): one connected engine (and, optionally, one
+    # of its models) that writes the background texts an agent's own engine cannot
+    # (Codex and ACP agents). Unset means no helper, so nothing new leaves the
+    # agent's own provider. The environment wins over the Memory settings; an empty
+    # HELPER_ENGINE switches a saved helper off.
+    HELPER_ENGINE: str | None = None
+    HELPER_MODEL: str | None = None
     # The nightly tidy-up runs once a day after this local hour (0-23) for each
     # agent with notes and upkeep on, never while it is working. 24 switches it off.
     MEMORY_TIDY_HOUR: int = 3

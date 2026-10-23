@@ -726,8 +726,11 @@ class ThreadRuntime:
                 # The engine writes the summary of what is folded when it has a
                 # quick call (everything redacted first, 20 seconds at most). A
                 # failure keeps the excerpts; a stop ends the whole turn.
-                source = side_jobs.engine_source(
-                    self.adapters[run.engine_id], config=run.ctx.engine_config, model=run.ctx.model
+                # An engine with no quick call (an ACP agent) uses the helper model
+                # when one is set and this agent has not opted out (side_jobs.py).
+                source = await side_jobs.source_for(
+                    self, agent, side_jobs.COMPACTION, self.adapters[run.engine_id],
+                    config=run.ctx.engine_config, model=run.ctx.model,
                 )
                 if source is not None:
                     written = await context_compaction.model_summary(
@@ -737,6 +740,9 @@ class ThreadRuntime:
                     )
                     if written is not None:
                         plan.items, plan.record = written["items"], written["record"]
+                        if source.via == "helper":
+                            # Shown in the transcript: this text was written by another engine.
+                            plan.record["written_by"] = {"via": "helper", "engine": source.engine, "model": source.model}
             if plan.record is not None and run.recorder is not None:
                 await run.recorder.emit("context.compacted", plan.record)
             return plan.items

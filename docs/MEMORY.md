@@ -189,7 +189,7 @@ budget, the earlier part is folded:
   (a chat must start with the person). This is the fallback of the
   model-written summary below.
 - **Model-written summary (on by default).** When the engine has a quick text call
-  (an OpenAI-compatible endpoint or OpenRouter; ACP agents have none), it writes the
+  (an OpenAI-compatible endpoint or OpenRouter), it writes the
   summary of the folded part: one call to the same engine and model the conversation
   already uses, **20 seconds at most**. The folded messages are redacted **before**
   they are cut or sent, and the answer is redacted again, kept to 2,600 characters,
@@ -199,7 +199,8 @@ budget, the earlier part is folded:
   pressing Stop while the summary is being written cancels the call, sends nothing
   to the engine and stores no fold, and an answer that arrives late is never applied.
   What leaves the machine is the folded conversation, to the engine it was already
-  sent to. Switch it off for everyone with `COMPACTION_MODEL_SUMMARY=false`, or for one
+  sent to (an ACP agent has no quick call: its summary is written by the helper model
+  when one is set, see "The helper model", and is excerpts otherwise). Switch it off for everyone with `COMPACTION_MODEL_SUMMARY=false`, or for one
   agent with `compaction_summary: false` (`PATCH /api/v1/agents/{id}`; the checkbox
   under **Memory upkeep**); both keep the excerpt summary.
 - **Stored and stable.** The fold is stored as a `context.compacted` event in
@@ -286,8 +287,9 @@ OpenRouter, one non-streamed request to the same address and key, on the
 endpoint's own model. The text sent is the quiet turns (the person's words and
 the agent's replies), the notes as they stand (redacted) and the topic list. It
 goes only to that engine and model; nothing is sent anywhere new. Codex and ACP
-agents have no quick call here, so they are not read (the status says so; their
-proposals and notes still work). `MEMORY_HELPER_MODEL` (environment, for example
+agents have no quick call here, so they are not read unless a **helper model** is
+set (see "The helper model", below; the status says so, and their proposals and
+notes still work). `MEMORY_HELPER_MODEL` (environment, for example
 `claude=sonnet,openai_compat=llama3`) chooses another model on the same engine,
 never another provider.
 
@@ -446,11 +448,12 @@ only the two steps that need no model run):
   bullet and a final full stop are ignored, nothing else (`-10` and `10`, `C++`
   and `C` are different facts).
 
-The model steps (noticing, organizing, tidy-up) run on the **helper model**
+The model steps (noticing, organizing, tidy-up) run on the **quick-call model**
 chosen for the agent's engine in the Memory settings (`helper_models`, for
 example `{"claude": "haiku"}`; it overrides `MEMORY_HELPER_MODEL`, which
-overrides the built-in `haiku` on Claude). It is always the engine the agent
-already uses, never another provider.
+overrides the built-in `haiku` on Claude). That is a model on the engine the agent
+already uses, never another provider; another provider is only ever the optional
+helper model below, and only for an engine that cannot write the job at all.
 
 The status route reports the last tidy-up. In the app, the **Memory upkeep** card
 under an agent's notes holds the per-agent switch (noticing and tidy-up together),
@@ -458,6 +461,69 @@ under an agent's notes holds the per-agent switch (noticing and tidy-up together
 **Learn from group chats** switch; the **About me** tab beside Topic notes edits
 About me. Every upkeep change is undoable from the History tab, which names the
 step (noticing, organizing, tidy-up).
+
+## The helper model
+
+A **helper model** fills the gap an engine leaves. It is one connected engine, and
+optionally one of its models, that writes a small background text an agent's own
+engine cannot write here:
+
+- the memory upkeep steps (noticing facts, organizing, the tidy-up) for **Codex and
+  ACP agents**, which have no quick text call;
+- the model-written summary of a folded conversation for **ACP agents** (the only
+  engine besides an OpenAI-compatible endpoint that replays its conversation).
+
+An agent whose own engine can write a job (Claude, an OpenAI-compatible endpoint or
+OpenRouter) **always writes it itself**; the helper never takes its place, even when
+it is set.
+
+**Off unless you set it.** Choose the engine in the **Memory upkeep** card (**Helper
+on another provider**) or in the Memory settings:
+
+```
+PUT /api/v1/memory/settings   {"helper": {"engine": "claude", "model": "haiku"}}
+```
+
+`model` is optional (without it the engine's default for quick calls: `haiku` on
+Claude, the configured model on an endpoint). Only an engine with a quick text call
+can be chosen (`422 invalid_setting` otherwise; `GET /api/v1/engines` marks them
+`can_write_text`). `HELPER_ENGINE` and `HELPER_MODEL` in the server's environment win
+over the saved setting, and an empty `HELPER_ENGINE` switches a saved helper off
+(the card then says it is set by the environment). A model name that starts with a
+dash or has a space switches the helper off rather than write with a model nobody
+named.
+
+**What leaves the agent's provider.** With a helper set, the text those jobs read goes
+to the helper's engine, which may not be the one the agent runs on: the turns being
+noticed and the agent's notes (for upkeep), or the history being summarized (for a
+long conversation). It is redacted again just before it is sent. That is why it is
+opt-in. It applies to every agent whose engine cannot write the job, including one
+you run on a local model, unless you keep that agent off the helper (below).
+
+**Keeping one agent off the helper.** `use_helper: false` on the agent (`PATCH
+/api/v1/agents/{id}`; **Allow the helper model for this agent** in the card) stops
+the helper writing any of that agent's own jobs: no compaction summary, no upkeep.
+The agent then gets what it gets with no helper (excerpt summary, no noticing). The
+switch covers that agent's own jobs only: what it says in a room becomes part of
+the other agents' conversations, and their engines (and a helper, for theirs) read
+it. To keep an agent's text on the machine, run it on a local model, switch it off
+the helper, and keep it out of rooms with agents that are not set up the same way.
+A duplicate keeps the switch.
+
+**Visible and recorded.** The card says, for this agent, whether the helper is in
+use and where the text goes. A summary the helper wrote is marked in the transcript
+(*Written by the helper model ...*) and the stored event carries `written_by`; the
+last capture's status says `via: "helper"`. Every call is a row in a record beside
+the memory journal (agent, job, the helper's engine and model, whether it worked,
+and the tokens when the engine reported them; never the text) and shows in the
+**Usage** panel under **Helper model**, in `GET /api/v1/usage` as `helper`, and in
+the CSV as rows with status `helper` (or `helper_failed`).
+
+**Failure costs nothing.** A helper that is missing, not connected, failing or slow
+breaks nothing: the job falls back exactly as with no helper (an excerpt summary,
+no noticing), and the server log says once why the helper is not used. The one job
+a turn waits for is the compaction summary, held at most 20 seconds, and Stop ends
+the turn as with any summary.
 
 ## The journal
 
@@ -504,21 +570,22 @@ Installation-wide, under `/api/v1/memory` (admin scope):
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never), `helper_models` (a model per engine) and `learn_from_rooms` (bool, off by default). `422 invalid_setting`. |
+| `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never), `helper_models` (a model per engine), `learn_from_rooms` (bool, off by default) and `helper` (`{engine, model}` or `null`; `helper_active` shows what is in force, with its `source`). `422 invalid_setting`. |
 | `GET` | `/about-me` | `text`, `hash`, and the facts agents added (`learned`, newest first, each with `id`, `agent_name`, `at`). |
 | `PUT` | `/about-me` | `{text, expected_hash?}`; `409 memory_changed` (with `current`), `413 memory_too_large`. |
 | `DELETE` | `/about-me/learned/{id}` | Remove an agent-added fact for good; 404 when there is none. |
 
-`recall_enabled`, `memory_upkeep` and `compaction_summary` are fields of the agent. Run
+`recall_enabled`, `memory_upkeep`, `compaction_summary` and `use_helper` are fields of the agent. Run
 `alembic upgrade head`: revision `e7a91c4d2b58` adds `agent.recall_enabled`, `c4d8f1a6e903`
-adds `agent.memory_upkeep` and `a5c3e8b1d7f2` adds `agent.compaction_summary` (all on for
-existing agents).
+adds `agent.memory_upkeep`, `a5c3e8b1d7f2` adds `agent.compaction_summary` and
+`b6d1f4a9c3e7` adds `agent.use_helper` (all on for existing agents).
 
 ## Not covered
 
-- The model-written compaction summary needs an engine with a quick call here (an OpenAI-compatible endpoint or OpenRouter); ACP agents keep the excerpt summary.
+- The model-written compaction summary needs an engine with a quick call here (an OpenAI-compatible endpoint or OpenRouter), or, for an ACP agent, a helper model; without either the excerpt summary stands.
 - About me is one text for the whole installation; there is no per-person profile (the app has one owner).
-- Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
+- Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter), or a helper model set for Codex and ACP agents; without either they are not read.
+- There is one helper for the installation, not one per agent or per engine; token counts of a helper call are recorded only when its engine reports them (an OpenAI-compatible endpoint does, the Claude CLI's text output does not).
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Rooms are read for facts only with **Learn from group chats** on, and only a member agent's own turns.
 - Past-conversation search is a tool on Claude only; other engines have the brief and recall.

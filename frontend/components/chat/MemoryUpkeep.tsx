@@ -4,9 +4,9 @@
 // learning from group chats) and the About me text every agent reads
 // (docs/MEMORY.md). Shown inside the memory panel under an agent's notes.
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type AboutMe, type Agent, type MemorySettings, type MemoryUpkeepStatus } from "@/lib/api";
+import { api, ApiError, type AboutMe, type Agent, type Engine, type MemorySettings, type MemoryUpkeepStatus } from "@/lib/api";
 import { tidyLine } from "@/lib/agents";
-import { captureLine, helperModelLine, tidyHourLabel, withHelperModel } from "@/lib/memory";
+import { captureLine, helperChange, helperModelLine, tidyHourLabel, withHelperModel } from "@/lib/memory";
 
 const FIELD =
   "w-full rounded-md border border-line bg-transparent px-3 py-1.5 text-sm placeholder:text-muted";
@@ -31,9 +31,13 @@ export function UpkeepCard({
   const notesOn = agent.memory_enabled ?? true;
   const upkeepOn = agent.memory_upkeep ?? true;
   const summaryOn = agent.compaction_summary ?? true;
+  const helperAllowed = agent.use_helper ?? true;
   const [status, setStatus] = useState<MemoryUpkeepStatus | null>(null);
   const [settings, setSettings] = useState<MemorySettings | null>(null);
   const [model, setModel] = useState("");
+  const [engines, setEngines] = useState<Engine[]>([]);
+  const [helperEngine, setHelperEngine] = useState("");
+  const [helperName, setHelperName] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -43,6 +47,8 @@ export function UpkeepCard({
       setStatus(nextStatus);
       setSettings(nextSettings);
       setModel(nextSettings.helper_models[nextStatus.engine ?? agent.provider] ?? "");
+      setHelperEngine(nextSettings.helper?.engine ?? "");
+      setHelperName(nextSettings.helper?.model ?? "");
     } catch (err) {
       onError(errorText(err));
     }
@@ -52,6 +58,10 @@ export function UpkeepCard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load, upkeepOn]);
+
+  useEffect(() => {
+    api.getEngines().then(setEngines).catch(() => setEngines([]));
+  }, []);
 
   const guard = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -69,6 +79,13 @@ export function UpkeepCard({
     guard(async () => {
       await api.updateAgent(agent.id, { compaction_summary: !summaryOn });
       onAgentChange({ compaction_summary: !summaryOn });
+    });
+
+  const toggleHelper = () =>
+    guard(async () => {
+      await api.updateAgent(agent.id, { use_helper: !helperAllowed });
+      onAgentChange({ use_helper: !helperAllowed });
+      await load();
     });
 
   const toggleUpkeep = () =>
@@ -185,9 +202,80 @@ export function UpkeepCard({
               </button>
             </div>
             <p className="text-muted">
-              {helperModelLine(status)} A smaller model is enough. It is always the engine this agent already uses, so
-              nothing goes to another provider.
+              {helperModelLine(status, helperAllowed)} A smaller model is enough. This model is on the engine this
+              agent already uses, so nothing goes to another provider.
             </p>
+          </div>
+          <div className="space-y-1 rounded-md border border-line p-2">
+            <p className="font-medium">Helper on another provider (off unless you set it)</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor={`helper-engine-${agent.id}`}>Engine</label>
+              <select
+                id={`helper-engine-${agent.id}`}
+                value={helperEngine}
+                disabled={busy || !settings || settings.helper_active?.source === "environment"}
+                onChange={(e) => setHelperEngine(e.target.value)}
+                className="rounded-md border border-line bg-transparent px-2 py-1"
+              >
+                <option value="">None (nothing leaves the agent&apos;s provider)</option>
+                {engines
+                  .filter((e) => e.can_write_text)
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.label}
+                    </option>
+                  ))}
+              </select>
+              <label htmlFor={`helper-engine-model-${agent.id}`}>Model</label>
+              <input
+                id={`helper-engine-model-${agent.id}`}
+                value={helperName}
+                onChange={(e) => setHelperName(e.target.value)}
+                placeholder="its default"
+                disabled={!helperEngine || settings?.helper_active?.source === "environment"}
+                className={`${FIELD} max-w-48`}
+              />
+              <button
+                onClick={() => void change(helperChange(helperEngine, helperName))}
+                disabled={
+                  busy ||
+                  !settings ||
+                  settings.helper_active?.source === "environment" ||
+                  (helperEngine === (settings.helper?.engine ?? "") && helperName.trim() === (settings.helper?.model ?? ""))
+                }
+                className={SMALL}
+              >
+                Save helper
+              </button>
+            </div>
+            {settings?.helper_active?.source === "environment" && (
+              <p className="text-muted">Set by the server&apos;s environment ({settings.helper_active.engine}); change it there.</p>
+            )}
+            <p className="text-muted">
+              Used only for agents whose own engine cannot write the job (Codex and ACP agents): the summary of a long
+              conversation and the memory upkeep steps. An agent whose engine can write it always writes it itself.
+              With a helper set, <strong>the conversations being read, the notes (secrets removed first) and the history
+              being summarized are sent to the helper&apos;s provider</strong>, which may not be this agent&apos;s. Each
+              call is listed under Usage.
+            </p>
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={helperAllowed}
+                disabled={busy}
+                onChange={() => void toggleHelper()}
+                className="mt-0.5"
+                aria-label="Allow the helper model for this agent"
+              />
+              <span>
+                <span className="font-medium">Allow the helper model for this agent</span>
+                <span className="block text-muted">
+                  Off: the helper never writes this agent&apos;s texts, whatever you set above. This covers this agent&apos;s own
+                  jobs only; what it says in a room becomes part of the other agents&apos; conversations.
+                </span>
+              </span>
+            </label>
           </div>
           <label className="flex cursor-pointer items-start gap-2">
             <input

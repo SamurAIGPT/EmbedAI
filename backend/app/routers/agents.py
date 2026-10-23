@@ -166,6 +166,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 recall_enabled=payload.recall_enabled,
                 memory_upkeep=payload.memory_upkeep,
                 compaction_summary=payload.compaction_summary,
+                use_helper=payload.use_helper,
                 fallback_provider=payload.fallback_provider,
                 fallback_model=payload.fallback_model,
             )
@@ -218,6 +219,7 @@ async def update_agent(
             "recall_enabled",
             "memory_upkeep",
             "compaction_summary",
+            "use_helper",
             "fallback_provider",
             "fallback_model",
         )
@@ -546,13 +548,24 @@ async def memory_upkeep_status(agent_id: int, rt: ThreadRuntime = Depends(get_ru
     """Whether quiet memory upkeep is on for the agent, whether its engine can
     make the background call, and what the last capture did."""
     from app.core.config import settings
-    from app.services import memory_capture, memory_settings
+    from app.services import memory_capture, memory_settings, side_jobs
 
     agent = await _agent_or_404(rt, agent_id)
     adapter = rt.adapters.get(agent.provider)
+    helper = side_jobs.configured()
+    helper_adapter = rt.adapters.get(helper.engine) if helper else None
+    helper_works = helper is not None and side_jobs.can_write(helper_adapter)
     return {
+        # The helper model (docs/MEMORY.md): used only when this agent's own engine cannot write
+        # the job and the agent has not opted out. `helper_used` says it is in use for this agent now.
+        "helper": (
+            {"engine": helper.engine, "label": getattr(helper_adapter, "label", None) or helper.engine,
+             "model": helper.model, "source": helper.source, "usable": helper_works}
+            if helper else None
+        ),
+        "helper_used": bool(helper_works and not side_jobs.can_write(adapter) and agent.use_helper),
         "enabled": bool(agent.memory_enabled and agent.memory_upkeep and settings.MEMORY_CAPTURE_QUIET_SECONDS > 0),
-        "engine_can_call": hasattr(adapter, "generate_text"),
+        "engine_can_call": side_jobs.can_write(adapter),
         "quiet_seconds": settings.MEMORY_CAPTURE_QUIET_SECONDS,
         "last_capture": memory_capture.read_status(agent.id).get("last_capture"),
         "last_tidy": memory_capture.read_status(agent.id).get("last_tidy"),

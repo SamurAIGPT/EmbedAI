@@ -8,6 +8,7 @@ missing or damaged file means the defaults.
 """
 
 import json
+import re
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -53,15 +54,54 @@ def helper_models() -> dict[str, str]:
     return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str) and k and v}
 
 
+def helper() -> dict | None:
+    """The saved helper (docs/MEMORY.md, "The helper model"): `{"engine", "model"}`
+    or None. The environment's `HELPER_ENGINE` is applied by side_jobs.configured()."""
+    raw = _read().get("helper")
+    if not isinstance(raw, dict) or not isinstance(raw.get("engine"), str) or not raw["engine"]:
+        return None
+    model = raw.get("model")
+    return {"engine": raw["engine"], "model": model if isinstance(model, str) else ""}
+
+
 def read() -> dict:
-    return {"learn_from_rooms": learn_from_rooms(), "tidy_hour": tidy_hour(), "helper_models": helper_models()}
+    from app.services import side_jobs
+
+    active = side_jobs.configured()
+    return {
+        "learn_from_rooms": learn_from_rooms(),
+        "tidy_hour": tidy_hour(),
+        "helper_models": helper_models(),
+        "helper": helper(),
+        # What is in force: the environment can set or switch off the saved helper.
+        "helper_active": {"engine": active.engine, "model": active.model, "source": active.source} if active else None,
+    }
 
 
 class InvalidSetting(ValueError):
     pass
 
 
-def update(*, learn_from_rooms=None, tidy_hour=None, helper_models=None) -> dict:
+def _clean_helper(value) -> dict | None:
+    """`{"engine": "claude", "model": "claude-haiku-4-5"}`; None or an empty engine removes it."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"engine", "model"}:
+        raise InvalidSetting("The helper is an engine and, optionally, one of its models.")
+    engine, model = value.get("engine"), value.get("model") or ""
+    if not isinstance(engine, str) or not isinstance(model, str):
+        raise InvalidSetting("The helper is an engine and, optionally, one of its models.")
+    engine, model = engine.strip(), " ".join(model.split())
+    if not engine:
+        return None
+    if len(engine) > ENGINE_MAX or len(model) > MODEL_MAX or not re.match(r"^[A-Za-z0-9_.-]+$", engine):
+        raise InvalidSetting("The helper engine is one engine id, and its model at most 80 characters.")
+    if model and not re.match(r"^[A-Za-z0-9][\x21-\x7e]*$", model):
+        raise InvalidSetting("A model name is one word and cannot start with a dash.")
+    return {"engine": engine, "model": model}
+
+
+def update(*, learn_from_rooms=None, tidy_hour=None, helper_models=None, **more) -> dict:
     """Change the given settings. `helper_models` replaces the whole map; an
     empty model name removes that engine's entry. Raises InvalidSetting."""
     data = _read()
@@ -73,6 +113,10 @@ def update(*, learn_from_rooms=None, tidy_hour=None, helper_models=None) -> dict
         if _hour(tidy_hour) is None:
             raise InvalidSetting("The tidy-up hour is a whole hour from 0 to 23, or 24 to switch it off.")
         data["tidy_hour"] = tidy_hour
+    if "helper" in more:
+        data["helper"] = _clean_helper(more.pop("helper"))
+    if more:
+        raise InvalidSetting("Unknown setting.")
     if helper_models is not None:
         if not isinstance(helper_models, dict):
             raise InvalidSetting("Helper models are a model name per engine.")

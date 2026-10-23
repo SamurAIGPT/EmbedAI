@@ -39,6 +39,7 @@ from app.services import (
     memory_entries,
     memory_journal,
     memory_settings,
+    side_jobs,
     memory_status,
     memory_tidy,
     memory_topics,
@@ -107,9 +108,14 @@ class Report:
     topics: int = 0
     about_me: int = 0
     note: str | None = None
+    # "engine" or "helper": who wrote the call's text (side_jobs.py).
+    via: str | None = None
 
     def as_dict(self) -> dict:
-        return {"at": self.at, "added": self.added, "topics": self.topics, "about_me": self.about_me, "note": self.note}
+        return {
+            "at": self.at, "added": self.added, "topics": self.topics, "about_me": self.about_me,
+            "note": self.note, "via": self.via,
+        }
 
 
 def _clip(text: str) -> str:
@@ -567,19 +573,25 @@ class MemoryCapture:
     def busy(self, agent_id: int) -> bool:
         return any(run.agent_id == agent_id for run in self.rt._runs.values())
 
+    async def source(self, agent, provider: str, model_hint: str | None) -> "side_jobs.TextSource | None":
+        """Who writes upkeep's text for `agent` on `provider`: that engine's own quick
+        call when it has one (always, for an agent whose engine can write it), else the
+        helper model when one is set and the agent has not opted out (side_jobs.py)."""
+        adapter = self.rt.adapters.get(provider)
+        if side_jobs.can_write(adapter):
+            config = await self.rt.prepare_adapter(provider, adapter)
+            return side_jobs.engine_source(adapter, config=config, model=helper_model(provider, model_hint))
+        return await side_jobs.helper_source(self.rt, agent, side_jobs.MEMORY)
+
     async def ask(self, agent, prompt_text: str) -> str | None:
         """One quick call for `agent` on its own engine (no conversation), or
         None when the engine has none, it fails or it does not answer."""
-        adapter = self.rt.adapters.get(agent.provider)
-        generate = getattr(adapter, "generate_text", None)
-        if generate is None:
+        source = await self.source(agent, agent.provider, agent.model)
+        if source is None:
             return None
-        config = await self.rt.prepare_adapter(agent.provider, adapter)
         try:
             return await asyncio.wait_for(
-                generate(prompt_text, config=config, model=helper_model(agent.provider, agent.model),
-                         timeout=CALL_TIMEOUT_SECONDS),
-                timeout=CALL_TIMEOUT_SECONDS + 10,
+                source.generate(prompt_text, timeout=CALL_TIMEOUT_SECONDS), timeout=CALL_TIMEOUT_SECONDS + 10
             )
         except (RuntimeError, TimeoutError, OSError) as exc:
             logger.warning("memory upkeep call failed", agent_id=agent.id, error=str(exc)[:200])
@@ -596,7 +608,7 @@ class MemoryCapture:
         """Move detail lines of MEMORY.md into topic notes, unchanged. Returns
         how many moved. A line judged core is not asked about again."""
         agent = await self._agent(agent_id)
-        if agent is None or not hasattr(self.rt.adapters.get(agent.provider), "generate_text"):
+        if agent is None or await self.source(agent, agent.provider, agent.model) is None:
             return 0
         today = memory_entries.today()
         status = memory_status.read(agent_id)
@@ -691,7 +703,7 @@ class MemoryCapture:
         if agent is None:
             report["note"] = "Memory upkeep is off for this agent."
             return report
-        can_ask = hasattr(self.rt.adapters.get(agent.provider), "generate_text")
+        can_ask = await self.source(agent, agent.provider, agent.model) is not None
         report["organized"] = await self.organize(agent_id)
         # MEMORY.md, then topic notes (never the archive), the oldest-checked first.
         files = [(agent_memory.MEMORY_FILE, MIN_ENTRIES_CORE)] + [
@@ -841,13 +853,10 @@ class MemoryCapture:
         if found is None or not worth_capturing(turns):
             return None
         agent, thread, room, provider, thread_model = found
-        adapter = self.rt.adapters.get(provider)
-        generate = getattr(adapter, "generate_text", None)
-        if generate is None:
-            return Report(now, note="This engine cannot make the quick background call upkeep uses.")
-        config = await self.rt.prepare_adapter(provider, adapter)
         agent_model = agent.model if agent.provider == provider else None
-        model = helper_model(provider, thread_model or agent_model)
+        text_source = await self.source(agent, provider, thread_model or agent_model)
+        if text_source is None:
+            return Report(now, note="This engine cannot make the quick background call upkeep uses.")
         day = memory_entries.today()
         text = prompt(
             agent_name=agent.name,
@@ -858,12 +867,11 @@ class MemoryCapture:
         )
         try:
             answer = await asyncio.wait_for(
-                generate(text, config=config, model=model, timeout=CALL_TIMEOUT_SECONDS),
-                timeout=CALL_TIMEOUT_SECONDS + 10,
+                text_source.generate(text, timeout=CALL_TIMEOUT_SECONDS), timeout=CALL_TIMEOUT_SECONDS + 10,
             )
         except (RuntimeError, TimeoutError, OSError) as exc:
             logger.warning("memory capture call failed", agent_id=agent_id, error=str(exc)[:200])
-            return Report(now, note="The capture call did not answer.")
+            return Report(now, note="The capture call did not answer.", via=text_source.via)
         # Re-read after the wait: the switches, the agent, the room and the conversation may have changed.
         found = await self._conversation(agent_id, thread_id)
         if found is None:
@@ -878,7 +886,7 @@ class MemoryCapture:
         learned = learn_about_person(agent, facts, turns)
         if added or topics or learned:
             logger.info("memory upkeep noticed facts", agent_id=agent_id, core=added, topics=topics, about_me=learned)
-        return Report(now, added=added, topics=topics, about_me=learned)
+        return Report(now, added=added, topics=topics, about_me=learned, via=text_source.via)
 
     async def note_room_turn(self, room_thread_id: int, agent_id: int, turn_id: int) -> None:
         """A member agent finished a room turn and its reply is in the room:

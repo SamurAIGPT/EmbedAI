@@ -47,11 +47,13 @@ async def test_about_me_is_read_saved_and_a_learned_fact_removed(api):
 
 async def test_settings_are_read_and_changed(api):
     first = await api.get("/api/v1/memory/settings")
-    assert first.status_code == 200 and first.json() == {"learn_from_rooms": False, "tidy_hour": 3, "helper_models": {}}
+    assert first.status_code == 200 and first.json() == {
+        "learn_from_rooms": False, "tidy_hour": 3, "helper_models": {}, "helper": None, "helper_active": None
+    }
     body = {"learn_from_rooms": True, "tidy_hour": 5, "helper_models": {"claude": "sonnet"}}
     saved = await api.put("/api/v1/memory/settings", json=body)
-    assert saved.status_code == 200 and saved.json() == body
-    assert (await api.get("/api/v1/memory/settings")).json() == body
+    assert saved.status_code == 200 and {k: saved.json()[k] for k in body} == body
+    assert {k: v for k, v in (await api.get("/api/v1/memory/settings")).json().items() if k in body} == body
     assert (await api.put("/api/v1/memory/settings", json={"learn_from_rooms": False})).json()["tidy_hour"] == 5
     bad = await api.put("/api/v1/memory/settings", json={"tidy_hour": 30})
     assert bad.status_code == 422 and bad.json()["detail"]["error_code"] == "invalid_setting"

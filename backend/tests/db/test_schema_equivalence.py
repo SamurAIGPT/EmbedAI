@@ -132,6 +132,7 @@ def test_named_agent_columns_are_the_same_on_both_databases(schemas, tmp_path):
     assert column(sqlite_view, "agent", "recall_enabled") == ("recall_enabled", "boolean", False, "true")
     assert column(sqlite_view, "agent", "memory_upkeep") == ("memory_upkeep", "boolean", False, "true")
     assert column(sqlite_view, "agent", "compaction_summary") == ("compaction_summary", "boolean", False, "true")
+    assert column(sqlite_view, "agent", "use_helper") == ("use_helper", "boolean", False, "true")
     assert column(sqlite_view, "agent", "approval_mode") == ("approval_mode", "text", False, "'ask'")
     assert column(sqlite_view, "agent", "fallback_provider") == ("fallback_provider", "text", True, None)
     assert column(sqlite_view, "agent", "fallback_model") == ("fallback_model", "text", True, None)

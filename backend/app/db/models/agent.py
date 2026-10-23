@@ -78,6 +78,11 @@ class Agent(Base):
     compaction_summary: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=expression.true()
     )
+    # Off: the helper model (docs/MEMORY.md) never writes this agent's background
+    # texts, whatever the installation's helper setting.
+    use_helper: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=expression.true()
+    )
     # Pinned agents list first.
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()

@@ -471,6 +471,7 @@ export type Agent = {
   // Off: no quick model call files facts noticed in its conversations.
   memory_upkeep?: boolean;
   compaction_summary?: boolean;
+  use_helper?: boolean;
   // Another engine (and model) a turn moves to when this agent's engine
   // refuses it for a limit before starting on it (docs/ENGINES.md).
   fallback_provider?: string | null;
@@ -497,6 +498,7 @@ export type AgentInput = {
   recall_enabled?: boolean;
   memory_upkeep?: boolean;
   compaction_summary?: boolean;
+  use_helper?: boolean;
   fallback_provider?: string | null;
   fallback_model?: string | null;
   // Create only: the first contents of the agent's notes.
@@ -527,6 +529,7 @@ export type Engine = {
   custom_models: boolean;
   capabilities: { tools: boolean; approvals: boolean; mcp: boolean; images: boolean; resume: boolean; computers: boolean };
   configurable: boolean;
+  can_write_text?: boolean;
   config: Record<string, unknown> | null;
   preset?: boolean;
   setup?: { install?: string | null; sign_in?: string | null; docs_url?: string | null; credential?: string; notes?: string[] } | null;
@@ -589,7 +592,7 @@ export type TidyReport = {
   organized: number;
   note: string | null;
 };
-export type CaptureReport = { at: number; added: number; topics: number; about_me?: number; note: string | null };
+export type CaptureReport = { at: number; added: number; topics: number; about_me?: number; note: string | null; via?: "engine" | "helper" | null };
 export type MemoryUpkeepStatus = {
   enabled: boolean;
   engine_can_call: boolean;
@@ -599,12 +602,19 @@ export type MemoryUpkeepStatus = {
   last_tidy: TidyReport | null;
   tidy_hour: number;
   helper_model?: string | null;
+  // The helper model (docs/MEMORY.md): another engine that writes the texts this agent's own engine cannot.
+  helper?: { engine: string; label: string; model: string | null; source: "environment" | "settings"; usable: boolean } | null;
+  // True when the helper is in use for this agent now (its own engine has no quick call, the agent allows it).
+  helper_used?: boolean;
 };
 // Installation-wide: the same for every agent.
 export type MemorySettings = {
   learn_from_rooms: boolean;
   tidy_hour: number;
   helper_models: Record<string, string>;
+  // The saved helper, and the one in force (the environment can set or switch it off).
+  helper?: { engine: string; model: string } | null;
+  helper_active?: { engine: string; model: string | null; source: "environment" | "settings" } | null;
 };
 export type LearnedFact = { id: string; text: string; line: string; agent_id: number | null; agent_name: string; at: number };
 export type AboutMe = { text: string; hash: string; learned: LearnedFact[]; max_chars: number; redacted?: number };
@@ -1347,6 +1357,17 @@ export type UsageSummary = {
   by_thread: UsageTotals[];
   by_engine: UsageTotals[];
   by_day: UsageTotals[];
+  // Calls the helper model made (docs/MEMORY.md): when none was set, calls is 0.
+  helper?: HelperUsage;
+};
+
+export type HelperUsage = {
+  calls: number;
+  failed: number;
+  reported_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  groups: { engine: string; model: string; job: string; agent: string; calls: number; failed: number; input_tokens: number; output_tokens: number }[];
 };
 
 async function errorFrom(res: Response): Promise<ApiError> {

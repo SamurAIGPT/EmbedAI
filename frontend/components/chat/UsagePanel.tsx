@@ -124,6 +124,31 @@ export function UsageView() {
               <Table title="By day" groups={shown.by_day} />
             </>
           )}
+          {shown?.helper && shown.helper.calls > 0 && (
+            <section aria-label="Helper model">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Helper model</h3>
+              <p className="mb-1 text-xs text-muted">
+                {shown.helper.calls} call{shown.helper.calls === 1 ? "" : "s"} written for agents whose own engine cannot
+                write them
+                {shown.helper.failed > 0 && ` (${shown.helper.failed} failed)`}. Tokens only where the engine reported them.
+              </p>
+              <ul className="space-y-0.5 text-xs">
+                {shown.helper.groups.map((g) => (
+                  <li key={`${g.engine}/${g.model}/${g.job}/${g.agent}`} className="flex flex-wrap gap-x-3">
+                    <span>{g.agent || "an agent"}</span>
+                    <span className="text-muted">{g.job === "compaction" ? "summaries" : "memory upkeep"}</span>
+                    <span className="text-muted">{g.engine}{g.model ? ` · ${g.model}` : ""}</span>
+                    <span className="tabular-nums">{g.calls} call{g.calls === 1 ? "" : "s"}</span>
+                    {g.input_tokens + g.output_tokens > 0 && (
+                      <span className="tabular-nums text-muted">
+                        {formatTokens(g.input_tokens)} in · {formatTokens(g.output_tokens)} out
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <div className="flex items-center gap-3">
             <button onClick={() => void exportCsv()} className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-xs">
               Export {month} as CSV

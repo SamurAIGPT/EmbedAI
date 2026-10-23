@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { api } from './api.ts';
-import { captureLine, compactedLabel, helperModelLine, isTopicName, journalLabel, recalledLabel, tidyHourLabel, topicFileName, withHelperModel } from './memory.ts';
+import { captureLine, compactedLabel, helperChange, helperModelLine, isTopicName, journalLabel, recalledLabel, tidyHourLabel, topicFileName, withHelperModel } from './memory.ts';
 import { applyEvent, emptyTranscript } from './transcript.ts';
 
 const originalFetch = globalThis.fetch;
@@ -106,4 +106,30 @@ test('upkeep, settings and About me calls hit the right routes', async () => {
   assert.deepEqual(JSON.parse(calls[3].body), { learn_from_rooms: true, helper_models: { claude: 'haiku' } });
   assert.deepEqual(JSON.parse(calls[5].body), { text: 'I live in Pune', expected_hash: 'h1' });
   assert.deepEqual(JSON.parse(calls[6].body), { text: 'fresh' });
+});
+
+test('the helper model is described as leaving the provider, and as never used when switched off', () => {
+  const helper = { engine: 'claude', label: 'Claude', model: 'haiku', source: 'settings', usable: true };
+  const base = { engine: 'codex', helper_model: null, engine_can_call: false };
+  assert.match(helperModelLine({ ...base, helper }), /helper model \(Claude, haiku\) writes it.*not to this agent's provider/);
+  assert.match(helperModelLine({ ...base, helper }, false), /never uses the helper model/);
+  assert.match(helperModelLine({ ...base, helper: { ...helper, usable: false } }), /not usable/);
+  assert.match(helperModelLine({ ...base, helper: null }), /only expired notes and repeats/);
+  assert.match(helperModelLine({ engine: 'claude', helper_model: 'haiku', engine_can_call: true, helper }), /Quick calls use haiku on claude/);
+});
+
+test('the helper setting is built from an engine and a model, and an empty engine removes it', () => {
+  assert.deepEqual(helperChange(' claude ', ' haiku '), { helper: { engine: 'claude', model: 'haiku' } });
+  assert.deepEqual(helperChange('', 'x'), { helper: null });
+});
+
+test('a summary written by the helper says so', () => {
+  assert.match(compactedLabel(3, 'claude (haiku)'), /Written by the helper model claude \(haiku\)\.$/);
+  assert.doesNotMatch(compactedLabel(3), /helper/);
+  let t = emptyTranscript();
+  t = applyEvent(t, { seq: 1, type: 'turn.started', turn_id: 4, data: { prompt_text: 'hi there friend' } });
+  t = applyEvent(t, { seq: 2, type: 'context.compacted', turn_id: 4, data: { folded_messages: 6, summary: 'S', written_by: { via: 'helper', engine: 'claude', model: 'haiku' } } });
+  assert.equal(t.items[1].writtenBy, 'claude (haiku)');
+  t = applyEvent(t, { seq: 3, type: 'context.compacted', turn_id: 5, data: { folded_messages: 2, summary: 'S' } });
+  assert.equal(t.items[2].writtenBy, undefined);
 });

@@ -40,10 +40,13 @@ export function recalledLabel(notes: number, conversations: number): string {
 }
 
 // The marker's one line.
-export function compactedLabel(folded: number): string {
-  return folded > 0
-    ? `Earlier messages summarized: ${plural(folded, "message was", "messages were")} folded into a summary for the engine. The full conversation stays here.`
-    : "Earlier messages summarized for the engine. The full conversation stays here.";
+export function compactedLabel(folded: number, writtenBy?: string): string {
+  const base =
+    folded > 0
+      ? `Earlier messages summarized: ${plural(folded, "message was", "messages were")} folded into a summary for the engine. The full conversation stays here.`
+      : "Earlier messages summarized for the engine. The full conversation stays here.";
+  // A helper model wrote it: the conversation went to that engine, not the agent's own.
+  return writtenBy ? `${base} Written by the helper model ${writtenBy}.` : base;
 }
 
 const ACTORS: Record<string, string> = { person: "You", proposal: "Accepted proposal", undo: "Undo", upkeep: "Memory upkeep", agent: "Agent", import: "Imported agent file" };
@@ -77,13 +80,30 @@ export function captureLine(r: CaptureReport | null | undefined): string {
 }
 
 // Which model the quick calls use, and why a different one might be wanted.
-export function helperModelLine(status: Pick<MemoryUpkeepStatus, "engine" | "helper_model" | "engine_can_call"> | null): string {
+export function helperModelLine(
+  status: Pick<MemoryUpkeepStatus, "engine" | "helper_model" | "engine_can_call" | "helper" | "helper_used"> | null,
+  allowed = true,
+): string {
   if (!status) return "";
-  if (!status.engine_can_call) return "This agent's engine cannot make the quick call, so only expired notes and repeats are tidied.";
+  if (!status.engine_can_call) {
+    const helper = status.helper;
+    if (helper && helper.usable && allowed) {
+      return `This agent's engine cannot make the quick call, so the helper model (${helper.label}${helper.model ? `, ${helper.model}` : ""}) writes it: the text read goes to ${helper.label}, not to this agent's provider.`;
+    }
+    if (helper && !allowed) return "This agent's engine cannot make the quick call and it never uses the helper model, so only expired notes and repeats are tidied.";
+    if (helper) return `This agent's engine cannot make the quick call and the helper model (${helper.label}) is not usable, so only expired notes and repeats are tidied.`;
+    return "This agent's engine cannot make the quick call, so only expired notes and repeats are tidied.";
+  }
   const engine = status.engine ?? "its engine";
   return status.helper_model
     ? `Quick calls use ${status.helper_model} on ${engine}.`
     : `Quick calls use this agent's own model on ${engine}.`;
+}
+
+// The settings change that sets (or, with an empty engine, removes) the helper model.
+export function helperChange(engine: string, model: string): { helper: { engine: string; model: string } | null } {
+  const e = engine.trim();
+  return { helper: e ? { engine: e, model: model.trim() } : null };
 }
 
 // The settings with one engine's helper model set (an empty name clears it).

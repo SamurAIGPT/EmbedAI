@@ -5,7 +5,9 @@ model per engine."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from app.services import about_me, memory_settings
+from app.routers.agents import get_runtime
+from app.services import about_me, memory_settings, side_jobs
+from app.services.thread_runtime import ThreadRuntime
 from app.services.local_access_policy import require_local_access
 
 router = APIRouter(prefix="/memory", tags=["Memory"], dependencies=[Depends(require_local_access)])
@@ -16,6 +18,9 @@ class SettingsChange(BaseModel):
     learn_from_rooms: bool | None = None
     tidy_hour: int | None = None
     helper_models: dict[str, str] | None = None
+    # The helper model: {"engine": "claude", "model": "claude-haiku-4-5"} (model optional),
+    # or null to remove it. Off unless set (docs/MEMORY.md, "The helper model").
+    helper: dict | None = None
 
 
 @router.get("/settings")
@@ -24,9 +29,21 @@ async def read_settings():
 
 
 @router.put("/settings")
-async def change_settings(change: SettingsChange):
+async def change_settings(change: SettingsChange, rt: ThreadRuntime = Depends(get_runtime)):
+    values = change.model_dump(exclude_unset=True)
+    helper = values.get("helper")
+    if isinstance(helper, dict) and isinstance(helper.get("engine"), str) and helper["engine"].strip():
+        if not side_jobs.can_write(rt.adapters.get(helper["engine"].strip())):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "invalid_setting",
+                    "message": "That engine is not connected here or cannot write a quick text call. "
+                    "Use Claude, an OpenAI-compatible endpoint or OpenRouter.",
+                },
+            )
     try:
-        return memory_settings.update(**change.model_dump(exclude_unset=True))
+        return memory_settings.update(**values)
     except memory_settings.InvalidSetting as exc:
         raise HTTPException(
             status_code=422, detail={"error_code": "invalid_setting", "message": str(exc)}

@@ -256,6 +256,8 @@ class EngineRegistry:
             "custom_models": accepts_custom_models(adapter),
             "capabilities": capabilities_of(adapter).as_dict(),
             "configurable": bool(getattr(adapter, "needs_config", False)),
+            # Can write a quick text call (usable as the helper model, docs/MEMORY.md).
+            "can_write_text": getattr(adapter, "generate_text", None) is not None,
             "config": config,
             "preset": bool(getattr(adapter, "preset", False)),
             "setup": getattr(adapter, "setup", None),

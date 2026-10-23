@@ -177,7 +177,8 @@ class ClaudeAdapter:
         )
 
     async def generate_text(
-        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60
+        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60,
+        on_usage=None,
     ) -> str:
         """One quick answer to `prompt` for background work (memory upkeep),
         from the same CLI and sign-in as the agent's own turns. No tools, no

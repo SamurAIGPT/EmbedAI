@@ -32,6 +32,7 @@ _EDITABLE = (
     "pinned",
     "memory_enabled",
     "recall_enabled",
+    "memory_upkeep",
     "fallback_provider",
     "fallback_model",
 )
@@ -84,6 +85,7 @@ async def create_agent(
     pinned: bool = False,
     memory_enabled: bool = True,
     recall_enabled: bool = True,
+    memory_upkeep: bool = True,
     fallback_provider: str | None = None,
     fallback_model: str | None = None,
 ) -> Agent:
@@ -107,6 +109,7 @@ async def create_agent(
         pinned=pinned,
         memory_enabled=memory_enabled,
         recall_enabled=recall_enabled,
+        memory_upkeep=memory_upkeep,
         fallback_provider=fallback_provider,
         fallback_model=fallback_model,
         created_at=now,
@@ -200,6 +203,7 @@ async def duplicate_agent(db: AsyncSession, agent_id: int) -> Agent:
         approval_mode=source.approval_mode,
         memory_enabled=source.memory_enabled,
         recall_enabled=source.recall_enabled,
+        memory_upkeep=source.memory_upkeep,
         fallback_provider=source.fallback_provider,
         fallback_model=source.fallback_model,
     )

@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.core import app_settings
 from app.core.logging import get_logger
 from app.services import agent_memory, agent_store, attachments, context_compaction, memory_recall
+from app.services.memory_capture import MemoryCapture, Turn as MemoryTurn
 from app.services import thread_store as store
 from app.services import local_claude_runner
 from app.services.workspaces import require_workspace
@@ -179,6 +180,10 @@ class ActiveRun:
     # The conversation already had turns before this one.
     continues: bool = False
     screen_granted: bool = False
+    # The person's typed message, and whether a finished turn may be read for
+    # facts worth keeping (memory_capture.py): a 1:1 chat the person started.
+    prompt_text: str = ""
+    capturable: bool = False
 
     def touch(self) -> None:
         try:
@@ -448,6 +453,7 @@ class ThreadRuntime:
         from app.rooms.service import Rooms
         self.team_jobs = Jobs(self)
         self.rooms = Rooms(self)
+        self.capture = MemoryCapture(self)
         if self.computers is None:
             self.computers = computer_service.ComputerService(
                 owner_id=self.owner_id, _session_factory=self.session
@@ -735,6 +741,16 @@ class ThreadRuntime:
             engine_id=thread.provider,
             fallback=_fallback_of(agent, thread.provider),
             continues=turn.seq > 1,
+            prompt_text=prompt_text,
+            capturable=(
+                agent is not None
+                and agent.memory_enabled
+                and agent.memory_upkeep
+                and thread.kind == "chat"
+                and thread.job_id is None
+                and team_origin == "person"
+                and not internal
+            ),
         )
         if agent is not None and agent.team_id is not None and app_settings.get("TEAM_ENABLED") and capabilities_of(adapter).mcp:
             from app.db.models import Team
@@ -895,6 +911,11 @@ class ThreadRuntime:
             )
         try:
             await self._finish(run, outcome)
+            if run.capturable and outcome.status == "succeeded" and not run.recorder.lost:
+                # Only a turn that succeeded is ever read for facts to keep.
+                self.capture.note_turn(
+                    run.agent_id, run.thread_id, MemoryTurn(run.turn_id, run.prompt_text, outcome.result or "")
+                )
         except Exception:  # noqa: BLE001
             # Nothing more can be done here; the lease will expire and the sweep
             # will mark the turn interrupted. Never replayed.
@@ -1223,16 +1244,22 @@ class ThreadRuntime:
             logger.warning("interrupted turns whose owner stopped", turn_ids=interrupted)
         await self.team_jobs.recover()
         await self.rooms.recover()
+        try:
+            await self.capture.restore()
+        except Exception:  # noqa: BLE001
+            logger.exception("could not read back the waiting memory upkeep turns")
         return interrupted
 
     def reopen(self) -> None:
         """The app is (re)starting in this process: turns may start again."""
         self._closing = False
+        self.capture.reopen()
 
     async def shutdown(self) -> None:
         """This process is stopping. Kill its provider processes and interrupt
         its own turns at once, instead of leaving them for the lease to expire."""
         self._closing = True
+        self.capture.close()
         runs = list(self._runs.values())
         for run in runs:
             run.recorder.lose()

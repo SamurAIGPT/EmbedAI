@@ -171,6 +171,41 @@ class ClaudeAdapter:
             signed_in=cli.signed_in,
         )
 
+    async def generate_text(
+        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60
+    ) -> str:
+        """One quick answer to `prompt` for background work (memory upkeep),
+        from the same CLI and sign-in as the agent's own turns. No tools, no
+        MCP servers, no session saved, started in a new empty folder; the
+        prompt goes in on stdin. Raises RuntimeError when the CLI fails or does
+        not answer in time."""
+        import tempfile
+        from pathlib import Path
+
+        from fastapi.concurrency import run_in_threadpool
+
+        executable = local_claude_runner.resolve_claude_executable()
+        if executable is None:
+            raise RuntimeError("The Claude CLI was not found.")
+        args = [
+            str(executable), "-p", "--output-format", "text", "--no-session-persistence",
+            *local_claude_runner.LOCKDOWN_ARGS,
+        ]
+        if model:
+            args += ["--model", model]
+
+        def call() -> local_claude_runner.RunOutput:
+            with tempfile.TemporaryDirectory(prefix="open-dots-helper-") as empty:
+                return local_claude_runner.run_blocking(
+                    args, stdin_text=prompt, cwd=Path(empty), timeout_seconds=timeout,
+                    max_output_bytes=256 * 1024,
+                )
+
+        out = await run_in_threadpool(call)
+        if out.exit_code != 0 or not out.stdout.strip():
+            raise RuntimeError("The Claude CLI gave no answer for the background call.")
+        return out.stdout
+
     async def run_turn(
         self, ctx: TurnContext, sink: EventSink, gate: ApprovalGate
     ) -> TurnOutcome:

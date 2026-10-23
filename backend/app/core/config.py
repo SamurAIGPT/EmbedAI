@@ -137,6 +137,16 @@ class Settings(BaseSettings):
     # only catches an engine whose own time limit did not end it. 0 turns it off.
     TURN_STALL_SECONDS: float = 600
 
+    # Memory upkeep (docs/MEMORY.md): a conversation with an agent that has been
+    # quiet for this many seconds (or has had 6 turns) is read once by a quick
+    # model call that files the facts worth keeping. 0 switches the call off for
+    # every agent.
+    MEMORY_CAPTURE_QUIET_SECONDS: float = 120
+    # Optional smaller model for those calls, per engine: "claude=haiku,openai_compat=llama3".
+    # An engine not listed uses "haiku" on Claude, and the endpoint's own model elsewhere.
+    # The call always goes to the engine the conversation already uses.
+    MEMORY_HELPER_MODEL: str = ""
+
     # Routines (docs/ROUTINES.md): how often the scheduler looks for due and
     # finished runs, the largest webhook body accepted, and an optional
     # Telegram chat that also gets routine notifications (needs

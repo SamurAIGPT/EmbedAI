@@ -13,6 +13,7 @@ CREATE TABLE agent (
 	approval_mode VARCHAR DEFAULT 'ask' NOT NULL, 
 	memory_enabled BOOLEAN DEFAULT true NOT NULL, 
 	recall_enabled BOOLEAN DEFAULT true NOT NULL, 
+	memory_upkeep BOOLEAN DEFAULT true NOT NULL, 
 	pinned BOOLEAN DEFAULT false NOT NULL, 
 	team_id BIGINT, 
 	delegation_enabled BOOLEAN DEFAULT true NOT NULL, 

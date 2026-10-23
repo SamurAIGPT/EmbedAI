@@ -229,6 +229,12 @@ export function AgentsPanel({
       () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, recall_enabled: on } } : open))
     );
 
+  const toggleUpkeepOn = (agent: Agent, on: boolean) =>
+    run(
+      () => api.updateAgent(agent.id, { memory_upkeep: on }),
+      () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, memory_upkeep: on } } : open))
+    );
+
   const toggleNotesOn = (agent: Agent, on: boolean) =>
     run(
       () => api.updateAgent(agent.id, { memory_enabled: on }),
@@ -465,6 +471,7 @@ export function AgentsPanel({
               onLoadTheirs={loadTheirs}
               onToggle={(on) => toggleNotesOn(notes.agent, on)}
               onToggleRecall={(on) => toggleRecallOn(notes.agent, on)}
+              onToggleUpkeep={(on) => toggleUpkeepOn(notes.agent, on)}
               onReload={loadTheirs}
               onBack={back}
             />
@@ -631,6 +638,7 @@ function NotesEditor({
   onLoadTheirs,
   onToggle,
   onToggleRecall,
+  onToggleUpkeep,
   onReload,
   onBack,
 }: {
@@ -642,6 +650,7 @@ function NotesEditor({
   onLoadTheirs: () => void;
   onToggle: (on: boolean) => void;
   onToggleRecall: (on: boolean) => void;
+  onToggleUpkeep: (on: boolean) => void;
   onReload: () => void;
   onBack: () => void;
 }) {
@@ -651,6 +660,7 @@ function NotesEditor({
   const dirty = notes.text !== memory.text;
   const enabled = notes.agent.memory_enabled ?? true;
   const recall = notes.agent.recall_enabled ?? true;
+  const upkeep = notes.agent.memory_upkeep ?? true;
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted">
@@ -694,6 +704,11 @@ function NotesEditor({
         <input type="checkbox" checked={recall} disabled={busy || !enabled} onChange={() => onToggleRecall(!recall)} />
         Recall before each message: add matching topic notes and passages from earlier conversations to the message
         (shown as a &ldquo;Recalled&rdquo; chip)
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
+        <input type="checkbox" checked={upkeep} disabled={busy || !enabled} onChange={() => onToggleUpkeep(!upkeep)} />
+        Memory upkeep: when a conversation goes quiet, one quick call to this agent&apos;s own engine files facts worth
+        keeping (marked &ldquo;noticed&rdquo;, in the History tab, undoable)
       </label>
       <div className="flex gap-2">
         <button onClick={onSave} disabled={busy || !dirty} className={PRIMARY}>

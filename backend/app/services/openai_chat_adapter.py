@@ -233,6 +233,31 @@ class OpenAIChatAdapter:
 
     # -- a turn ----------------------------------------------------------------------------
 
+    async def generate_text(
+        self, prompt: str, *, config: dict | None = None, model: str | None = None, timeout: float = 60
+    ) -> str:
+        """One quick answer to `prompt` for background work (memory upkeep):
+        a single non-streamed request to the same endpoint and key as the
+        agent's own turns. Raises RuntimeError when it fails."""
+        config = config or self.config or {}
+        base = config.get("base_url")
+        model = model or config.get("model")
+        if not base or not model:
+            raise RuntimeError("This endpoint has no address or model for a background call.")
+        body = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
+        try:
+            async with self._client(httpx.Timeout(timeout, connect=CONNECT_TIMEOUT_SECONDS)) as client:
+                response = await client.post(f"{base}/chat/completions", headers=self._headers(config), json=body)
+            if response.status_code != 200:
+                raise RuntimeError(f"The endpoint refused the background call ({response.status_code}).")
+            choices = response.json().get("choices") or []
+            text = ((choices[0] or {}).get("message") or {}).get("content") if choices else None
+        except (httpx.HTTPError, ValueError, AttributeError, TypeError) as exc:
+            raise RuntimeError(f"The background call failed ({exc.__class__.__name__}).") from None
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("The endpoint gave no answer for the background call.")
+        return text
+
     async def run_turn(self, ctx: TurnContext, sink, gate) -> TurnOutcome:
         config = ctx.engine_config or self.config or {}
         base = config.get("base_url")

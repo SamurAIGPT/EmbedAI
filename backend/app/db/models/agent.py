@@ -68,6 +68,11 @@ class Agent(Base):
     recall_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=expression.true()
     )
+    # Off: no model call files facts noticed in this agent's conversations
+    # (docs/MEMORY.md, "Noticing facts"). Needs memory_enabled.
+    memory_upkeep: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=expression.true()
+    )
     # Pinned agents list first.
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()

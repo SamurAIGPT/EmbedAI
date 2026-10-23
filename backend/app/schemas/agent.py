@@ -53,6 +53,9 @@ class AgentCreateRequest(BaseModel):
     # Before each turn, add relevant notes and earlier conversations to the
     # person's message (docs/MEMORY.md). Has no effect while memory is off.
     recall_enabled: bool = True
+    # Quiet background memory upkeep: a model call that files facts noticed in
+    # conversations (docs/MEMORY.md). Has no effect while memory is off.
+    memory_upkeep: bool = True
     # Optional: another engine (and its model; null for its default) a turn
     # moves to when this agent's engine refuses it for a usage or rate limit
     # before starting on it (docs/ENGINES.md). It must differ from `provider`.
@@ -94,6 +97,7 @@ class AgentUpdateRequest(BaseModel):
     pinned: bool | None = None
     memory_enabled: bool | None = None
     recall_enabled: bool | None = None
+    memory_upkeep: bool | None = None
     # An explicit null removes the fallback engine (and its model).
     fallback_provider: str | None = Field(default=None, min_length=1, max_length=64)
     fallback_model: str | None = Field(default=None, max_length=200)
@@ -118,7 +122,7 @@ class AgentUpdateRequest(BaseModel):
     def _something_to_change(self):
         if not self.model_fields_set:
             raise ValueError("send at least one field to change")
-        for field in ("name", "instructions", "provider", "approval_mode", "pinned", "memory_enabled", "recall_enabled", "archived"):
+        for field in ("name", "instructions", "provider", "approval_mode", "pinned", "memory_enabled", "recall_enabled", "memory_upkeep", "archived"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -141,6 +145,7 @@ class AgentResponse(BaseModel):
     pinned: bool
     memory_enabled: bool
     recall_enabled: bool = True
+    memory_upkeep: bool = True
     fallback_provider: str | None = None
     fallback_model: str | None = None
     archived_at: datetime | None

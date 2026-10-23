@@ -220,7 +220,7 @@ def write_atomic(path: Path, text: str) -> None:
 def remove_memory(agent_id: int) -> None:
     """Delete the notes file, the topic notes, and the app's record of them
     (journal, proposed notes). The folder stays: conversations may work in it."""
-    from app.services import memory_journal, memory_proposals, memory_topics
+    from app.services import memory_capture, memory_journal, memory_proposals, memory_topics
 
     try:
         memory_path(agent_id).unlink()
@@ -229,6 +229,7 @@ def remove_memory(agent_id: int) -> None:
     memory_topics.remove_all(agent_id)
     memory_journal.remove(agent_id)
     memory_proposals.remove(agent_id)
+    memory_capture.remove_status(agent_id)
 
 
 # --- what a turn is told --------------------------------------------------------------

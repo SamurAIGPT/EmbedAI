@@ -15,7 +15,9 @@ has no notes, no recall and no proposals (compaction still applies).
 
 <data folder>/memory-state/            (beside the attachments folder)
 ├── journal/<agent id>.ndjson          every change made through the app
-└── proposals/<agent id>.json          proposed notes waiting for you
+├── proposals/<agent id>.json          proposed notes waiting for you
+├── upkeep/<agent id>.json             what the last quiet capture did
+└── capture-pending.json               ids of turns waiting when the app quit
 ```
 
 The data folder is `~/.open-dots` by default (the desktop app's own data
@@ -158,7 +160,7 @@ budget, the earlier part is folded:
 
 ## Proposed notes
 
-Nothing is ever written to an agent's notes on its own. Once a conversation
+Proposals never write to an agent's notes on their own (noticed facts, below, do, and say so). Once a conversation
 with the agent has been quiet for two minutes, your own messages in it (never
 the agent's replies) are read for statements meant to last: "remember that
 …", "from now on …", "I prefer / I always / I live in / I work at …", "my …
@@ -179,6 +181,61 @@ The proposer is deterministic, with no model call, so it misses facts said in
 other ways. Conversations are read when the queue is looked at (opening the
 tab, or `GET .../memory/proposals`), not by a background loop; each
 conversation is read once up to its latest turn.
+
+## Noticed facts (memory upkeep)
+
+The proposer above only quotes the person's literal statements. **Memory upkeep**
+adds a model that reads the whole exchange. When a one-to-one conversation with
+an agent has been quiet for two minutes (`MEMORY_CAPTURE_QUIET_SECONDS`, 120), or
+after six turns, **one** quick call reads those turns beside `MEMORY.md` and the
+topic list and files what is new:
+
+- a core fact the agent needs in every conversation goes to `MEMORY.md`, marked
+  `(noticed)`: `- 2026-10-23 · from chat "Plans" (noticed) · The person is vegetarian`;
+- everything else goes to a topic note for its subject, reusing an existing
+  topic (whatever its capitalisation) or creating one with a header (`title`,
+  `aliases`), so recall finds it later; an existing note only gains aliases it
+  does not have yet (up to 12);
+- a fact that ends on a known day gets `· until YYYY-MM-DD`; a birthday or other
+  yearly date, and anything lasting, never does. An `until` that is not a real
+  day or is already past drops the fact rather than guess.
+
+**Written directly, not proposed.** Noticed facts go straight into the files,
+unlike the literal-statement proposals that wait in the **Proposed** tab. A
+model has already judged the whole exchange, each write is small, redacted,
+capped and journaled by **Memory upkeep** (so **Undo** in the History tab
+removes it), and the switch is per agent. Nothing already in the file, and
+nothing that held something that looked like a secret, is written. A save
+re-reads the file and retries once if the agent changed it meanwhile.
+
+**What is never read.** A turn that failed or was stopped, a routine or webhook
+run, a turn started by another agent (a teammate hand-off or a room), an
+exchange too short on both sides to hold a fact ("reply with just: ok" and
+"ok", under 24 bytes each), a conversation deleted before the call, and any
+agent whose notes or upkeep are off. One call per agent at a time; a failing,
+slow or unsupported engine costs nothing but the call (the status says so).
+A conversation's waiting turns are kept as ids (never their text) when the app
+shuts down normally and read back at the next start; a crash or forced kill
+loses them.
+
+**How the call is made, and what leaves your machine.** It goes to the engine the
+conversation already uses, with that engine's own sign-in: on Claude, one
+`claude -p` call with no tools, no MCP servers, no saved session and a new empty
+folder, on the small `haiku` model; on an OpenAI-compatible endpoint or
+OpenRouter, one non-streamed request to the same address and key, on the
+endpoint's own model. The text sent is the quiet turns (the person's words and
+the agent's replies), the notes as they stand (redacted) and the topic list. It
+goes only to that engine and model; nothing is sent anywhere new. Codex and ACP
+agents have no quick call here, so they are not read (the status says so; their
+proposals and notes still work). `MEMORY_HELPER_MODEL` (environment, for example
+`claude=sonnet,openai_compat=llama3`) chooses another model on the same engine,
+never another provider.
+
+**Switch.** `memory_upkeep` on the agent (on by default; `PATCH
+/api/v1/agents/{id}`; the checkbox under the notes editor); notes off switches it
+off too, and `MEMORY_CAPTURE_QUIET_SECONDS=0` switches it off for everyone.
+`GET /api/v1/agents/{id}/memory/upkeep` reports whether it is on, whether the
+engine can make the call, and what the last capture did.
 
 ## The journal
 
@@ -207,16 +264,21 @@ chat-scope device), with sign-in like every route.
 | `DELETE` | `/memory/topics/{name}` | Delete a note (`?expected_hash=` optional); 404 when there is none. |
 | `GET` | `/memory/journal?limit=` | Changes, newest first. |
 | `POST` | `/memory/journal/{entry}/undo` | Put the file back; `409 cannot_undo` with the reason. |
+| `GET` | `/memory/upkeep` | Whether quiet upkeep is on, whether the engine can make its call, the last capture. |
 | `GET` | `/memory/proposals` | Proposed notes (reads quiet conversations first). |
 | `POST` | `/memory/proposals/{id}/accept` | `{line?, target?}`: save it, or your edited line, into `MEMORY.md` or a topic. |
 | `POST` | `/memory/proposals/{id}/reject` | Drop it for good. |
 
-`recall_enabled` is a field of the agent. Run `alembic upgrade head`:
-revision `e7a91c4d2b58` adds `agent.recall_enabled` (on for existing agents).
+`recall_enabled` and `memory_upkeep` are fields of the agent. Run `alembic upgrade head`:
+revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
+`agent.memory_upkeep` (both on for existing agents).
 
 ## Not covered
 
-- No model-written summaries for compaction and no model-written proposals.
+- No model-written summaries for compaction.
+- Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
+- Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
+- Noticed facts are not added to a person-level profile, and rooms are never read.
 - Topic notes are not part of agent files.
 - An agent's own edits with its file tools are not journaled.
 - Recall ranks by shared words only (no stemming, no embeddings), so a

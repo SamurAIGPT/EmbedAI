@@ -276,3 +276,62 @@ def topic_index(agent_id: int) -> str:
     if omitted:
         lines.append(f"- …and {omitted} more in {TOPICS_DIR}/")
     return "\n".join(lines)
+
+
+_LEAD = re.compile(r"^(?:\s*\r?\n|#{1,6}[ \t]+[^\r\n]*\r?\n)*")
+_FRONT = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.S)
+ALIASES_MAX = 12
+
+
+def _alias_list(aliases) -> str:
+    return "[" + ", ".join(aliases) + "]"
+
+
+def clean_aliases(aliases) -> list[str]:
+    """Aliases as header values: no commas, brackets or line breaks, at most
+    40 characters each, no repeats."""
+    out: list[str] = []
+    for alias in aliases or ():
+        if not isinstance(alias, str):
+            continue
+        item = " ".join(re.sub(r"[\r\n,\[\]]+", " ", alias).split())[:40]
+        if item and item.lower() not in {a.lower() for a in out}:
+            out.append(item)
+    return out[:ALIASES_MAX]
+
+
+def merge_topic_text(existing: str | None, *, title: str, aliases, lines: list[str]) -> str:
+    """The note with `lines` appended. A new note gets a header (`title`,
+    `aliases`); an existing one keeps its header and gains only the aliases it
+    does not have yet (up to 12), and a note with no header gets one."""
+    aliases = clean_aliases(aliases)
+    body = "\n".join(lines)
+    if existing is None or not existing.strip():
+        head = f"---\ntitle: {title}\n" + (f"aliases: {_alias_list(aliases)}\n" if aliases else "") + "---\n\n"
+        return f"{head}{body}\n"
+    lead = _LEAD.match(existing).group(0)
+    rest = existing[len(lead):]
+    front = _FRONT.match(rest)
+    if front is None:
+        known_title = parse_header(existing).title or title
+        head = f"---\ntitle: {known_title}\n" + (f"aliases: {_alias_list(aliases)}\n" if aliases else "") + "---\n\n"
+        text = head + existing
+    else:
+        have = list(parse_header(existing).aliases)
+        lower = {a.lower() for a in have}
+        added = [a for a in aliases if a.lower() not in lower]
+        if not added:
+            text = existing
+        else:
+            merged = (have + added)[:ALIASES_MAX]
+            block = front.group(1).split("\n")
+            at = next((k for k, line in enumerate(block) if re.match(r"^aliases\s*:", line)), None)
+            if at is None:
+                block.append(f"aliases: {_alias_list(merged)}")
+            else:
+                end = at + 1
+                while end < len(block) and re.match(r"^\s*-\s+", block[end]):
+                    end += 1
+                block[at:end] = [f"aliases: {_alias_list(merged)}"]
+            text = f"{lead}---\n" + "\n".join(block) + "\n---\n" + rest[front.end():]
+    return text + ("" if text.endswith("\n") else "\n") + body + "\n"

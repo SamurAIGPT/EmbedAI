@@ -21,6 +21,7 @@ test('labels say what was recalled and what was folded', () => {
   assert.match(compactedLabel(12), /^Earlier messages summarized: 12 messages were folded/);
   assert.equal(journalLabel({ actor: 'person', kind: 'edited', path: 'memory/a.md', added: 2, removed: 1 }), 'You edited memory/a.md (+2 −1)');
   assert.equal(journalLabel({ actor: 'undo', kind: 'deleted', path: 'memory/a.md', added: 0, removed: 3 }), 'Undo deleted memory/a.md');
+  assert.equal(journalLabel({ actor: 'upkeep', kind: 'created', path: 'memory/a.md', added: 1, removed: 0 }), 'Memory upkeep created memory/a.md');
 });
 
 test('the transcript shows a Recalled chip and a summarized marker', () => {

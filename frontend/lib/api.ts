@@ -466,6 +466,8 @@ export type Agent = {
   memory_enabled?: boolean;
   // Off: no notes or earlier conversations are recalled before a turn.
   recall_enabled?: boolean;
+  // Off: no quick model call files facts noticed in its conversations.
+  memory_upkeep?: boolean;
   // Another engine (and model) a turn moves to when this agent's engine
   // refuses it for a limit before starting on it (docs/ENGINES.md).
   fallback_provider?: string | null;
@@ -490,6 +492,7 @@ export type AgentInput = {
   pinned?: boolean;
   memory_enabled?: boolean;
   recall_enabled?: boolean;
+  memory_upkeep?: boolean;
   fallback_provider?: string | null;
   fallback_model?: string | null;
   // Create only: the first contents of the agent's notes.

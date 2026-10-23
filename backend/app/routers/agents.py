@@ -145,6 +145,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 pinned=payload.pinned,
                 memory_enabled=payload.memory_enabled,
                 recall_enabled=payload.recall_enabled,
+                memory_upkeep=payload.memory_upkeep,
                 fallback_provider=payload.fallback_provider,
                 fallback_model=payload.fallback_model,
             )
@@ -195,6 +196,7 @@ async def update_agent(
             "pinned",
             "memory_enabled",
             "recall_enabled",
+            "memory_upkeep",
             "fallback_provider",
             "fallback_model",
         )
@@ -265,6 +267,7 @@ async def delete_agent(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
     except store.AgentNotFound:
         raise HTTPException(status_code=404, detail="Agent not found") from None
     # Its notes go with it; the folder stays, as its conversations may use it.
+    rt.capture.drop_agent(agent_id)
     agent_memory.remove_memory(agent_id)
     # So does its computer (the machine; never the folder). If Docker is not
     # answering, the removal finishes later.
@@ -485,6 +488,23 @@ def _proposal(p: dict) -> MemoryProposalResponse:
         thread_title=p.get("thread_title"),
         turn_id=p.get("turn_id"),
     )
+
+
+@router.get("/{agent_id}/memory/upkeep")
+async def memory_upkeep_status(agent_id: int, rt: ThreadRuntime = Depends(get_runtime)):
+    """Whether quiet memory upkeep is on for the agent, whether its engine can
+    make the background call, and what the last capture did."""
+    from app.core.config import settings
+    from app.services import memory_capture
+
+    agent = await _agent_or_404(rt, agent_id)
+    adapter = rt.adapters.get(agent.provider)
+    return {
+        "enabled": bool(agent.memory_enabled and agent.memory_upkeep and settings.MEMORY_CAPTURE_QUIET_SECONDS > 0),
+        "engine_can_call": hasattr(adapter, "generate_text"),
+        "quiet_seconds": settings.MEMORY_CAPTURE_QUIET_SECONDS,
+        "last_capture": memory_capture.read_status(agent.id).get("last_capture"),
+    }
 
 
 @router.get("/{agent_id}/memory/proposals", response_model=list[MemoryProposalResponse])

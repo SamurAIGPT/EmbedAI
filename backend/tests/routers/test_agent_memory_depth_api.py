@@ -116,6 +116,18 @@ async def test_recall_switch_is_on_by_default_and_copied(api):
     assert (await api.patch(f"/api/v1/agents/{agent['id']}", json={"recall_enabled": None})).status_code == 422
 
 
+async def test_upkeep_switch_is_on_by_default_copied_and_reported(api):
+    agent = await make(api)
+    assert agent["memory_upkeep"] is True
+    off = await make(api, memory_upkeep=False)
+    assert (await api.post(f"/api/v1/agents/{off['id']}/duplicate")).json()["memory_upkeep"] is False
+    assert (await api.patch(f"/api/v1/agents/{agent['id']}", json={"memory_upkeep": None})).status_code == 422
+    status = (await api.get(f"/api/v1/agents/{agent['id']}/memory/upkeep")).json()
+    assert status["enabled"] is True and status["last_capture"] is None and status["engine_can_call"] is True
+    await api.patch(f"/api/v1/agents/{agent['id']}", json={"memory_upkeep": False})
+    assert (await api.get(f"/api/v1/agents/{agent['id']}/memory/upkeep")).json()["enabled"] is False
+
+
 def test_memory_routes_are_admin_only():
     for method, path in (
         ("GET", "/api/v1/agents/1/memory/topics"),
@@ -123,6 +135,7 @@ def test_memory_routes_are_admin_only():
         ("GET", "/api/v1/agents/1/memory/journal"),
         ("POST", "/api/v1/agents/1/memory/journal/x/undo"),
         ("GET", "/api/v1/agents/1/memory/proposals"),
+        ("GET", "/api/v1/agents/1/memory/upkeep"),
         ("POST", "/api/v1/agents/1/memory/proposals/x/accept"),
     ):
         assert policy.required_scope(method, path) == "admin", path

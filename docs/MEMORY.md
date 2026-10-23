@@ -182,8 +182,18 @@ budget, the earlier part is folded:
   excerpts left out and of tool calls (never quoted). It is headed as background
   made of excerpts, where later messages override earlier ones and details may
   be missing. It is redacted, and rides at the head of the first kept message
-  (a chat must start with the person). A model-written summary is not
-  implemented.
+  (a chat must start with the person). A model-written summary is an option
+  (`COMPACTION_MODEL_SUMMARY=true`, off by default), below.
+- **Model-written summary (option).** With `COMPACTION_MODEL_SUMMARY=true`, an
+  engine with a quick call (an OpenAI-compatible endpoint; ACP agents have none)
+  writes the summary of the folded part: one call to the same engine and model the
+  conversation already uses, 20 seconds at most, never holding a turn longer. The
+  folded messages are redacted **before** they are cut or sent, and the answer is
+  redacted again, kept to 2,600 characters, headed as model-written and followed by
+  the newest excerpts. A failing, empty or slow call keeps the excerpt summary;
+  the stored event says which one it is (`method`: `model` or `excerpts`). What
+  leaves the machine is the folded conversation, to the engine it was already
+  sent to.
 - **Stored and stable.** The fold is stored as a `context.compacted` event in
   the turn that made it (summary, folded-through turn, messages folded,
   tokens before and after, budget). Later turns replay exactly the same summary
@@ -415,7 +425,7 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 
 ## Not covered
 
-- No model-written summaries for compaction.
+- Model-written compaction summaries are off by default and exist only for engines with a quick call.
 - There is no person-level "About me" profile shared by every agent, and no capture from rooms ("Learn from group chats"): both are decisions for the owner.
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.

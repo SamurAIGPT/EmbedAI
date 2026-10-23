@@ -711,6 +711,20 @@ class ThreadRuntime:
                 engine=run.engine_id,
                 extra_chars=len(run.ctx.instructions or ""),
             )
+            if plan.record is not None and settings.COMPACTION_MODEL_SUMMARY:
+                # Optional: the engine writes the summary of what is folded
+                # (everything redacted first); any failure keeps the excerpts.
+                adapter = self.adapters[run.engine_id]
+                generate = getattr(adapter, "generate_text", None)
+                if generate is not None:
+                    written = await context_compaction.model_summary(
+                        plan,
+                        lambda prompt: generate(
+                            prompt, config=run.ctx.engine_config, model=run.ctx.model, timeout=context_compaction.MODEL_SUMMARY_TIMEOUT_SECONDS
+                        ),
+                    )
+                    if written is not None:
+                        plan.items, plan.record = written["items"], written["record"]
             if plan.record is not None and run.recorder is not None:
                 await run.recorder.emit("context.compacted", plan.record)
             return plan.items

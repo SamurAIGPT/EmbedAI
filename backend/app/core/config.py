@@ -146,6 +146,10 @@ class Settings(BaseSettings):
     # An engine not listed uses "haiku" on Claude, and the endpoint's own model elsewhere.
     # The call always goes to the engine the conversation already uses.
     MEMORY_HELPER_MODEL: str = ""
+    # Compaction of a replayed conversation (docs/MEMORY.md): when on, an engine
+    # with a quick call writes the summary of the folded part (redacted first, sent
+    # only to the engine the conversation already uses); off keeps the excerpts.
+    COMPACTION_MODEL_SUMMARY: bool = False
     # The nightly tidy-up runs once a day after this local hour (0-23) for each
     # agent with notes and upkeep on, never while it is working. 24 switches it off.
     MEMORY_TIDY_HOUR: int = 3

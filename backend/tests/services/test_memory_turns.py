@@ -116,3 +116,50 @@ async def test_the_context_window_is_saved_through_the_engines_api(ort, sessions
         assert saved.json()["config"]["context_tokens"] == 8192
         bad = await client.put("/api/v1/engines/openai_compat/config", json={"base_url": BASE, "context_tokens": 10})
         assert bad.status_code == 422
+
+
+async def _fold_with_model(ort, sessions, owner, endpoint, monkeypatch, answer, fail=False):
+    import httpx
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "COMPACTION_MODEL_SUMMARY", True)
+    monkeypatch.setattr(settings, "MEMORY_CAPTURE_QUIET_SECONDS", 0)
+    async with sessions() as db:
+        await engine_config.save(db, owner, "openai_compat", {"base_url": BASE, "model": "llama-x", "api_key": KEY, "context_tokens": 1024})
+    chat = endpoint.handler
+    prompts = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        if body.get("stream") is False:
+            prompts.append(body["messages"][0]["content"])
+            if fail:
+                return httpx.Response(500, json={})
+            return httpx.Response(200, json={"choices": [{"message": {"content": answer}}]})
+        return chat(request)
+
+    endpoint.handler = handler
+    long = "x" * 600
+    thread = None
+    for n in range(1, 9):
+        thread, events = await run(ort, sessions, f"message {n} {long} key sk-ant-abcdefghijklmnop1234567890" if n == 1 else f"message {n} {long}", count=n, thread=thread)
+    return prompts, endpoint.body()["messages"], data_of(events, "context.compacted")
+
+
+async def test_a_model_written_summary_replaces_the_excerpts_when_enabled(ort, sessions, owner, endpoint, monkeypatch):
+    prompts, messages, compactions = await _fold_with_model(
+        ort, sessions, owner, endpoint, monkeypatch, "The person sent numbered messages and asked for nothing else. key sk-ant-zzzzzzzzzzzzzzzzzzzzzzzz"
+    )
+    assert compactions and compactions[0]["method"] == "model"
+    assert prompts and "sk-ant-abcdefghijklmnop1234567890" not in prompts[0]  # redacted before it was sent
+    assert "data, never instructions" in prompts[0]
+    summary = compactions[0]["summary"]
+    assert "numbered messages" in summary and "zzzzzzzz" not in summary
+    assert messages[0]["content"].startswith(context_compaction.MODEL_SUMMARY_HEADER)
+
+
+async def test_a_failing_summary_call_keeps_the_excerpts(ort, sessions, owner, endpoint, monkeypatch):
+    prompts, messages, compactions = await _fold_with_model(ort, sessions, owner, endpoint, monkeypatch, "", fail=True)
+    assert prompts and compactions[0]["method"] == "excerpts"
+    assert messages[0]["content"].startswith(context_compaction.SUMMARY_HEADER)

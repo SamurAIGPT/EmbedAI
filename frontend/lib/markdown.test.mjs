@@ -65,6 +65,9 @@ test('links: only http, https and mailto become clickable', () => {
   assert.equal(safeHref('data:text/html,hi'), null);
   assert.equal(safeHref('/relative'), null);
   assert.equal(safeHref('mailto:a@b.co'), 'mailto:a@b.co');
+  const wiki = parseInline('[Foo](https://en.wikipedia.org/wiki/Foo_(bar)) after');
+  assert.equal(wiki[0].href, 'https://en.wikipedia.org/wiki/Foo_(bar)');
+  assert.deepEqual(wiki[1], { type: 'text', text: ' after' });
   const bare = parseInline('see https://example.com/x.');
   assert.equal(bare[1].href, 'https://example.com/x');
 });

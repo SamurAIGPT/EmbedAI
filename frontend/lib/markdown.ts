@@ -50,6 +50,20 @@ function indexOfUnescaped(text: string, needle: string, from: number): number {
   return -1;
 }
 
+// Position of the `)` that closes a link target starting at `from`, or -1.
+// Parentheses inside the target must balance, as in a Wikipedia address.
+function closingParen(text: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") {
+      if (depth === 0) return i;
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
 const ESCAPABLE = "\\`*_{}[]()#+-.!|~>";
 
 export function parseInline(text: string): Inline[] {
@@ -124,7 +138,7 @@ export function parseInline(text: string): Inline[] {
     if (ch === "[") {
       const close = indexOfUnescaped(text, "]", i + 1);
       if (close !== -1 && text[close + 1] === "(") {
-        const paren = text.indexOf(")", close + 2);
+        const paren = closingParen(text, close + 2);
         if (paren !== -1) {
           const label = text.slice(i + 1, close);
           const target = text.slice(close + 2, paren).trim().split(/\s+/)[0] ?? "";

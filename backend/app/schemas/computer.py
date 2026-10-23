@@ -19,6 +19,7 @@ class ComputerSettings(BaseModel):
     # Stop after this many idle minutes; 0 never.
     idle_minutes: int | None = Field(default=None, ge=0, le=7 * 24 * 60)
     auto_start: bool | None = None
+    browser_enabled: bool | None = None
 
 
 class ComputerCreateRequest(ComputerSettings):
@@ -78,6 +79,7 @@ class ComputerResponse(ComputerSummary):
     pids_limit: int
     idle_minutes: int
     auto_start: bool
+    browser_enabled: bool = False
     # What the provider reports right now (running, stopped, missing, foreign,
     # unsafe, unavailable), or null when it was not asked or cannot be reached.
     live_state: str | None = None

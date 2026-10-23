@@ -12,6 +12,10 @@ Everything else is put to the person (or a saved command rule, for `exec`).
 """
 
 COMPUTER_TOOL_PREFIX = "mcp__computer__"
+from app.computers.browser import READ_NAMES as BROWSER_READ_NAMES, INPUT_NAMES as BROWSER_INPUT_NAMES
+
+BROWSER_READ = frozenset(COMPUTER_TOOL_PREFIX + name for name in BROWSER_READ_NAMES)
+BROWSER_INPUT = frozenset(COMPUTER_TOOL_PREFIX + name for name in BROWSER_INPUT_NAMES)
 COMPUTER_EXEC_TOOL = COMPUTER_TOOL_PREFIX + "exec"
 SCREEN_INPUT = frozenset(COMPUTER_TOOL_PREFIX + name for name in ("click", "double_click", "move", "drag", "type", "key", "scroll"))
 SCREEN_READ = frozenset(COMPUTER_TOOL_PREFIX + name for name in ("screenshot", "wait"))
@@ -19,6 +23,8 @@ NATIVE_READ = frozenset(COMPUTER_TOOL_PREFIX + "native_" + name for name in ("ge
 NATIVE_INPUT = frozenset(COMPUTER_TOOL_PREFIX + "native_" + name for name in ("click", "type_text", "press_key", "scroll"))
 SCREEN_READ |= NATIVE_READ
 SCREEN_INPUT |= NATIVE_INPUT
+SCREEN_READ |= BROWSER_READ
+SCREEN_INPUT |= BROWSER_INPUT
 
 
 def automatic(tool: str, mode: str | None, screen_granted: bool = False) -> tuple[str, str] | None:
@@ -26,6 +32,12 @@ def automatic(tool: str, mode: str | None, screen_granted: bool = False) -> tupl
     if not isinstance(tool, str) or not tool.startswith(COMPUTER_TOOL_PREFIX):
         return None
     name = tool[len(COMPUTER_TOOL_PREFIX):]
+    if tool in BROWSER_READ:
+        return "allowed", "computer_browser_read"
+    if tool in BROWSER_INPUT:
+        if mode == "plan":
+            return "denied", "plan_mode"
+        return ("allowed", "screen_turn_grant") if screen_granted else None
     if tool in NATIVE_READ:
         return "allowed", "native_screen_read"
     if tool in NATIVE_INPUT:

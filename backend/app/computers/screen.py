@@ -124,6 +124,7 @@ class Screen:
                 write_state(owner_path, {"turn_id": self.turn_id, "until": time.time()+60})
                 time.sleep(max(0, .15-(time.monotonic()-self.last_input)))
                 self.actions += 1
+                write_state(s.state_dir / "browser-epoch.json", {"at": time.time_ns()})
                 self.last_input = time.monotonic()
             if name == "wait":
                 time.sleep(args["seconds"])

@@ -94,6 +94,7 @@ def respond(
         pids_limit=computer.pids_limit,
         idle_minutes=computer.idle_minutes,
         auto_start=computer.auto_start,
+        browser_enabled=computer.browser_enabled,
         live_state=status.state if status else None,
         needs_recreate=bool(status and status.needs_recreate),
         problem=status.problem if status else None,

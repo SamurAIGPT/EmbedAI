@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-from app.computers import docker_cli, grants, screen
+from app.computers import browser, docker_cli, grants, screen
 
 PROTOCOL_VERSION = "2025-06-18"
 LAST_COMMAND_FILE = "last-command.json"
@@ -85,14 +85,16 @@ _TOOL_NAMES = {tool["name"] for tool in TOOLS}
 
 
 class Server:
-    def __init__(self, container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None, kind: str = "shell", turn_id: str = "", max_actions: int = 300) -> None:
+    def __init__(self, container: str, user: str, grants_dir: Path, state_dir: Path, docker: str | None, kind: str = "shell", turn_id: str = "", max_actions: int = 300, browser_enabled: bool = False) -> None:
         self.container = docker_cli.check_name(container)
         self.user = user
         self.grants_dir = grants_dir
         self.state_dir = state_dir
         self.docker = docker
         self.kind = kind
+        self.browser_enabled = kind == "desktop" and browser_enabled
         self.screen = screen.Screen(self, turn_id or str(grants_dir), max_actions)
+        self.browser = browser.Browser(self)
 
     # -- protocol ----------------------------------------------------------------------
 
@@ -112,7 +114,7 @@ class Server:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": TOOLS + (screen.TOOLS if self.kind == "desktop" else [])}
+                result = {"tools": TOOLS + (screen.TOOLS if self.kind == "desktop" else []) + (browser.TOOLS if self.browser_enabled else [])}
             elif method == "tools/call":
                 result = self.call(params.get("name"), params.get("arguments") or {})
             else:
@@ -124,11 +126,11 @@ class Server:
     # -- tools -------------------------------------------------------------------------
 
     def call(self, name: object, arguments: object) -> dict:
-        if name not in _TOOL_NAMES and not (self.kind == "desktop" and name in screen.DEFINITIONS):
+        if not isinstance(name, str) or (name not in _TOOL_NAMES and not (self.kind == "desktop" and name in screen.DEFINITIONS) and not (self.browser_enabled and name in browser.DEFINITIONS)):
             return _text("Unknown computer tool.", error=True)
         if not isinstance(arguments, dict):
             return _text("Tool arguments must be an object.", error=True)
-        problem = screen.validate(name, arguments) if name in screen.DEFINITIONS else _argument_problem(name, arguments)
+        problem = browser.validate(name, arguments) if name in browser.DEFINITIONS else screen.validate(name, arguments) if name in screen.DEFINITIONS else _argument_problem(name, arguments)
         if problem:
             return _text(problem, error=True)
         if not grants.consume(self.grants_dir, name, arguments):
@@ -137,6 +139,8 @@ class Server:
             return _text(screen.CONTROL_REFUSAL, error=True)
         if name in screen.DEFINITIONS:
             return self.screen.run(name, arguments)
+        if name in browser.DEFINITIONS:
+            return self.browser.run(name, arguments)
         return getattr(self, f"_{name}")(arguments)
 
     def _exec(self, args: dict) -> dict:
@@ -248,9 +252,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--kind", choices=docker_cli.COMPUTER_KINDS, default="shell")
     parser.add_argument("--turn-id", default="")
     parser.add_argument("--max-screen-actions", type=int, default=300)
+    parser.add_argument("--browser", action="store_true")
     options = parser.parse_args(argv)
     try:
-        server = Server(options.container, options.user, Path(options.grants), Path(options.state), options.docker, options.kind, options.turn_id, options.max_screen_actions)
+        server = Server(options.container, options.user, Path(options.grants), Path(options.state), options.docker, options.kind, options.turn_id, options.max_screen_actions, options.browser)
     except docker_cli.InvalidSpec as exc:
         sys.stderr.write(f"invalid computer connection: {exc}\n")
         return 2

@@ -6,10 +6,9 @@ holds the original page for connecting Telegram and Claude and submitting Boat
 tasks, backed by the same API.
 
 For prerequisites and how to run the whole stack (this app, the backend API,
-and the Telegram bot) with one command, see the
-[repo root README](../README.md). This file covers frontend-specific
-details; scheduling's backend behavior is covered in [Scheduling
-tasks](../README.md#scheduling-tasks) there.
+and the Telegram bot), see [docs/SETUP.md](../docs/SETUP.md). This file covers
+frontend-specific details; scheduling's backend behavior is covered in the
+[root README's scheduling overview](../README.md#scheduling-tasks).
 
 ## Layout
 

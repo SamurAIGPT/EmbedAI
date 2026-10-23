@@ -5,9 +5,10 @@ conversations on several engines, routines, approvals, memory and agent
 computers, plus an optional Telegram bot and the original task flow in
 disposable sandboxes provided by [Boat](https://docs.boat.dev).
 
-For prerequisites, `.env` setup, and how to run the whole stack (this API,
-the Telegram bot, and the [web UI](../frontend)) with one command, see the
-[repo root README](../README.md). This file covers backend-specific details.
+For prerequisites, local development setup, and how to run the whole stack
+(this API, the Telegram bot, and the [web UI](../frontend)), see
+[docs/SETUP.md](../docs/SETUP.md). Backend environment variables are listed in
+[`.env.example`](.env.example). This file covers backend-specific details.
 
 ## Layout
 

@@ -43,6 +43,7 @@ from app.services.provider_adapter import (
     EngineProbe,
     ModelOption,
     ProviderStatus,
+    ReplayAborted,
     TurnContext,
     TurnOutcome,
 )
@@ -474,7 +475,10 @@ class _AcpTurn:
             self.session_id = self.saved_session
         else:
             if self.ctx.resume:
-                self.preamble = history_preamble(await self.ctx.history(), self.ctx.turn_id)
+                try:
+                    self.preamble = history_preamble(await self.ctx.history(), self.ctx.turn_id)
+                except ReplayAborted:
+                    return self._failed("The run was stopped because it no longer owns its turn.", "lost")
             try:
                 created = await self._call(
                     "session/new", {"cwd": str(self.workspace), "mcpServers": []}, handle_incoming=True

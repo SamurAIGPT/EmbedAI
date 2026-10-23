@@ -31,6 +31,7 @@ from app.services.provider_adapter import (
     EngineProbe,
     ModelOption,
     ProviderStatus,
+    ReplayAborted,
     TurnContext,
     TurnOutcome,
 )
@@ -274,7 +275,12 @@ class OpenAIChatAdapter:
                 error_code="no_model",
             )
         secret = config.get("api_key")
-        messages = chat_messages(await ctx.history(), ctx.instructions)
+        try:
+            messages = chat_messages(await ctx.history(), ctx.instructions)
+        except ReplayAborted:
+            return TurnOutcome(
+                "failed", error="The run was stopped because it no longer owns its turn.", error_code="lost", model=model
+            )
         if not messages or messages[-1].get("role") != "user":
             messages.append({"role": "user", "content": ctx.prompt})
         else:

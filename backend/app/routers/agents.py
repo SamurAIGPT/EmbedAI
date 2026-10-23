@@ -165,6 +165,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 memory_enabled=payload.memory_enabled,
                 recall_enabled=payload.recall_enabled,
                 memory_upkeep=payload.memory_upkeep,
+                compaction_summary=payload.compaction_summary,
                 fallback_provider=payload.fallback_provider,
                 fallback_model=payload.fallback_model,
             )
@@ -216,6 +217,7 @@ async def update_agent(
             "memory_enabled",
             "recall_enabled",
             "memory_upkeep",
+            "compaction_summary",
             "fallback_provider",
             "fallback_model",
         )

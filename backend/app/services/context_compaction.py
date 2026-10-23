@@ -306,23 +306,50 @@ def summary_prompt(folded: list[dict], previous: str | None) -> str:
     ])
 
 
-async def model_summary(plan_: Plan, generate) -> dict | None:
-    """Replace a fold's excerpt summary with a model-written one, when the
-    engine can write it. `generate(prompt)` is a coroutine returning text. On
-    any failure or an empty answer returns None and the excerpts stand. The
-    result keeps the newest excerpts after the model's text, is redacted again
-    and stays within the summary's room."""
+async def model_summary(plan_: Plan, generate, *, aborted: "asyncio.Event | None" = None) -> dict | None:
+    """Replace a fold's excerpt summary with a model-written one.
+
+    `generate(prompt)` is a coroutine returning text; `aborted` is set when the
+    turn is stopped. Properties (docs/MEMORY.md):
+
+    - at most `MODEL_SUMMARY_TIMEOUT_SECONDS`; a slow call is cancelled and the
+      excerpts stand;
+    - a stop cancels the call and raises `ReplayAborted` (the whole operation,
+      not only the summary): a result that arrives late is never applied;
+    - any other failure, or an empty answer, returns None and the excerpts stand;
+    - the answer is redacted again, kept to `MODEL_SUMMARY_MAX_CHARS`, followed
+      by the newest excerpts, and kept within the summary's room.
+    """
     import asyncio
+
+    from app.services.provider_adapter import ReplayAborted
 
     if plan_.record is None or plan_.folded is None or plan_.kept is None:
         return None
+    if aborted is not None and aborted.is_set():
+        raise ReplayAborted()
+    work = asyncio.ensure_future(generate(summary_prompt(plan_.folded, plan_.previous)))
+    watch = asyncio.ensure_future(aborted.wait()) if aborted is not None else None
+    answer = None
     try:
-        answer = await asyncio.wait_for(
-            generate(summary_prompt(plan_.folded, plan_.previous)), timeout=MODEL_SUMMARY_TIMEOUT_SECONDS
+        await asyncio.wait(
+            {t for t in (work, watch) if t is not None},
+            timeout=MODEL_SUMMARY_TIMEOUT_SECONDS,
+            return_when=asyncio.FIRST_COMPLETED,
         )
-    except (RuntimeError, TimeoutError, OSError, asyncio.TimeoutError):
-        return None
-    written = " ".join((answer or "").split())
+        if aborted is not None and aborted.is_set():
+            raise ReplayAborted()
+        if work.done() and not work.cancelled() and work.exception() is None:
+            answer = work.result()
+    finally:
+        for task in (work, watch):
+            if task is not None and not task.done():
+                task.cancel()
+        # A cancelled call is awaited so its process or request is gone before we go on.
+        await asyncio.gather(*(t for t in (work, watch) if t is not None), return_exceptions=True)
+    if aborted is not None and aborted.is_set():
+        raise ReplayAborted()
+    written = " ".join((answer or "").split()) if isinstance(answer, str) else ""
     if not written:
         return None
     written = redact_secrets(written[:MODEL_SUMMARY_MAX_CHARS])[0]

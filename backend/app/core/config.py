@@ -146,10 +146,11 @@ class Settings(BaseSettings):
     # An engine not listed uses "haiku" on Claude, and the endpoint's own model elsewhere.
     # The call always goes to the engine the conversation already uses.
     MEMORY_HELPER_MODEL: str = ""
-    # Compaction of a replayed conversation (docs/MEMORY.md): when on, an engine
-    # with a quick call writes the summary of the folded part (redacted first, sent
-    # only to the engine the conversation already uses); off keeps the excerpts.
-    COMPACTION_MODEL_SUMMARY: bool = False
+    # Compaction of a replayed conversation (docs/MEMORY.md): on by default, the
+    # engine the conversation already uses writes the summary of the folded part when
+    # it has a quick call (the folded text is redacted first, 20 seconds at most, a
+    # failure keeps the excerpt summary). False switches it off for every agent.
+    COMPACTION_MODEL_SUMMARY: bool = True
     # The nightly tidy-up runs once a day after this local hour (0-23) for each
     # agent with notes and upkeep on, never while it is working. 24 switches it off.
     MEMORY_TIDY_HOUR: int = 3

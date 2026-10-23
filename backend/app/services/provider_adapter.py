@@ -34,6 +34,12 @@ class Decision:
     message: str | None = None
 
 
+class ReplayAborted(Exception):
+    """The run was stopped (or no longer owns its turn) while the stored
+    conversation was being prepared for replay. The adapter ends the turn
+    without sending anything."""
+
+
 @dataclass(frozen=True)
 class Capabilities:
     """What an engine can do through this app. The runtime and the API read

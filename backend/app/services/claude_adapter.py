@@ -199,14 +199,21 @@ class ClaudeAdapter:
         if model:
             args += ["--model", model]
 
+        control = local_claude_runner.RunControl()
+
         def call() -> local_claude_runner.RunOutput:
             with tempfile.TemporaryDirectory(prefix="open-dots-helper-") as empty:
                 return local_claude_runner.run_blocking(
                     args, stdin_text=prompt, cwd=Path(empty), timeout_seconds=timeout,
-                    max_output_bytes=256 * 1024,
+                    max_output_bytes=256 * 1024, control=control, keep_stdin_open=False,
                 )
 
-        out = await run_in_threadpool(call)
+        try:
+            out = await run_in_threadpool(call)
+        except asyncio.CancelledError:
+            # A timeout or a Stop cancels the call: the process goes with it.
+            control.kill()
+            raise
         if out.exit_code != 0 or not out.stdout.strip():
             raise RuntimeError("The Claude CLI gave no answer for the background call.")
         return out.stdout

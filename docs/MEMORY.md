@@ -186,18 +186,22 @@ budget, the earlier part is folded:
   excerpts left out and of tool calls (never quoted). It is headed as background
   made of excerpts, where later messages override earlier ones and details may
   be missing. It is redacted, and rides at the head of the first kept message
-  (a chat must start with the person). A model-written summary is an option
-  (`COMPACTION_MODEL_SUMMARY=true`, off by default), below.
-- **Model-written summary (option).** With `COMPACTION_MODEL_SUMMARY=true`, an
-  engine with a quick call (an OpenAI-compatible endpoint; ACP agents have none)
-  writes the summary of the folded part: one call to the same engine and model the
-  conversation already uses, 20 seconds at most, never holding a turn longer. The
-  folded messages are redacted **before** they are cut or sent, and the answer is
-  redacted again, kept to 2,600 characters, headed as model-written and followed by
-  the newest excerpts. A failing, empty or slow call keeps the excerpt summary;
-  the stored event says which one it is (`method`: `model` or `excerpts`). What
-  leaves the machine is the folded conversation, to the engine it was already
-  sent to.
+  (a chat must start with the person). This is the fallback of the
+  model-written summary below.
+- **Model-written summary (on by default).** When the engine has a quick text call
+  (an OpenAI-compatible endpoint or OpenRouter; ACP agents have none), it writes the
+  summary of the folded part: one call to the same engine and model the conversation
+  already uses, **20 seconds at most**. The folded messages are redacted **before**
+  they are cut or sent, and the answer is redacted again, kept to 2,600 characters,
+  headed as model-written and followed by the newest excerpts. A failing, empty or
+  slow call (cancelled at the limit) keeps the excerpt summary; the stored event says
+  which one it is (`method`: `model` or `excerpts`). **Stop ends the whole turn**:
+  pressing Stop while the summary is being written cancels the call, sends nothing
+  to the engine and stores no fold, and an answer that arrives late is never applied.
+  What leaves the machine is the folded conversation, to the engine it was already
+  sent to. Switch it off for everyone with `COMPACTION_MODEL_SUMMARY=false`, or for one
+  agent with `compaction_summary: false` (`PATCH /api/v1/agents/{id}`; the checkbox
+  under **Memory upkeep**); both keep the excerpt summary.
 - **Stored and stable.** The fold is stored as a `context.compacted` event in
   the turn that made it (summary, folded-through turn, messages folded,
   tokens before and after, budget). Later turns replay exactly the same summary
@@ -505,13 +509,14 @@ Installation-wide, under `/api/v1/memory` (admin scope):
 | `PUT` | `/about-me` | `{text, expected_hash?}`; `409 memory_changed` (with `current`), `413 memory_too_large`. |
 | `DELETE` | `/about-me/learned/{id}` | Remove an agent-added fact for good; 404 when there is none. |
 
-`recall_enabled` and `memory_upkeep` are fields of the agent. Run `alembic upgrade head`:
-revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
-`agent.memory_upkeep` (both on for existing agents).
+`recall_enabled`, `memory_upkeep` and `compaction_summary` are fields of the agent. Run
+`alembic upgrade head`: revision `e7a91c4d2b58` adds `agent.recall_enabled`, `c4d8f1a6e903`
+adds `agent.memory_upkeep` and `a5c3e8b1d7f2` adds `agent.compaction_summary` (all on for
+existing agents).
 
 ## Not covered
 
-- Model-written compaction summaries are off by default and exist only for engines with a quick call.
+- The model-written compaction summary needs an engine with a quick call here (an OpenAI-compatible endpoint or OpenRouter); ACP agents keep the excerpt summary.
 - About me is one text for the whole installation; there is no per-person profile (the app has one owner).
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.

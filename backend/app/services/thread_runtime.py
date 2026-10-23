@@ -30,6 +30,7 @@ from app.core.logging import get_logger
 from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_journal, memory_log, memory_recall, recent_work
 from app.db.models import Room
 from app.db.transactions import begin_write
+from app.services import side_jobs
 from app.services.memory_bridge import MemoryBridge
 from app.services.memory_capture import MemoryCapture, Turn as MemoryTurn
 from app.services import thread_store as store
@@ -61,6 +62,7 @@ from app.services.provider_adapter import (
     Decision,
     ProviderAdapter,
     ProviderStatus,
+    ReplayAborted,
     TurnContext,
     TurnOutcome,
 )
@@ -715,17 +717,23 @@ class ThreadRuntime:
                 engine=run.engine_id,
                 extra_chars=len(run.ctx.instructions or ""),
             )
-            if plan.record is not None and settings.COMPACTION_MODEL_SUMMARY:
-                # Optional: the engine writes the summary of what is folded
-                # (everything redacted first); any failure keeps the excerpts.
-                adapter = self.adapters[run.engine_id]
-                generate = getattr(adapter, "generate_text", None)
-                if generate is not None:
+            aborted = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            run.ctx.on_abort(lambda: loop.call_soon_threadsafe(aborted.set))
+            if run.ctx.aborted:
+                raise ReplayAborted()
+            if plan.record is not None and settings.COMPACTION_MODEL_SUMMARY and (agent is None or agent.compaction_summary):
+                # The engine writes the summary of what is folded when it has a
+                # quick call (everything redacted first, 20 seconds at most). A
+                # failure keeps the excerpts; a stop ends the whole turn.
+                source = side_jobs.engine_source(
+                    self.adapters[run.engine_id], config=run.ctx.engine_config, model=run.ctx.model
+                )
+                if source is not None:
                     written = await context_compaction.model_summary(
                         plan,
-                        lambda prompt: generate(
-                            prompt, config=run.ctx.engine_config, model=run.ctx.model, timeout=context_compaction.MODEL_SUMMARY_TIMEOUT_SECONDS
-                        ),
+                        lambda prompt: source.generate(prompt, timeout=context_compaction.MODEL_SUMMARY_TIMEOUT_SECONDS),
+                        aborted=aborted,
                     )
                     if written is not None:
                         plan.items, plan.record = written["items"], written["record"]

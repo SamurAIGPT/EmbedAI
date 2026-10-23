@@ -73,6 +73,11 @@ class Agent(Base):
     memory_upkeep: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=expression.true()
     )
+    # Off: a long conversation that is folded keeps the excerpt summary and no
+    # model writes one (docs/MEMORY.md, "Context compaction").
+    compaction_summary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=expression.true()
+    )
     # Pinned agents list first.
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()

@@ -30,6 +30,7 @@ export function UpkeepCard({
 }) {
   const notesOn = agent.memory_enabled ?? true;
   const upkeepOn = agent.memory_upkeep ?? true;
+  const summaryOn = agent.compaction_summary ?? true;
   const [status, setStatus] = useState<MemoryUpkeepStatus | null>(null);
   const [settings, setSettings] = useState<MemorySettings | null>(null);
   const [model, setModel] = useState("");
@@ -63,6 +64,12 @@ export function UpkeepCard({
       setBusy(false);
     }
   };
+
+  const toggleSummary = () =>
+    guard(async () => {
+      await api.updateAgent(agent.id, { compaction_summary: !summaryOn });
+      onAgentChange({ compaction_summary: !summaryOn });
+    });
 
   const toggleUpkeep = () =>
     guard(async () => {
@@ -106,6 +113,25 @@ export function UpkeepCard({
             Notices facts when a conversation goes quiet and tidies the notes once a night, with quick calls to this
             agent&apos;s own engine. Every change is in History and can be undone.
             {!notesOn && " Switch the notes on first."}
+          </span>
+        </span>
+      </label>
+      <label className="flex cursor-pointer items-start gap-2">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={summaryOn}
+          disabled={busy}
+          onChange={() => void toggleSummary()}
+          className="mt-0.5"
+          aria-label="Summarize long conversations with a model"
+        />
+        <span>
+          <span className="font-medium">Summarize long conversations with a model</span>
+          <span className="block text-muted">
+            When a conversation outgrows an engine that replays it (an OpenAI-compatible endpoint), the earlier part is
+            summarized by that same engine, with secrets removed first; if the call fails or takes over 20 seconds,
+            excerpts are used instead. Off: always excerpts.
           </span>
         </span>
       </label>

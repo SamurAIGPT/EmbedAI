@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.schemas.agent import INSTRUCTIONS_MAX_BYTES
+from app.services import memory_topics
 from app.services.agent_memory import FILE_MAX_BYTES, redact_secrets
 
 FORMAT = "open-dots.agent"
@@ -41,9 +42,10 @@ def _clean(value: str | None) -> tuple[str | None, bool]:
     return text, count > 0
 
 
-def export_package(agent, notes: str | None) -> tuple[dict, list[str]]:
+def export_package(agent, notes: str | None, topics: dict[str, str] | None = None) -> tuple[dict, list[str]]:
     """The file for `agent`, and the names of the parts that had something
-    redacted. `notes` None leaves the notes out."""
+    redacted. `notes` None leaves the notes out; `topics` (file name -> text)
+    are the topic notes that travel with them."""
     redacted: list[str] = []
     body: dict[str, Any] = {"name": agent.name}
     for field in ("title", "description", "instructions"):
@@ -63,6 +65,16 @@ def export_package(agent, notes: str | None) -> tuple[dict, list[str]]:
         document["notes"] = {"MEMORY.md": text}
         if changed:
             redacted.append("notes")
+    if notes is not None and topics:
+        clean: dict[str, str] = {}
+        for name, body_text in sorted(topics.items()):
+            cleaned, changed = _clean(body_text)
+            if cleaned.strip():
+                clean[name] = cleaned
+            if changed and "topic notes" not in redacted:
+                redacted.append("topic notes")
+        if clean:
+            document.setdefault("notes", {})["topics"] = clean
     return document, redacted
 
 
@@ -118,6 +130,7 @@ def parse_package(document: Any) -> dict:
         raise PackageError(f"agent.instructions must be at most {INSTRUCTIONS_MAX_BYTES} bytes")
 
     notes = None
+    topics: dict[str, str] = {}
     raw_notes = document.get("notes")
     if raw_notes is not None:
         if not isinstance(raw_notes, dict) or not isinstance(raw_notes.get("MEMORY.md", ""), str):
@@ -125,6 +138,20 @@ def parse_package(document: Any) -> dict:
         notes = raw_notes.get("MEMORY.md") or None
         if notes is not None and len(notes.encode("utf-8")) > FILE_MAX_BYTES:
             raise PackageError(f"The notes must be at most {FILE_MAX_BYTES // 1024} KB.")
+        raw_topics = raw_notes.get("topics")
+        if raw_topics is not None:
+            if not isinstance(raw_topics, dict) or len(raw_topics) > memory_topics.MAX_TOPICS:
+                raise PackageError(f"notes.topics must be at most {memory_topics.MAX_TOPICS} topic notes")
+            for name, value in raw_topics.items():
+                try:
+                    memory_topics.check_name(name)
+                except memory_topics.InvalidTopicName:
+                    raise PackageError(f"{name!r} is not a topic note name") from None
+                if name == memory_topics.ARCHIVE_NAME or not isinstance(value, str):
+                    raise PackageError(f"topic note {name} must be text")
+                if len(value.encode("utf-8")) > memory_topics.TOPIC_MAX_BYTES:
+                    raise PackageError(f"topic note {name} must be at most {memory_topics.TOPIC_MAX_BYTES // 1024} KB")
+            topics = {n: _clean(v)[0] for n, v in raw_topics.items() if v.strip()}
 
     return {
         "name": name,
@@ -132,4 +159,5 @@ def parse_package(document: Any) -> dict:
         "description": _clean(description)[0] or None,
         "instructions": _clean(instructions)[0] or "",
         "notes": _clean(notes)[0] if notes else None,
+        "topics": topics,
     }

@@ -65,8 +65,10 @@ about one subject (a person, a client, a trip) go in `memory/<topic>.md`.
   through.
 - **Lifecycle.** Deleting an agent deletes its notes, topic notes, journal and
   proposals (the folder stays, as conversations may use it). A duplicate starts
-  without any. Agent files (export/import) carry `MEMORY.md` only, not topic
-  notes.
+  without any. Agent files (export/import) carry `MEMORY.md` and the topic notes
+  (`notes.topics`, name to text; not the archive, daily logs, journal or
+  proposals), all redacted; an import with notes writes them into the new agent's
+  folder.
 
 ## The budget: archive, expire, supersede
 
@@ -413,7 +415,6 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Noticed facts are not added to a person-level profile, and rooms are never read.
-- Topic notes are not part of agent files.
 - Past-conversation search is a tool on Claude only; other engines have the brief and recall.
 - An agent's own edits with its file tools are not journaled.
 - Recall ranks by shared words only (no stemming, no embeddings), so a

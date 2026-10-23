@@ -610,7 +610,16 @@ async def export_agent(
     `redacted` names the parts where that happened."""
     agent = await _agent_or_404(rt, agent_id)
     notes = agent_memory.read_memory(agent.id).text if include_notes else None
-    document, redacted = agent_package.export_package(agent, notes)
+    topics = (
+        {
+            t.name: memory_topics.read_topic(agent.id, t.name).text
+            for t in memory_topics.list_topics(agent.id)
+            if t.name != memory_topics.ARCHIVE_NAME
+        }
+        if include_notes
+        else None
+    )
+    document, redacted = agent_package.export_package(agent, notes, topics)
     return AgentExportResponse(
         file_name=agent_package.file_name(agent.name), document=document, redacted=redacted
     )
@@ -640,5 +649,8 @@ async def import_agent(payload: AgentImportRequest, rt: ThreadRuntime = Depends(
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "Try again: that name was just taken.") from None
     _start_notes(agent.id, parsed["notes"] if payload.include_notes else None)
+    if payload.include_notes:
+        for topic_name, topic_text in parsed["topics"].items():
+            memory_topics.write_topic(agent.id, topic_name, topic_text)
     return agent
 

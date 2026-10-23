@@ -212,6 +212,7 @@ def test_an_import_reads_the_allowlist_and_drops_everything_else():
         "description": None,
         "instructions": "Use the checklist. token=[redacted]",
         "notes": "- remembered",
+        "topics": {},
     }
 
 

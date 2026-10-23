@@ -152,6 +152,26 @@ async def test_tidy_now_reports_and_is_refused_when_upkeep_is_off(api):
     assert refused.status_code == 409 and code_of(refused) == "upkeep_off"
 
 
+async def test_topic_notes_travel_in_an_agent_file(api):
+    agent = await make(api, starter_notes="- 2026-10-01 · likes tea\n")
+    memory_topics.write_topic(agent["id"], "travel.md", "---\ntitle: Travel\naliases: [trips]\n---\n- aisle seats\n- token=abcdef123456\n")
+    memory_topics.write_topic(agent["id"], "archive.md", "- old\n")
+    exported = (await api.get(f"/api/v1/agents/{agent['id']}/export", params={"include_notes": "true"})).json()
+    assert list(exported["document"]["notes"]["topics"]) == ["travel.md"]  # never the archive
+    assert "abcdef123456" not in exported["document"]["notes"]["topics"]["travel.md"]
+    bare = (await api.get(f"/api/v1/agents/{agent['id']}/export")).json()
+    assert "notes" not in bare["document"]
+    copy = (await api.post("/api/v1/agents/import", json={"document": exported["document"]})).json()
+    assert "aisle seats" in memory_topics.read_topic(copy["id"], "travel.md").text
+    assert not memory_topics.read_topic(copy["id"], "archive.md").exists
+    plain = (await api.post("/api/v1/agents/import", json={"document": exported["document"], "include_notes": False})).json()
+    assert memory_topics.list_topics(plain["id"]) == []
+    bad = {**exported["document"], "notes": {"topics": {"../x.md": "boo"}}}
+    assert (await api.post("/api/v1/agents/import", json={"document": bad})).status_code == 422
+    bad = {**exported["document"], "notes": {"topics": {"archive.md": "boo"}}}
+    assert (await api.post("/api/v1/agents/import", json={"document": bad})).status_code == 422
+
+
 def test_memory_routes_are_admin_only():
     for method, path in (
         ("GET", "/api/v1/agents/1/memory/topics"),

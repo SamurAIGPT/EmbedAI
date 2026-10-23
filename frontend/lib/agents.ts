@@ -98,7 +98,11 @@ export function parseAgentFile(text: string): Record<string, unknown> {
 // Whether a parsed agent file carries notes, so the import can offer to skip them.
 export function agentFileHasNotes(document: Record<string, unknown>): boolean {
   const notes = document.notes as Record<string, unknown> | undefined;
-  return typeof notes?.["MEMORY.md"] === "string" && (notes["MEMORY.md"] as string).trim() !== "";
+  const topics = notes?.topics as Record<string, unknown> | undefined;
+  return (
+    (typeof notes?.["MEMORY.md"] === "string" && (notes["MEMORY.md"] as string).trim() !== "") ||
+    (typeof topics === "object" && topics !== null && Object.keys(topics).length > 0)
+  );
 }
 
 // After an export: which parts had something that looked like a secret replaced.

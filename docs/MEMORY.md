@@ -68,7 +68,11 @@ about one subject (a person, a client, a trip) go in `memory/<topic>.md`.
   without any. Agent files (export/import) carry `MEMORY.md` and the topic notes
   (`notes.topics`, name to text; not the archive, daily logs, journal or
   proposals), all redacted; an import with notes writes them into the new agent's
-  folder.
+  folder. A topic note over 64 KB, past 100 notes or past 600 KB together is left
+  out of an export and named in the response's `skipped`; an import refuses the
+  whole file for a bad name, an oversized note or too many bytes, and records each
+  file it writes as a journal row by `import` (undoable). An import only ever makes
+  a new agent, so it cannot overwrite existing notes.
 
 ## The budget: archive, expire, supersede
 
@@ -382,7 +386,7 @@ button. Every upkeep change is undoable from the History tab.
 
 Every change made through the app to `MEMORY.md` or a topic note (an editor
 save, a topic deletion, an accepted proposal, an undo) is a row: which file,
-who (`person`, `proposal`, `upkeep`, `agent`, `undo`), created, edited or deleted, the before and
+who (`person`, `proposal`, `upkeep`, `agent`, `import`, `undo`), created, edited or deleted, the before and
 after hashes, a short diff, and the earlier text, so **Undo** puts the file
 back without anything else. An undo is itself a row and can be undone. A row
 whose earlier text held something that looked like a secret keeps no earlier

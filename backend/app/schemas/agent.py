@@ -197,6 +197,8 @@ class AgentExportResponse(BaseModel):
     document: dict
     # Parts in which something that looked like a secret was replaced.
     redacted: list[str]
+    # Topic notes left out because the file would be too large (their names).
+    skipped: list[str] = []
 
 
 class AgentImportRequest(BaseModel):

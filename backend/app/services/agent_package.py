@@ -25,6 +25,8 @@ from app.services.agent_memory import FILE_MAX_BYTES, redact_secrets
 
 FORMAT = "open-dots.agent"
 VERSION = 1
+# All topic notes together, so the file stays well inside PACKAGE_MAX_BYTES.
+TOPICS_MAX_BYTES = 600_000
 # The whole file, as JSON text.
 PACKAGE_MAX_BYTES = 1_000_000
 
@@ -42,10 +44,14 @@ def _clean(value: str | None) -> tuple[str | None, bool]:
     return text, count > 0
 
 
-def export_package(agent, notes: str | None, topics: dict[str, str] | None = None) -> tuple[dict, list[str]]:
+def export_package(
+    agent, notes: str | None, topics: dict[str, str] | None = None, skipped: list[str] | None = None
+) -> tuple[dict, list[str]]:
     """The file for `agent`, and the names of the parts that had something
     redacted. `notes` None leaves the notes out; `topics` (file name -> text)
-    are the topic notes that travel with them."""
+    are the topic notes that travel with them. A topic note the file's caps
+    cannot hold (over 64 KB, past 100 notes, or past 600 KB together) is left
+    out and its name appended to `skipped`."""
     redacted: list[str] = []
     body: dict[str, Any] = {"name": agent.name}
     for field in ("title", "description", "instructions"):
@@ -67,10 +73,21 @@ def export_package(agent, notes: str | None, topics: dict[str, str] | None = Non
             redacted.append("notes")
     if notes is not None and topics:
         clean: dict[str, str] = {}
+        total = 0
         for name, body_text in sorted(topics.items()):
             cleaned, changed = _clean(body_text)
             if cleaned.strip():
+                size = len(cleaned.encode("utf-8"))
+                if (
+                    size > memory_topics.TOPIC_MAX_BYTES
+                    or len(clean) >= memory_topics.MAX_TOPICS
+                    or total + size > TOPICS_MAX_BYTES
+                ):
+                    if skipped is not None:
+                        skipped.append(name)
+                    continue
                 clean[name] = cleaned
+                total += size
             if changed and "topic notes" not in redacted:
                 redacted.append("topic notes")
         if clean:
@@ -98,7 +115,7 @@ def _text(container: dict, field: str, *, required: bool = False) -> str | None:
 
 def parse_package(document: Any) -> dict:
     """What an import may use from `document`:
-    `{name, title, description, instructions, notes}`. Raises PackageError."""
+    `{name, title, description, instructions, notes, topics}`. Raises PackageError."""
     if not isinstance(document, dict):
         raise PackageError("This is not an agent file.")
     if document.get("format") != FORMAT:
@@ -151,6 +168,8 @@ def parse_package(document: Any) -> dict:
                     raise PackageError(f"topic note {name} must be text")
                 if len(value.encode("utf-8")) > memory_topics.TOPIC_MAX_BYTES:
                     raise PackageError(f"topic note {name} must be at most {memory_topics.TOPIC_MAX_BYTES // 1024} KB")
+            if sum(len(v.encode("utf-8")) for v in raw_topics.values()) > TOPICS_MAX_BYTES:
+                raise PackageError("The topic notes are larger than 600 KB together.")
             topics = {n: _clean(v)[0] for n, v in raw_topics.items() if v.strip()}
 
     return {

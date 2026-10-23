@@ -264,7 +264,11 @@ export function AgentsPanel({
     try {
       const result = await api.exportAgent(exporting.agent.id, exporting.includeNotes);
       saveFile(result.file_name, agentFileText(result.document));
-      setExporting({ ...exporting, notice: redactionNotice(result.redacted) ?? "Saved. The file has no model, folder, approval mode or conversations." });
+      const left = result.skipped?.length ? ` Left out because the file would be too large: ${result.skipped.join(", ")}.` : "";
+      setExporting({
+        ...exporting,
+        notice: (redactionNotice(result.redacted) ?? "Saved. The file has no model, folder, approval mode or conversations.") + left,
+      });
     } catch (err) {
       setError(errorText(err));
     } finally {

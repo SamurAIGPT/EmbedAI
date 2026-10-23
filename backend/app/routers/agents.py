@@ -93,6 +93,25 @@ def _start_notes(agent_id: int, notes: str | None) -> None:
         agent_memory.remove_memory(agent_id)
 
 
+def _start_imported_notes(agent_id: int, parsed: dict | None) -> None:
+    """An imported agent is new, so no notes of its own can be overwritten: it
+    starts with exactly the file's notes and topic notes. Each file written is
+    a journal row by `import`, so it can be undone."""
+    _start_notes(agent_id, parsed["notes"] if parsed else None)
+    if not parsed:
+        return
+    if parsed["notes"] and parsed["notes"].strip():
+        memory_journal.record(
+            agent_id, agent_memory.MEMORY_FILE, actor="import", before=None, after=agent_memory.read_memory(agent_id).text
+        )
+    for name, text in parsed["topics"].items():
+        try:
+            doc, _, _ = memory_topics.write_topic(agent_id, name, text)
+        except (agent_memory.MemoryTooLarge, memory_topics.InvalidTopicName, memory_topics.TooManyTopics):
+            continue
+        memory_journal.record(agent_id, memory_journal.note_path(name), actor="import", before=None, after=doc.text)
+
+
 def _check_engine(rt: ThreadRuntime, provider: str, model: str | None) -> None:
     """The engine must be registered and accept the model."""
     try:
@@ -619,9 +638,10 @@ async def export_agent(
         if include_notes
         else None
     )
-    document, redacted = agent_package.export_package(agent, notes, topics)
+    skipped: list[str] = []
+    document, redacted = agent_package.export_package(agent, notes, topics, skipped)
     return AgentExportResponse(
-        file_name=agent_package.file_name(agent.name), document=document, redacted=redacted
+        file_name=agent_package.file_name(agent.name), document=document, redacted=redacted, skipped=skipped
     )
 
 
@@ -648,9 +668,6 @@ async def import_agent(payload: AgentImportRequest, rt: ThreadRuntime = Depends(
             )
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "Try again: that name was just taken.") from None
-    _start_notes(agent.id, parsed["notes"] if payload.include_notes else None)
-    if payload.include_notes:
-        for topic_name, topic_text in parsed["topics"].items():
-            memory_topics.write_topic(agent.id, topic_name, topic_text)
+    _start_imported_notes(agent.id, parsed if payload.include_notes else None)
     return agent
 

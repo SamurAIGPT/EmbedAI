@@ -172,6 +172,32 @@ async def test_topic_notes_travel_in_an_agent_file(api):
     assert (await api.post("/api/v1/agents/import", json={"document": bad})).status_code == 422
 
 
+async def test_an_import_is_journaled_and_can_be_undone(api):
+    agent = await make(api, starter_notes="- main\n")
+    memory_topics.write_topic(agent["id"], "travel.md", "- Lisbon in May\n")
+    document = (await api.get(f"/api/v1/agents/{agent['id']}/export", params={"include_notes": "true"})).json()["document"]
+    copy = (await api.post("/api/v1/agents/import", json={"document": document})).json()
+    rows = (await api.get(f"/api/v1/agents/{copy['id']}/memory/journal")).json()
+    assert {(r["path"], r["actor"], r["kind"]) for r in rows} == {
+        ("MEMORY.md", "import", "created"),
+        ("memory/travel.md", "import", "created"),
+    }
+    row = next(r for r in rows if r["path"] == "memory/travel.md")
+    assert (await api.post(f"/api/v1/agents/{copy['id']}/memory/journal/{row['id']}/undo")).status_code == 200
+    assert not memory_topics.read_topic(copy["id"], "travel.md").exists
+    plain = (await api.post("/api/v1/agents/import", json={"document": document, "include_notes": False})).json()
+    assert (await api.get(f"/api/v1/agents/{plain['id']}/memory/journal")).json() == []
+
+
+async def test_an_export_lists_the_topic_notes_it_had_to_leave_out(api):
+    agent = await make(api)
+    for i in range(11):
+        memory_topics.write_topic(agent["id"], f"t{i:02d}.md", "y" * 60_000)
+    body = (await api.get(f"/api/v1/agents/{agent['id']}/export", params={"include_notes": "true"})).json()
+    assert len(body["document"]["notes"]["topics"]) == 10 and body["skipped"] == ["t10.md"]
+    assert (await api.post("/api/v1/agents/import", json={"document": body["document"]})).status_code == 201
+
+
 def test_memory_routes_are_admin_only():
     for method, path in (
         ("GET", "/api/v1/agents/1/memory/topics"),

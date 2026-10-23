@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Agent files: topic notes that are too large for the file (over 64 KB each, past 100, or past 600 KB together) are left out of an export and named in `skipped`; an import is checked against the same total, and each note it writes is an undoable History row by *Imported agent file*.
 - Gemini CLI and Cursor appear as ACP presets with their own connection fields, credential scope, bounded status/model discovery and pinned model selection. Signed-out turns give connection advice. Synthetic ACP tests cover the new hooks; real accounts and vendor approval behavior have not been verified.
 - Experimental OpenCode is available only through `OPEN_DOTS_PRESET_ENGINES`; its subprocess pins permission requests and disables project configuration. Real adversarial permission proof is still required before default enablement.
 - Server and desktop doctors include preset CLI guidance; the server guide documents API-key connections and optional Docker packages. Optional engine image builds were not run.

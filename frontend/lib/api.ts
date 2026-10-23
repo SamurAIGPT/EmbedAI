@@ -611,6 +611,8 @@ export type AgentExport = {
   file_name: string;
   document: Record<string, unknown>;
   redacted: string[];
+  // Topic notes left out because the file would be too large.
+  skipped?: string[];
 };
 
 export type Thread = {

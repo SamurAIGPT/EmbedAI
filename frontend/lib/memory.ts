@@ -46,7 +46,7 @@ export function compactedLabel(folded: number): string {
     : "Earlier messages summarized for the engine. The full conversation stays here.";
 }
 
-const ACTORS: Record<string, string> = { person: "You", proposal: "Accepted proposal", undo: "Undo", upkeep: "Memory upkeep", agent: "Agent" };
+const ACTORS: Record<string, string> = { person: "You", proposal: "Accepted proposal", undo: "Undo", upkeep: "Memory upkeep", agent: "Agent", import: "Imported agent file" };
 const KINDS: Record<string, string> = { created: "created", edited: "edited", deleted: "deleted" };
 
 export function journalLabel(row: Pick<MemoryJournalRow, "actor" | "kind" | "path" | "added" | "removed">): string {

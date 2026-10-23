@@ -282,6 +282,7 @@ class Rooms:
             return prompt, rows[0].seq if rows else member.last_seen_seq
 
     async def finish(self, dispatch_id, turn, error=None):
+        noted = None
         async with self.rt.session() as db:
             await begin_write(db)
             row = await db.get(RoomDispatch, dispatch_id, with_for_update=True)
@@ -302,6 +303,7 @@ class Rooms:
                     row.status = 'passed'
                 else:
                     row.status = 'done'
+                    noted = (room.thread_id, row.agent_id, turn.id)
                     # Member replies complete even when the chain budget stops
                     # further paid turns. Only chain dispatch is budget gated.
                     allow_chain = True
@@ -319,6 +321,9 @@ class Rooms:
             await thread_store._add_event(db, room.thread_id, 'room.member.state', {'agent_id': row.agent_id, 'dispatch_id': row.id, 'state': row.status, 'turn_id': row.turn_id, 'error_code': row.error_code}, None)
             await db.commit()
         self.rt.hub.notify(room.thread_id)
+        if noted is not None:
+            # With Learn from group chats on, what the agent read and answered may be worth remembering.
+            await self.rt.capture.note_room_turn(*noted)
 
     async def stop(self, room_id, agent_id=None):
         async with self.rt.session() as db:

@@ -3,8 +3,9 @@
 // Below an agent's MEMORY.md editor: its topic notes, the notes proposed from
 // quiet conversations, and the history of changes with Undo (docs/MEMORY.md).
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type MemoryJournalRow, type MemoryProposal, type TopicDoc, type TopicList } from "@/lib/api";
+import { api, ApiError, type Agent, type MemoryJournalRow, type MemoryProposal, type TopicDoc, type TopicList } from "@/lib/api";
 import { journalLabel, topicFileName } from "@/lib/memory";
+import { AboutMeTab, UpkeepCard } from "./MemoryUpkeep";
 
 const FIELD =
   "w-full rounded-md border border-line bg-transparent px-3 py-1.5 text-sm placeholder:text-muted";
@@ -13,11 +14,20 @@ const SMALL =
 const PRIMARY_SMALL =
   "cursor-pointer rounded-md px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 bg-accent text-accent-fg hover:opacity-90";
 
-type Tab = "topics" | "proposed" | "history";
+type Tab = "topics" | "proposed" | "about" | "history";
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-export function MemoryPanel({ agentId, onNotesChanged }: { agentId: number; onNotesChanged: () => void }) {
+export function MemoryPanel({
+  agent,
+  onAgentChange,
+  onNotesChanged,
+}: {
+  agent: Agent;
+  onAgentChange: (patch: Partial<Agent>) => void;
+  onNotesChanged: () => void;
+}) {
+  const agentId = agent.id;
   const [tab, setTab] = useState<Tab>("topics");
   const [proposed, setProposed] = useState<MemoryProposal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,11 +49,13 @@ export function MemoryPanel({ agentId, onNotesChanged }: { agentId: number; onNo
   const tabs: [Tab, string][] = [
     ["topics", "Topic notes"],
     ["proposed", `Proposed${proposed && proposed.length ? ` (${proposed.length})` : ""}`],
+    ["about", "About me"],
     ["history", "History"],
   ];
   return (
     <section className="space-y-3 border-t border-line pt-3" aria-label="More memory">
-      <div role="tablist" className="flex gap-1">
+      <UpkeepCard agent={agent} onAgentChange={onAgentChange} onError={setError} onNotesChanged={onNotesChanged} />
+      <div role="tablist" className="flex flex-wrap gap-1">
         {tabs.map(([id, label]) => (
           <button
             key={id}
@@ -69,6 +81,7 @@ export function MemoryPanel({ agentId, onNotesChanged }: { agentId: number; onNo
           }}
         />
       )}
+      {tab === "about" && <AboutMeTab onError={setError} />}
       {tab === "history" && <History agentId={agentId} onError={setError} onUndone={onNotesChanged} />}
     </section>
   );

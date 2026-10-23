@@ -376,6 +376,34 @@ person in a room) adds nothing to About me, whatever the model says. This is the
 only place a noticed fact leaves an agent's own folder, and what an agent learns
 here reaches every agent on the next turn.
 
+## Learning from group chats
+
+**Learn from group chats** (`learn_from_rooms` in the Memory settings, off by
+default, one switch for every agent; the switch under **Memory upkeep** in the
+agent's memory panel) lets a room feed a member agent's capture the same way a
+one-to-one chat does. When the agent finishes a room turn and its reply is in
+the room, what it read since it last spoke there (at most 12 lines) is read with
+its reply, batched per agent and room, under room rules:
+
+- the person's own lines count as theirs;
+- another person's lines (a room line whose author is marked as not the owner)
+  give only facts about the shared work, and never reach About me: a batch that
+  holds any of them adds nothing to About me, whatever the model says;
+- another agent's lines give only an outcome it verified or a decision the person
+  agreed to, never its suggestions, plans or claims, and nothing it says about the
+  person.
+
+A stretch with no person's words (only other agents) is skipped. Entries are
+sourced to the room: `- 2026-10-23 · from room "Launch" (noticed) · The launch
+moved to Friday`. The switch, the room and the agent's membership are checked
+again when the batch is captured, and the turns still waiting at a normal
+shutdown are kept as ids and rebuilt from the room at the next start. This app has
+one owner, so another person's lines appear only when a room message carries
+`owner: false` in its author; a room that fewer people can see than the agent
+cannot exist here, so that check has nothing to do. Never read: room hand-offs
+that carry no person's words, turns that did not succeed and agents whose notes
+or upkeep are off.
+
 ## Organizing and the nightly tidy-up
 
 With upkeep on, two more model steps keep the files in shape (the same quick
@@ -420,8 +448,12 @@ example `{"claude": "haiku"}`; it overrides `MEMORY_HELPER_MODEL`, which
 overrides the built-in `haiku` on Claude). It is always the engine the agent
 already uses, never another provider.
 
-The status route reports the last tidy-up; the editor has a **Tidy up now**
-button. Every upkeep change is undoable from the History tab.
+The status route reports the last tidy-up. In the app, the **Memory upkeep** card
+under an agent's notes holds the per-agent switch (noticing and tidy-up together),
+**Tidy up now**, the tidy hour, the helper model for the agent's engine and the
+**Learn from group chats** switch; the **About me** tab beside Topic notes edits
+About me. Every upkeep change is undoable from the History tab, which names the
+step (noticing, organizing, tidy-up).
 
 ## The journal
 
@@ -468,7 +500,7 @@ Installation-wide, under `/api/v1/memory` (admin scope):
 
 | Method | Path | What it does |
 | --- | --- | --- |
-| `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never) and `helper_models` (a model per engine). `422 invalid_setting`. |
+| `GET` / `PUT` | `/settings` | `tidy_hour` (0-23, 24 = never), `helper_models` (a model per engine) and `learn_from_rooms` (bool, off by default). `422 invalid_setting`. |
 | `GET` | `/about-me` | `text`, `hash`, and the facts agents added (`learned`, newest first, each with `id`, `agent_name`, `at`). |
 | `PUT` | `/about-me` | `{text, expected_hash?}`; `409 memory_changed` (with `current`), `413 memory_too_large`. |
 | `DELETE` | `/about-me/learned/{id}` | Remove an agent-added fact for good; 404 when there is none. |
@@ -483,7 +515,7 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 - About me is one text for the whole installation; there is no per-person profile (the app has one owner).
 - Noticed facts need an engine with a quick call here (Claude, OpenAI-compatible, OpenRouter); Codex and ACP agents are not read.
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
-- Rooms are never read for facts.
+- Rooms are read for facts only with **Learn from group chats** on, and only a member agent's own turns.
 - Past-conversation search is a tool on Claude only; other engines have the brief and recall.
 - Recall ranks by shared words only (no stemming, no embeddings), so a
   question worded differently from the note can miss it.

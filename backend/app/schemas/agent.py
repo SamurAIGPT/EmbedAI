@@ -247,6 +247,8 @@ class MemoryJournalRow(BaseModel):
     path: str
     # person | proposal | undo
     actor: str
+    # For upkeep rows, the step: capture | tidy | organize
+    via: str | None = None
     # created | edited | deleted
     kind: str
     before_hash: str | None

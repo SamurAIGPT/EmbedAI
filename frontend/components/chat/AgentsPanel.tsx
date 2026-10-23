@@ -12,7 +12,6 @@ import {
   modelLabel,
   parseAgentFile,
   redactionNotice,
-  tidyLine,
 } from "@/lib/agents";
 import { computerStateLabel } from "@/lib/computers";
 import { ComputerView } from "./ComputerPanel";
@@ -228,27 +227,6 @@ export function AgentsPanel({
     run(
       () => api.updateAgent(agent.id, { recall_enabled: on }),
       () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, recall_enabled: on } } : open))
-    );
-
-  const tidyNow = async () => {
-    if (!notes) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.tidyAgentMemory(notes.agent.id);
-      const memory = await api.getAgentMemory(notes.agent.id);
-      setNotes({ ...notes, memory, text: memory.text, conflict: false, saved: tidyLine(r) });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggleUpkeepOn = (agent: Agent, on: boolean) =>
-    run(
-      () => api.updateAgent(agent.id, { memory_upkeep: on }),
-      () => setNotes((open) => (open ? { ...open, agent: { ...open.agent, memory_upkeep: on } } : open))
     );
 
   const toggleNotesOn = (agent: Agent, on: boolean) =>
@@ -491,8 +469,9 @@ export function AgentsPanel({
               onLoadTheirs={loadTheirs}
               onToggle={(on) => toggleNotesOn(notes.agent, on)}
               onToggleRecall={(on) => toggleRecallOn(notes.agent, on)}
-              onToggleUpkeep={(on) => toggleUpkeepOn(notes.agent, on)}
-              onTidy={tidyNow}
+              onAgentChange={(patch) =>
+                setNotes((open) => (open ? { ...open, agent: { ...open.agent, ...patch } } : open))
+              }
               onReload={loadTheirs}
               onBack={back}
             />
@@ -659,8 +638,7 @@ function NotesEditor({
   onLoadTheirs,
   onToggle,
   onToggleRecall,
-  onToggleUpkeep,
-  onTidy,
+  onAgentChange,
   onReload,
   onBack,
 }: {
@@ -672,8 +650,7 @@ function NotesEditor({
   onLoadTheirs: () => void;
   onToggle: (on: boolean) => void;
   onToggleRecall: (on: boolean) => void;
-  onToggleUpkeep: (on: boolean) => void;
-  onTidy: () => void;
+  onAgentChange: (patch: Partial<Agent>) => void;
   onReload: () => void;
   onBack: () => void;
 }) {
@@ -683,7 +660,6 @@ function NotesEditor({
   const dirty = notes.text !== memory.text;
   const enabled = notes.agent.memory_enabled ?? true;
   const recall = notes.agent.recall_enabled ?? true;
-  const upkeep = notes.agent.memory_upkeep ?? true;
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted">
@@ -728,17 +704,6 @@ function NotesEditor({
         Recall before each message: add matching topic notes and passages from earlier conversations to the message
         (shown as a &ldquo;Recalled&rdquo; chip)
       </label>
-      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
-        <input type="checkbox" checked={upkeep} disabled={busy || !enabled} onChange={() => onToggleUpkeep(!upkeep)} />
-        Memory upkeep: when a conversation goes quiet, one quick call to this agent&apos;s own engine files facts worth
-        keeping (marked &ldquo;noticed&rdquo;, in the History tab, undoable)
-      </label>
-      <div className="flex items-center gap-2 text-xs text-muted">
-        <button onClick={onTidy} disabled={busy || !enabled || !upkeep} className={SMALL}>
-          Tidy up now
-        </button>
-        <span>Also runs once a night: expired notes move to the archive, repeats go, contradicted notes are struck through.</span>
-      </div>
       <div className="flex gap-2">
         <button onClick={onSave} disabled={busy || !dirty} className={PRIMARY}>
           {busy ? "Saving…" : "Save notes"}
@@ -747,7 +712,7 @@ function NotesEditor({
           {dirty ? "Discard" : "Done"}
         </button>
       </div>
-      <MemoryPanel agentId={notes.agent.id} onNotesChanged={() => !dirty && onReload()} />
+      <MemoryPanel agent={notes.agent} onAgentChange={onAgentChange} onNotesChanged={() => !dirty && onReload()} />
     </div>
   );
 }

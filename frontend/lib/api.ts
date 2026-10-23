@@ -564,6 +564,8 @@ export type MemoryJournalRow = {
   at: string;
   path: string;
   actor: string;
+  // For upkeep rows, the step that wrote it.
+  via?: string | null;
   kind: "created" | "edited" | "deleted";
   before_hash: string | null;
   after_hash: string | null;
@@ -573,6 +575,35 @@ export type MemoryJournalRow = {
   can_undo: boolean;
   reason: string | null;
 };
+export type MemoryJournalVia = "capture" | "tidy" | "organize";
+export type TidyReport = {
+  at: number;
+  expired: number;
+  duplicates: number;
+  superseded: number;
+  deferred: number;
+  organized: number;
+  note: string | null;
+};
+export type CaptureReport = { at: number; added: number; topics: number; about_me?: number; note: string | null };
+export type MemoryUpkeepStatus = {
+  enabled: boolean;
+  engine_can_call: boolean;
+  engine?: string;
+  quiet_seconds: number;
+  last_capture: CaptureReport | null;
+  last_tidy: TidyReport | null;
+  tidy_hour: number;
+  helper_model?: string | null;
+};
+// Installation-wide: the same for every agent.
+export type MemorySettings = {
+  learn_from_rooms: boolean;
+  tidy_hour: number;
+  helper_models: Record<string, string>;
+};
+export type LearnedFact = { id: string; text: string; line: string; agent_id: number | null; agent_name: string; at: number };
+export type AboutMe = { text: string; hash: string; learned: LearnedFact[]; max_chars: number; redacted?: number };
 export type MemoryProposal = {
   id: string;
   at: string;
@@ -970,10 +1001,26 @@ export const api = {
   // Organize, expire, de-duplicate and reconcile contradictions now (409 while
   // the agent is working or upkeep is off).
   tidyAgentMemory: (agentId: number) =>
-    request<{ organized: number; expired: number; duplicates: number; superseded: number; note: string | null }>(
-      `/agents/${agentId}/memory/tidy`,
-      { method: "POST" }
-    ),
+    request<TidyReport>(`/agents/${agentId}/memory/tidy`, { method: "POST" }),
+
+  memoryUpkeep: (agentId: number) => request<MemoryUpkeepStatus>(`/agents/${agentId}/memory/upkeep`),
+
+  memorySettings: () => request<MemorySettings>("/memory/settings"),
+
+  saveMemorySettings: (change: Partial<MemorySettings>) =>
+    request<MemorySettings>("/memory/settings", { method: "PUT", body: JSON.stringify(change) }),
+
+  aboutMe: () => request<AboutMe>("/memory/about-me"),
+
+  // `expectedHash` is the hash of the text that was opened; a stale one is a 409 (code memory_changed).
+  saveAboutMe: (text: string, expectedHash: string | null) =>
+    request<AboutMe>("/memory/about-me", {
+      method: "PUT",
+      body: JSON.stringify(expectedHash ? { text, expected_hash: expectedHash } : { text }),
+    }),
+
+  removeLearnedFact: (id: string) =>
+    request<AboutMe>(`/memory/about-me/learned/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   memoryProposals: (agentId: number) => request<MemoryProposal[]>(`/agents/${agentId}/memory/proposals`),
 

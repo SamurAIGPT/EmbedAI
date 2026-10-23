@@ -488,6 +488,7 @@ def _journal_row(row: dict) -> MemoryJournalRow:
         at=datetime.fromtimestamp(float(row.get("at") or 0), UTC),
         path=row["path"],
         actor=str(row.get("actor") or ""),
+        via=row.get("via") if isinstance(row.get("via"), str) else None,
         kind=str(row.get("kind") or ""),
         before_hash=row.get("before_hash"),
         after_hash=row.get("after_hash"),

@@ -74,9 +74,12 @@ def _diff(before: str, after: str, path: str) -> tuple[str, int, int]:
     return text, added, removed
 
 
-def record(agent_id: int, path: str, *, actor: str, before: str | None, after: str | None) -> dict | None:
+def record(
+    agent_id: int, path: str, *, actor: str, before: str | None, after: str | None, via: str | None = None
+) -> dict | None:
     """Append one row; None when nothing changed or the row could not be
-    written (logged, never raised)."""
+    written (logged, never raised). `via` names the upkeep step that wrote it
+    ("capture", "tidy" or "organize")."""
     if before == after:
         return None
     kind = "created" if before is None else "deleted" if after is None else "edited"
@@ -96,6 +99,7 @@ def record(agent_id: int, path: str, *, actor: str, before: str | None, after: s
         "at": time.time(),
         "path": path,
         "actor": actor,
+        "via": via,
         "kind": kind,
         "before_hash": None if before is None else text_hash(before),
         "after_hash": None if after is None else text_hash(after),

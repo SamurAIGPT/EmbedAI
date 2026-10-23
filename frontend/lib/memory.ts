@@ -1,6 +1,6 @@
 // Topic notes, recall chips, compaction markers, the journal and proposed
 // notes (docs/MEMORY.md). Pure: no React, no network.
-import type { MemoryJournalRow } from "./api";
+import type { CaptureReport, MemoryJournalRow, MemoryUpkeepStatus } from "./api";
 
 // A topic is one file name: letters, digits, dashes and underscores, then ".md".
 const TOPIC_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,59}\.md$/;
@@ -48,9 +48,49 @@ export function compactedLabel(folded: number): string {
 
 const ACTORS: Record<string, string> = { person: "You", proposal: "Accepted proposal", undo: "Undo", upkeep: "Memory upkeep", agent: "Agent", import: "Imported agent file" };
 const KINDS: Record<string, string> = { created: "created", edited: "edited", deleted: "deleted" };
+const VIA: Record<string, string> = { tidy: "tidy-up", organize: "organizing", capture: "noticing" };
 
-export function journalLabel(row: Pick<MemoryJournalRow, "actor" | "kind" | "path" | "added" | "removed">): string {
-  const who = ACTORS[row.actor] ?? row.actor;
+export function journalLabel(row: Pick<MemoryJournalRow, "actor" | "kind" | "path" | "added" | "removed"> & { via?: string | null }): string {
+  const step = row.actor === "upkeep" && row.via && VIA[row.via] ? ` (${VIA[row.via]})` : "";
+  const who = (ACTORS[row.actor] ?? row.actor) + step;
   const counts = row.kind === "edited" ? ` (+${row.added} −${row.removed})` : "";
   return `${who} ${KINDS[row.kind] ?? row.kind} ${row.path}${counts}`;
+}
+
+// The hour the nightly tidy-up may start after, as the person reads it.
+export function tidyHourLabel(hour: number): string {
+  if (hour >= 24) return "never";
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h}:00 ${hour < 12 ? "am" : "pm"}`;
+}
+
+// What the last capture noticed, or "" when it noticed nothing.
+export function captureLine(r: CaptureReport | null | undefined): string {
+  if (!r) return "";
+  const parts = [
+    r.added ? `${r.added} for the notes` : "",
+    r.topics ? `${r.topics} for topic notes` : "",
+    r.about_me ? `${r.about_me} for About me` : "",
+  ].filter(Boolean);
+  if (parts.length) return `Last noticed: ${parts.join(", ")}.`;
+  return r.note ?? "";
+}
+
+// Which model the quick calls use, and why a different one might be wanted.
+export function helperModelLine(status: Pick<MemoryUpkeepStatus, "engine" | "helper_model" | "engine_can_call"> | null): string {
+  if (!status) return "";
+  if (!status.engine_can_call) return "This agent's engine cannot make the quick call, so only expired notes and repeats are tidied.";
+  const engine = status.engine ?? "its engine";
+  return status.helper_model
+    ? `Quick calls use ${status.helper_model} on ${engine}.`
+    : `Quick calls use this agent's own model on ${engine}.`;
+}
+
+// The settings with one engine's helper model set (an empty name clears it).
+export function withHelperModel(models: Record<string, string>, engine: string, model: string): Record<string, string> {
+  const next = { ...models };
+  const name = model.trim();
+  if (name) next[engine] = name;
+  else delete next[engine];
+  return next;
 }

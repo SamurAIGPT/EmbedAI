@@ -6,6 +6,7 @@
 // preview that the stored assistant.message replaces.
 import type { ThreadEvent } from "./api";
 import type { RecalledNote, RecalledPassage } from "./memory";
+import type { NeedsYouRow } from "./needs-you";
 
 export type ApprovalStatus = "pending" | "allowed" | "denied" | "expired" | "cancelled";
 
@@ -16,8 +17,11 @@ export type AttachmentRef = { id: string; name: string; mime: string; bytes: num
 
 export type TeamJobItem = { kind: "team_job"; key: string; turnId: number | null; jobId: number; agentId: number; threadId: number | null; mode: string; brief: string; status: string; result: string; outcome: string };
 
+export type NeedsYouItem = { kind: "needs_you"; key: string; turnId: number | null; cardId: string; revision: number; title: string; subtitle: string; emptyText: string; more: number; rows: NeedsYouRow[] };
+
 export type TranscriptItem =
   | TeamJobItem
+  | NeedsYouItem
   | { kind: "agent_created"; key: string; turnId: number | null; agentId: number; name: string; title: string }
   | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[] }
   | {
@@ -361,6 +365,25 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
         status: text(data.status) || previous?.status || "queued", result: text(data.result_preview) || previous?.result || "", outcome: text(data.outcome) || previous?.outcome || "",
       };
       return { ...base, items: previous ? state.items.map(entry => entry === previous ? item : entry) : [...state.items, item] };
+    }
+
+    // The day's Needs you card. Events are append-only, so a newer revision of the
+    // same card replaces the older one where it stands.
+    case "card.needs_you": {
+      if (typeof data.card_id !== "string" || !Array.isArray(data.items)) return base;
+      const previous = state.items.find((entry): entry is NeedsYouItem => entry.kind === "needs_you" && entry.cardId === data.card_id);
+      const revision = typeof data.revision === "number" ? data.revision : 1;
+      if (previous && previous.revision >= revision) return base;
+      const rows = data.items.flatMap((row: unknown): NeedsYouRow[] => {
+        const r = row as Partial<NeedsYouRow>;
+        return typeof r?.key === "string" && typeof r.kind === "string" ? [{ kind: r.kind, key: r.key, title: text(r.title), detail: typeof r.detail === "string" ? r.detail : null, thread_id: typeof r.thread_id === "number" ? r.thread_id : null }] : [];
+      });
+      const item: NeedsYouItem = {
+        kind: "needs_you", key: previous?.key ?? key, turnId: null, cardId: data.card_id, revision,
+        title: text(data.title) || "Needs you", subtitle: text(data.subtitle), emptyText: text(data.empty_text) || "Nothing needs you right now.",
+        more: typeof data.more === "number" ? data.more : 0, rows,
+      };
+      return { ...base, items: previous ? state.items.map((entry) => (entry === previous ? item : entry)) : [...state.items, item] };
     }
 
     case "context.compacted":

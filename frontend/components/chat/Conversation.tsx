@@ -19,6 +19,7 @@ import {
   UserMessage,
 } from "./items";
 
+import { NeedsYouCard } from "./NeedsYouCard";
 import { DelegationCard, AgentCreatedCard } from "./TeamCards";
 
 const STICK_DISTANCE_PX = 80;
@@ -117,6 +118,8 @@ export function Conversation({
 
           {groupToolRuns(transcript.items).map((item) => {
             switch (item.kind) {
+              case "needs_you":
+                return <NeedsYouCard key={item.key} item={item} />;
               case "team_job":
                 return <DelegationCard key={item.key} item={item} />;
               case "agent_created":

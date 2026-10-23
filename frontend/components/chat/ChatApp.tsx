@@ -27,6 +27,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { Drawer } from "@/components/ui/Drawer";
 import { SIDEBAR_AND_PANEL_FIT, SIDEBAR_INLINE, useMediaQuery } from "@/lib/use-media-query";
 import { t } from "@/lib/i18n";
+import { reportPresence } from "@/lib/presence";
 import { chatHref, parsePanel, type Panel } from "@/lib/panel";
 import { RoomList } from "./RoomList";
 import { RoomView } from "./RoomView";
@@ -190,6 +191,30 @@ export function ChatApp() {
       cancelled = true;
     };
   }, [statusTick]);
+
+  // Tell the server the person is here (it stores their time zone and writes
+  // today's Needs you card). It names the card's chat only on a return or the
+  // first visit of the day, and never moves a chat that is already open.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const ping = () => {
+      if (document.visibilityState === "hidden") return;
+      reportPresence()
+        .then((result) => {
+          if (!cancelled && result.open && !window.location.search.match(/[?&](thread|room)=/)) router.push(`/chat?thread=${result.open.thread_id}`);
+        })
+        .catch(() => {
+          // Not the owner, or an older backend: nothing to show.
+        });
+    };
+    ping();
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [ready, router]);
 
   const checkAgain = () => {
     setGate({ phase: "loading" });

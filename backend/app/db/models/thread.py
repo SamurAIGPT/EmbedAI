@@ -52,6 +52,9 @@ class Thread(Base):
     # The named agent this thread was created from, if any. Not a database
     # foreign key: deleting an agent never deletes or rewrites its threads.
     agent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="chat", server_default="chat")
+    job_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    room_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Last event sequence number handed out in this thread.
     last_seq: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, server_default="0"

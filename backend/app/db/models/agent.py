@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Index, String, Text, text, func
+from sqlalchemy import BigInteger, Boolean, Index, String, Text, text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import expression
 
@@ -72,6 +72,10 @@ class Agent(Base):
     pinned: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=expression.false()
     )
+    team_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    delegation_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=expression.true())
+    created_by_agent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    instructions_reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime, server_default=func.now(), nullable=False

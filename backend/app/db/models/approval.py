@@ -43,4 +43,5 @@ class Approval(Base):
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime, server_default=func.now(), nullable=False
     )
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

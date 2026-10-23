@@ -296,7 +296,7 @@ def launches(cli, monkeypatch):
     seen: list[dict] = []
 
     def fake_build_args(
-        executable, session_id, tools=False, resume=False, approval_mode=None, model=None, system_prompt=None
+        executable, session_id, tools=False, resume=False, approval_mode=None, model=None, system_prompt=None, **_extra
     ):
         seen.append(
             {"tools": tools, "approval_mode": approval_mode, "model": model, "system_prompt": system_prompt}

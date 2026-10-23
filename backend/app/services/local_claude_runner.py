@@ -496,6 +496,7 @@ def build_args(
     system_prompt: str | None = None,
     computer=None,
     mcp_servers: dict | None = None,
+    mcp_only: bool = False,
 ) -> list[str]:
     # The prompt goes in on stdin, never on the command line. `resume` continues
     # the conversation that already holds `session_id`; otherwise the CLI is
@@ -520,7 +521,7 @@ def build_args(
     # locked down. `None` keeps the CLI's `default` (ask about everything).
     tools_args = list(TOOLS_ARGS)
     tools_args[tools_args.index("--permission-mode") + 1] = cli_permission_mode(approval_mode)
-    if computer is not None:
+    if computer is not None or mcp_only:
         tools_args[tools_args.index("--tools") + 1] = ""
     servers = dict(mcp_servers or {})
     if computer is not None:
@@ -630,6 +631,7 @@ def _run_blocking(
     computer=None,
     mcp_servers: dict | None = None,
     images: list[dict] | None = None,
+    mcp_only: bool = False,
 ) -> RunOutput:
     if workspace is not None:
         from app.services.workspaces import require_workspace
@@ -652,6 +654,8 @@ def _run_blocking(
     if mcp_servers:
         tools = True
         extra["mcp_servers"] = mcp_servers
+        if mcp_only:
+            extra["mcp_only"] = True
     args = (
         build_args(executable, session_id, tools=True, **extra)
         if tools
@@ -688,6 +692,7 @@ async def run_prompt(
     computer=None,
     mcp_servers: dict | None = None,
     images: list[dict] | None = None,
+    mcp_only: bool = False,
 ) -> RunOutput:
     """Chat-only by default. Passing a `RunControl` runs with tools on: the CLI
     then asks over stdin/stdout before each tool call, and the caller answers
@@ -711,4 +716,5 @@ async def run_prompt(
         computer,
         mcp_servers,
         images,
+        mcp_only,
     )

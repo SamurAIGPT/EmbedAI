@@ -45,11 +45,11 @@ def cli(monkeypatch, tmp_path):
     original = local_claude_runner.build_args
 
     def fake_build_args(executable, session_id, tools=False, resume=False, approval_mode=None,
-                        model=None, system_prompt=None, computer=None):
+                        model=None, system_prompt=None, computer=None, **_extra):
         # What the real CLI would have been given, kept for the test to read.
         real = original(
             executable, session_id, tools=tools, resume=resume, approval_mode=approval_mode,
-            model=model, system_prompt=system_prompt, computer=computer,
+            model=model, system_prompt=system_prompt, computer=computer, **_extra,
         )
         launches.append({"args": real, "system_prompt": system_prompt})
         mcp = fake.plan.parent / "mcp.json"
@@ -134,7 +134,8 @@ async def test_an_approved_command_runs_in_the_computer_not_on_the_host(rt, sess
     args = launch["args"]
     assert args[args.index("--tools") + 1] == ""  # no host tools at all
     config = json.loads(args[args.index("--mcp-config") + 1])
-    assert list(config["mcpServers"]) == ["computer"]
+    # the computer is the only source of host-like tools; the read-only memory search rides along
+    assert sorted(config["mcpServers"]) == ["computer", "memory"]
     assert "--strict-mcp-config" in args and "--permission-prompt-tool" in args
     assert "own computer" in launch["system_prompt"]
     assert cli.log("start")[0]["tools"] is True
@@ -228,9 +229,12 @@ async def test_an_agent_without_a_computer_runs_as_before(rt, sessions, cli, doc
     await rt.send_turn(thread.id, "hi")
     await finished(sessions, thread.id)
     args = cli.launches[-1]["args"]
-    assert "--mcp-config" not in args and docker.calls() == []
-    assert args[args.index("--tools") + 1] == ""  # chat-only lockdown, as before
-    assert "--permission-prompt-tool" not in args
+    # No computer, no host tools: the only thing mounted is the agent's read-only
+    # memory search, asked about like any tool (docs/MEMORY.md).
+    assert docker.calls() == []
+    assert args[args.index("--tools") + 1] == ""
+    config = json.loads(args[args.index("--mcp-config") + 1])
+    assert list(config["mcpServers"]) == ["memory"]
 
 
 def test_build_args_with_a_computer(tmp_path):

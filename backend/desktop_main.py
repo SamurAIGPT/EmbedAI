@@ -17,6 +17,10 @@ if __name__ == "__main__":
         from app.team.mcp_server import main as team_mcp
         sys.argv = [sys.argv[0], *sys.argv[2:]]
         sys.exit(team_mcp())
+    if sys.argv[1:2] == ["--memory-mcp"]:
+        from app.memory_mcp_server import main as memory_mcp
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
+        sys.exit(memory_mcp())
     code = main()
     # Leave without interpreter shutdown. A thread may still be blocked reading
     # stdin (the launcher's message, or the lifeline); Python aborts with a fatal

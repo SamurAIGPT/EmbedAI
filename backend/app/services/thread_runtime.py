@@ -30,6 +30,7 @@ from app.core.logging import get_logger
 from app.services import agent_memory, agent_store, attachments, context_compaction, memory_entries, memory_log, memory_recall, recent_work
 from app.db.models import Room
 from app.db.transactions import begin_write
+from app.services.memory_bridge import MemoryBridge
 from app.services.memory_capture import MemoryCapture, Turn as MemoryTurn
 from app.services import thread_store as store
 from app.services import local_claude_runner
@@ -453,7 +454,7 @@ class ThreadRuntime:
     # process only): engine id -> (EngineLimit, wall time noted, message).
     _limits: dict[str, tuple] = field(default_factory=dict)
     # Private chats already disclosed to a room by a recent-work brief: room thread id -> thread ids.
-    _announced: dict[int, set[int]] = field(default_factory=dict)
+    _announced: dict[tuple[int, bool], set[int]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         from app.rooms.service import Rooms
@@ -805,18 +806,18 @@ class ThreadRuntime:
                 )
             text, shown = recent_work.prompt(found)
             if thread.kind == "room_member" and thread.room_id is not None:
-                await self._disclose_brief(agent, thread, [line.thread_id for line in shown if line.private])
+                await self._disclose(agent, thread, [line.thread_id for line in shown if line.private])
             return text
         except Exception:  # noqa: BLE001
             logger.exception("recent-work brief failed; the turn goes on without it", thread_id=thread.id)
             return ""
 
-    async def _disclose_brief(self, agent, thread, private_ids: list[int]) -> None:
+    async def _disclose(self, agent, thread, private_ids: list[int], *, recalled: bool = False) -> None:
         async with self.session() as db:
             room = await db.get(Room, thread.room_id)
             if room is None:
                 return
-            seen = self._announced.setdefault(room.thread_id, set())
+            seen = self._announced.setdefault((room.thread_id, recalled), set())
             fresh = [i for i in dict.fromkeys(private_ids) if i not in seen]
             if not fresh:
                 return
@@ -824,12 +825,24 @@ class ThreadRuntime:
             await begin_write(db)
             await store._add_event(
                 db, room.thread_id, "room.notice",
-                {"kind": "brief", "author": {"kind": "system", "label": "Memory"},
-                 "text": recent_work.crossing_label(agent.name, len(fresh))},
+                {"kind": "recall" if recalled else "brief", "author": {"kind": "system", "label": "Memory"},
+                 "text": recent_work.crossing_label(agent.name, len(fresh), recalled=recalled)},
                 None,
             )
             await db.commit()
         self.hub.notify(room.thread_id)
+
+    async def disclose_recall(self, run: "ActiveRun", private_ids: list[int]) -> None:
+        """A search in a room turn that used private one-to-one chats tells the
+        room once per chat (the same rule as the recent-work brief)."""
+        if not private_ids:
+            return
+        async with self.session() as db:
+            thread = await store.get_thread(db, run.thread_id)
+            agent = await agent_store.get_agent(db, run.agent_id)
+        if thread is None or agent is None or thread.kind != "room_member" or thread.room_id is None:
+            return
+        await self._disclose(agent, thread, private_ids, recalled=True)
 
     async def _log_turn(self, run: "ActiveRun", outcome: TurnOutcome) -> None:
         """One line in the agent's daily log for a finished turn (memory_log.py)."""
@@ -910,6 +923,7 @@ class ThreadRuntime:
         watchdog = None
         binding = None
         team_bridge = None
+        memory_bridge = None
         try:
             try:
                 # An agent with a computer runs its tools there or not at all:
@@ -926,6 +940,10 @@ class ThreadRuntime:
                     team_bridge = TeamBridge(self, run)
                     run.ctx.team_launch = team_bridge.launch
                     team_bridge.start()
+                if run.agent_id is not None and run.log_memory and capabilities_of(adapter).mcp:
+                    memory_bridge = MemoryBridge(self, run)
+                    run.ctx.memory_launch = memory_bridge.launch
+                    memory_bridge.start()
                 # Watched from here: starting a computer can take a while, and
                 # is not the engine doing nothing.
                 run.touch()
@@ -958,6 +976,8 @@ class ThreadRuntime:
             await asyncio.gather(heartbeat, *([watchdog] if watchdog else []), return_exceptions=True)
             if team_bridge is not None:
                 await team_bridge.close()
+            if memory_bridge is not None:
+                await memory_bridge.close()
             await self.computers.release_turn(binding, run.turn_id)
         if run.stop_requested and outcome.status != "succeeded":
             # Killed on request. A turn that finished on its own just before the
@@ -1090,7 +1110,7 @@ class ThreadRuntime:
             approval_mode=old.approval_mode,
             instructions=old.instructions,
             computer=old.computer,
-            team=old.team, team_launch=old.team_launch,
+            team=old.team, team_launch=old.team_launch, memory_launch=old.memory_launch,
             engine_config=config,
             images=list(old.images),
         )

@@ -215,10 +215,14 @@ class ClaudeAdapter:
             )
         # A computer is the agent's sandbox: its turns always have tools, and
         # they are the computer's tools only.
-        tools = app_settings.get("LOCAL_TOOLS_ENABLED") or ctx.computer is not None or ctx.team_launch is not None
-        attempt = await self._attempt(ctx, sink, gate, resume=ctx.resume, tools=tools)
+        host_tools = app_settings.get("LOCAL_TOOLS_ENABLED") or ctx.computer is not None or ctx.team_launch is not None
+        # The memory search is an MCP tool asked about like any other: the turn
+        # then runs with approvals, but with the host's own tools off unless
+        # they were on already.
+        tools = host_tools or ctx.memory_launch is not None
+        attempt = await self._attempt(ctx, sink, gate, resume=ctx.resume, tools=tools, host_tools=host_tools)
         if attempt.already_in_use and not attempt.resume and not ctx.aborted:
-            attempt = await self._attempt(ctx, sink, gate, resume=True, tools=tools)
+            attempt = await self._attempt(ctx, sink, gate, resume=True, tools=tools, host_tools=host_tools)
         return self._outcome(ctx, attempt, tools=tools)
 
     # -- one launch ------------------------------------------------------------
@@ -231,6 +235,7 @@ class ClaudeAdapter:
         *,
         resume: bool,
         tools: bool,
+        host_tools: bool = True,
     ) -> _Attempt:
         loop = asyncio.get_running_loop()
         normalizer = StreamNormalizer(max_text_bytes=app_settings.get("LOCAL_MAX_OUTPUT_BYTES"))
@@ -370,8 +375,21 @@ class ClaudeAdapter:
         if ctx.computer is not None:
             notes.append(ctx.computer.prompt_note())
             extra["computer"] = ctx.computer.launch
+        servers = {}
         if ctx.team_launch is not None:
-            extra["mcp_servers"] = {"team": ctx.team_launch}
+            servers["team"] = ctx.team_launch
+        if ctx.memory_launch is not None:
+            servers["memory"] = ctx.memory_launch
+            notes.append(
+                "You can search your own earlier conversations, the rooms you belong to and your memory "
+                "files with the session_search tool (words, a since/until time, or both), and read a whole "
+                "message with session_read. Use it before asking the person to repeat something."
+            )
+        if servers:
+            extra["mcp_servers"] = servers
+            if not host_tools:
+                # Only the memory search is wanted: the host's own tools stay off.
+                extra["mcp_only"] = True
         if notes:
             extra["system_prompt"] = "\n\n".join(notes)
         if ctx.images:

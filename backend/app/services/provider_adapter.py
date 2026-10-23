@@ -158,6 +158,9 @@ class TurnContext:
     engine_config: dict | None = None
     team: object | None = None
     team_launch: object | None = None
+    # The MCP server giving the turn the agent's past-conversation search
+    # (memory_bridge.py), when the engine can mount one.
+    memory_launch: object | None = None
     hold_clock: Callable[[], Callable[[], None]] | None = None
     # Images attached to this message, as {"path", "mime", "name"}. Only ever
     # set for an engine whose capabilities include `images`; attached text

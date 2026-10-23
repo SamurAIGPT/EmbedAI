@@ -304,6 +304,33 @@ transcripts:
   where the folder or file should be is never followed. They are read-only in the
   API (list, read, delete); deleting an agent deletes them.
 
+### Searching past conversations (session_search)
+
+On Claude, an agent with notes on also gets two read-only MCP tools, started per
+turn like the team tools (`mcp__memory__session_search`, `mcp__memory__session_read`):
+
+- **session_search** takes `query` (words that must all match), `since` and
+  `until` (a span like `24h`, `3d`, `2w`; `today`, `yesterday`; or a date), `limit`
+  (up to 25) and `scope` (`all`, `conversations`, `memory`). Words, a time, or both:
+  "what happened since yesterday's standup" needs no keyword. It covers the agent's
+  own one-to-one chats and the timelines of the rooms it belongs to, and its
+  memory files: `MEMORY.md` and topic notes without expired or superseded entries,
+  plus `archive.md` and the daily logs, which stay searchable on purpose. Never
+  another agent's history; archived conversations and delegated-task threads are
+  left out. Hits give when, where, who spoke and a thread and message id.
+- **session_read** returns one whole message by those ids (cut at 8,000
+  characters, redacted); another agent's message reads as missing.
+
+No card is shown (the calls only read the agent's own history, and the policy
+allows exactly these two tools); the turn's host tools stay off unless tools were
+already on. A request cannot name another agent: the backend answers for the
+agent the turn belongs to, through the turn's private mailbox folder.
+**Disclosure:** when a room turn's search or read uses a private one-to-one chat,
+the room gets a notice once per chat (*Scout recalled 1 message from its private
+chat with you*). Engines without MCP here (Codex, ACP agents, OpenAI-compatible
+endpoints) do not get the tools; they still get the recent-work brief and
+automatic recall. The agent is told about the tools in its system prompt.
+
 ## The journal
 
 Every change made through the app to `MEMORY.md` or a topic note (an editor
@@ -350,6 +377,7 @@ revision `e7a91c4d2b58` adds `agent.recall_enabled` and `c4d8f1a6e903` adds
 - Noticed facts come from one conversation at a time, one call each; several quiet conversations are not batched into one call.
 - Noticed facts are not added to a person-level profile, and rooms are never read.
 - Topic notes are not part of agent files.
+- Past-conversation search is a tool on Claude only; other engines have the brief and recall.
 - An agent's own edits with its file tools are not journaled.
 - Recall ranks by shared words only (no stemming, no embeddings), so a
   question worded differently from the note can miss it.

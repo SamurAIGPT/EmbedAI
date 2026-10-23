@@ -89,7 +89,7 @@ def cli(monkeypatch, tmp_path):
     monkeypatch.setattr(local_claude_runner, "resolve_claude_executable", lambda: tmp_path / "claude")
     monkeypatch.setattr(local_claude_runner, "workspace_dir", lambda: tmp_path)
 
-    def fake_build_args(executable, session_id, tools=False, resume=False, approval_mode=None):
+    def fake_build_args(executable, session_id, tools=False, resume=False, approval_mode=None, **_extra):
         args = [
             sys.executable, str(FAKE_CLI), str(fake.plan),
             "resume" if resume else "new", session_id, "1" if tools else "0",

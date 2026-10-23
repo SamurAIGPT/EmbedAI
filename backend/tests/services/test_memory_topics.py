@@ -103,6 +103,8 @@ def test_header_gives_title_and_aliases():
     assert memory_topics.parse_header("# Travel plans\n- x").title == "Travel plans"
     listed = "---\naliases:\n  - trips\n  - flights\n---\nbody"
     assert memory_topics.parse_header(listed).aliases == ("trips", "flights")
+    quoted = '---\ntitle: People\naliases: ["Smith, Jr", sibling]\n---\nbody\n'
+    assert memory_topics.parse_header(quoted).aliases == ("Smith, Jr", "sibling")
 
 
 def test_the_index_lists_topics_and_the_prompt_carries_it():

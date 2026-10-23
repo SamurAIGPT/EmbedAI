@@ -114,6 +114,30 @@ def _read(path: Path) -> str:
     return data[:TOPIC_MAX_BYTES].decode("utf-8", errors="replace")
 
 
+def _split_aliases(value: str) -> list[str]:
+    """Split a comma-separated alias list. A comma inside quotes stays put."""
+    items: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    for ch in value.strip("[]"):
+        if quote:
+            if ch == quote:
+                quote = None
+            else:
+                buf.append(ch)
+            continue
+        if ch in "\"'":
+            quote = ch
+            continue
+        if ch == ",":
+            items.append("".join(buf))
+            buf.clear()
+            continue
+        buf.append(ch)
+    items.append("".join(buf))
+    return items
+
+
 def parse_header(text: str) -> TopicHeader:
     """`title` and `aliases` from a small front matter block (`---` lines at
     the top), else the first heading as the title."""
@@ -135,10 +159,8 @@ def parse_header(text: str) -> TopicHeader:
                     title = value.strip("'\"").strip()[:160] or None
                 continue
             items: list[str] = []
-            if value.startswith("["):
-                items = value.strip("[]").split(",")
-            elif value:
-                items = value.split(",")
+            if value:
+                items = _split_aliases(value)
             else:
                 while i < len(lines) and re.match(r"^\s*-\s+", lines[i]):
                     items.append(re.sub(r"^\s*-\s+", "", lines[i]))

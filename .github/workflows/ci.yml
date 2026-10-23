@@ -21,6 +21,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       desktop: ${{ steps.filter.outputs.desktop }}
       server: ${{ steps.filter.outputs.server }}
+      browser: ${{ steps.filter.outputs.browser }}
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dorny/paths-filter@v3.0.2
@@ -43,6 +44,30 @@ jobs:
               - 'frontend/**'
               - 'scripts/**'
               - '.github/workflows/ci.yml'
+            browser:
+              - 'desktop-image/**'
+              - 'backend/app/computers/**'
+              - 'backend/tests/computers/test_browser*.py'
+              - '.github/workflows/ci.yml'
+
+  browser:
+    name: Isolated Chromium CDP acceptance
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABASE_BACKEND: sqlite
+      TOKEN_ENCRYPTION_KEYS: 3n3b2YkQd0xVv8m1c1m0nq1l4Z3xk9q0n7xv7y5q8wE=
+      OPEN_DUET_BROWSER_IMAGE: open-duet-browser:qa
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: astral-sh/setup-uv@v5.4.2
+      - run: docker build -t open-duet-browser:qa desktop-image
+      - run: uv sync --frozen
+        working-directory: backend
+      - run: uv run pytest tests/computers/test_browser.py tests/computers/test_browser_real.py -q
+        working-directory: backend
 
   backend-sqlite:
     name: Backend tests (SQLite)
@@ -187,7 +212,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, server-smoke, frontend, desktop]
+    needs: [changes, backend-sqlite, backend-postgres, backend-smoke, server-smoke, frontend, desktop, browser]
     runs-on: ubuntu-latest
     steps:
       - name: Check results

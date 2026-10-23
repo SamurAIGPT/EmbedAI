@@ -1,8 +1,10 @@
 """The /rooms HTTP routes and the undo window for lead-made specialists."""
+import asyncio
 import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from app.db.models import RoomDispatch
 from app.routers.rooms import router as rooms_router
 from app.routers.team import router as team_router, get_runtime
@@ -64,29 +66,40 @@ async def test_post_messages_read_and_export(api, harness):
     assert js.json()['room'] == 'Desk'
 
 
+async def set_status(sessions, dispatch_id, status):
+    # Background room work may still hold SQLite's single write lock for a moment.
+    for _ in range(100):
+        try:
+            async with sessions() as db:
+                row = await db.get(RoomDispatch, dispatch_id)
+                row.status = status
+                await db.commit()
+            return
+        except OperationalError:
+            await asyncio.sleep(0.05)
+    raise AssertionError('could not update the dispatch')
+
+
 async def test_hold_stop_and_retry_rules(api, harness, sessions):
     rt, engine, lead, worker = harness
     room = await make_room(api, harness, default_responder_kind='everyone')
-    held = await api.patch(f"/rooms/{room['id']}/members/{worker.id}", json={'held': True})
-    assert held.status_code == 200
+    assert (await api.patch(f"/rooms/{room['id']}/members/{worker.id}", json={'held': True})).status_code == 200
     assert (await api.post(f"/rooms/{room['id']}/stop", json={})).status_code == 202
     assert (await api.get(f"/rooms/{room['id']}/approvals")).json() == []
-    # Only failed or stopped replies may be retried.
     await api.patch(f"/rooms/{room['id']}/members/{worker.id}", json={'held': False})
     await api.post(f"/rooms/{room['id']}/messages", json={'text': 'work please'})
-    async with sessions() as db:
-        rows = list((await db.execute(select(RoomDispatch).where(RoomDispatch.room_id == room['id']))).scalars())
-    assert rows
-    async with sessions() as db:
-        row = await db.get(RoomDispatch, rows[0].id)
-        row.status = 'succeeded'
-        await db.commit()
-    refused = await api.post(f"/rooms/{room['id']}/dispatches/{rows[0].id}/retry")
-    assert refused.status_code == 409
-    async with sessions() as db:
-        row = await db.get(RoomDispatch, rows[0].id)
-        row.status = 'stopped'
-        await db.commit()
+    await api.post(f"/rooms/{room['id']}/stop", json={})
+
+    async def settled():
+        async with sessions() as db:
+            found = list((await db.execute(select(RoomDispatch).where(RoomDispatch.room_id == room['id']))).scalars())
+        return found if found and all(r.status not in ('queued', 'running') for r in found) else None
+    rows = await wait_until(settled)
+    # Only failed or stopped replies may be retried.
+    await set_status(sessions, rows[0].id, 'done')
+    assert (await api.post(f"/rooms/{room['id']}/dispatches/{rows[0].id}/retry")).status_code == 409
+    assert (await api.post(f"/rooms/{room['id']}/dispatches/9999/retry")).status_code == 409
+    await set_status(sessions, rows[0].id, 'stopped')
     ok = await api.post(f"/rooms/{room['id']}/dispatches/{rows[0].id}/retry")
     assert ok.status_code == 202 and ok.json() == {'queued': True}
 

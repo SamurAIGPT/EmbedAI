@@ -9,6 +9,7 @@ import socket
 import socketserver
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -40,20 +41,35 @@ class Browser:
 
     def close(self):
         self.refs.clear()
+        # A hung page must not keep the broker waiting forever on CDP close.
+        deadline = threading.Timer(5, self.kill)
+        deadline.start()
+        try:
+            if self.browser:
+                try:
+                    # CDP disconnect alone does not flush Chromium's persistent profile.
+                    self.browser.new_browser_cdp_session().send("Browser.close")
+                except Exception:
+                    pass
+            if self.process:
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=5)
+        finally:
+            deadline.cancel()
         if self.browser:
             try:
                 self.browser.close()
             except Exception:
                 pass
-        if self.process:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=5)
         self.browser = self.process = self.page = None
         self.tabs, self.dialogs, self.downloads = {}, {}, []
+
+    def kill(self):
+        if self.process and self.process.poll() is None:
+            self.process.kill()
 
     def start(self):
         if self.browser and self.browser.is_connected():
@@ -236,12 +252,16 @@ class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         self.request.settimeout(35)
         raw = self.rfile.readline(65537)
+        deadline = threading.Timer(25, self.server.browser.kill)
+        deadline.start()
         try:
             if len(raw) > 65536:
                 raise ValueError("Browser request too large.")
             result = self.server.browser.run(json.loads(raw))
         except Exception as exc:
             result = text(f"Browser action failed: {str(exc)[:1000]}. Inspect current state before retrying; restart if unresponsive.", True)
+        finally:
+            deadline.cancel()
         self.wfile.write(json.dumps(result).encode()+b"\n")
 
 

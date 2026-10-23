@@ -11,9 +11,9 @@ answered without a card, matching what the host flow does in each mode:
 Everything else is put to the person (or a saved command rule, for `exec`).
 """
 
-COMPUTER_TOOL_PREFIX = "mcp__computer__"
 from app.computers.browser import READ_NAMES as BROWSER_READ_NAMES, INPUT_NAMES as BROWSER_INPUT_NAMES
 
+COMPUTER_TOOL_PREFIX = "mcp__computer__"
 BROWSER_READ = frozenset(COMPUTER_TOOL_PREFIX + name for name in BROWSER_READ_NAMES)
 BROWSER_INPUT = frozenset(COMPUTER_TOOL_PREFIX + name for name in BROWSER_INPUT_NAMES)
 COMPUTER_EXEC_TOOL = COMPUTER_TOOL_PREFIX + "exec"

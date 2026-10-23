@@ -1,5 +1,6 @@
 """Container-only structured browser tools and their approval classifications."""
 import json
+import time
 
 from app.computers import docker_cli, screen
 
@@ -73,7 +74,6 @@ class Browser:
                 return _text(screen.CONTROL_REFUSAL, error=True)
             owner_path = s.state_dir / "screen-owner.json"
             owner = screen.read_state(owner_path)
-            import time
             if owner.get("until", 0) > time.time() and owner.get("turn_id") != s.screen.turn_id:
                 return _text("Another conversation is using this screen. Wait until it finishes.", error=True)
             if name in INPUT_NAMES:

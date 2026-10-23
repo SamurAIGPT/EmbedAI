@@ -697,6 +697,7 @@ class ThreadRuntime:
                 prompt_text,
                 owner_instance=self.instance_id,
                 attachments=[a.public() for a, _ in attached] or None,
+                origin=team_origin,
             )
         if recall is not None:
             # Shown as the "Recalled" chip; never hidden (docs/MEMORY.md).

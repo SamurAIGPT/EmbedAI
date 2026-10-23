@@ -60,3 +60,6 @@ from app.routers.memory import router as memory_router
 router.include_router(memory_router)
 router.include_router(team_router)
 router.include_router(rooms_router)
+
+from app.routers.needs_you import router as needs_you_router
+router.include_router(needs_you_router)

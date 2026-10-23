@@ -74,3 +74,6 @@ class Turn(Base):
     # for turns from before this was recorded). A turn cut by a crash or stop
     # is classified from it and its stored events (thread_store._interrupt).
     engine_phase: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Who started the turn: person, routine, outside (a webhook), or peer (another
+    # agent). Null for turns from before this was recorded.
+    origin: Mapped[str | None] = mapped_column(String, nullable=True)

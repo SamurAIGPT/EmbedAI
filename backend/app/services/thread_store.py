@@ -483,6 +483,7 @@ async def start_turn(
     *,
     owner_instance: str | None = None,
     attachments: list[dict] | None = None,
+    origin: str | None = None,
 ) -> Turn:
     """Start the thread's next turn and store its `turn.started` event.
 
@@ -508,6 +509,7 @@ async def start_turn(
         owner_token=secrets.token_urlsafe(24),
         owner_instance=owner_instance,
         engine_phase="preparing",
+        origin=origin,
         heartbeat_at=now,
         started_at=now,
     )

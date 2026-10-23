@@ -15,6 +15,7 @@ from app.db.models.app_setting import AppSetting, SettingAudit
 from app.db.models.computer import Computer
 from app.db.models.routine import Routine, RoutineRun
 from app.db.models.notification import Notification
+from app.db.models.needs_you import NeedsYouState
 from app.db.models.auth import AuthSession, OwnerAccount, PairingCode
 
 __all__ = [
@@ -38,5 +39,6 @@ __all__ = [
     "PairingCode",
     "Routine",
     "RoutineRun",
+    "NeedsYouState",
     "Notification",
 ]

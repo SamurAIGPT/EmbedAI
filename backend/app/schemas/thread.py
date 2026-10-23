@@ -89,6 +89,8 @@ class TurnResponse(BaseModel):
     result: str | None
     model: str | None
     usage: dict | None
+    # Who started it: person, routine, outside, peer; null for older turns.
+    origin: str | None = None
     started_at: datetime
     finished_at: datetime | None
 

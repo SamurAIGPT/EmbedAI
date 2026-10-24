@@ -42,12 +42,13 @@ class RpcClosed(Exception):
 
 
 class StdioRpc:
-    def __init__(self, proc: asyncio.subprocess.Process, *, max_bytes: int) -> None:
+    def __init__(self, proc: asyncio.subprocess.Process, *, max_bytes: int, diagnostic=None) -> None:
         self.proc = proc
         self.max_bytes = max_bytes
         self.incoming: asyncio.Queue = asyncio.Queue()
         self.over_limit = False
         self.stderr_tail = ""
+        self.diagnostic = diagnostic
         self._next_id = 1
         self._pending: dict[int, asyncio.Future] = {}
         self._closed = asyncio.get_running_loop().create_future()
@@ -55,7 +56,7 @@ class StdioRpc:
         self._stderr = asyncio.create_task(self._read_stderr())
 
     @classmethod
-    async def spawn(cls, args: list[str], *, cwd: str, max_bytes: int, env: dict | None = None) -> "StdioRpc":
+    async def spawn(cls, args: list[str], *, cwd: str, max_bytes: int, env: dict | None = None, diagnostic=None) -> "StdioRpc":
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.PIPE,
@@ -69,7 +70,7 @@ class StdioRpc:
         # Recorded until it ends, so a hard kill of the backend leaves nothing
         # the next start cannot find (app/core/engine_processes.py).
         await asyncio.to_thread(engine_processes.record, proc.pid, args[0])
-        rpc = cls(proc, max_bytes=max_bytes)
+        rpc = cls(proc, max_bytes=max_bytes, diagnostic=diagnostic)
         rpc._forget = asyncio.create_task(_forget_when_done(proc))
         return rpc
 
@@ -161,19 +162,29 @@ class StdioRpc:
             self.incoming.put_nowait(None)  # end of stream
 
     async def _read_stderr(self) -> None:
+        pending = ""
         try:
             while True:
                 chunk = await self.proc.stderr.read(8192)
                 if not chunk:
                     return
-                self.stderr_tail = (self.stderr_tail + chunk.decode("utf-8", errors="replace"))[-STDERR_TAIL_BYTES:]
+                decoded = chunk.decode("utf-8", errors="replace")
+                if self.diagnostic is None:
+                    self.stderr_tail = (self.stderr_tail + decoded)[-STDERR_TAIL_BYTES:]
+                else:
+                    lines = (pending + decoded).split("\n")
+                    pending = lines.pop()
+                    if len(pending) > 65536:
+                        pending = ""
+                    for line in lines:
+                        self.diagnostic(line.rstrip("\r"))
         except Exception:  # noqa: BLE001
             return
 
     def kill(self) -> None:
         kill_group(self.proc)
 
-    async def close(self) -> None:
+    async def close(self, *, grace_seconds: float = 0) -> None:
         """Kill the process and wait (briefly) for the readers to finish."""
         if self.proc.returncode is None:
             try:
@@ -181,6 +192,11 @@ class StdioRpc:
                     self.proc.stdin.close()
             except Exception:  # noqa: BLE001
                 pass
+            if grace_seconds:
+                try:
+                    await asyncio.wait_for(self.proc.wait(), grace_seconds)
+                except asyncio.TimeoutError:
+                    pass
             self.kill()
         try:
             await asyncio.wait_for(self.proc.wait(), 5)

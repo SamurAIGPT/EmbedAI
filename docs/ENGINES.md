@@ -10,6 +10,7 @@ UI do not know which engine they are talking to.
 | `claude` | Claude | cli | your own `claude` CLI (stream-json both ways) |
 | `codex` | Codex | cli | your own `codex` CLI over `codex app-server` (JSON-RPC on stdio) |
 | `gemini` | Gemini CLI | acp | Gemini CLI with engine-scoped credentials and model selection |
+| `antigravity` | Google Gemini (Antigravity) | acp | official managed Google runtime, isolated personal account OAuth and account model catalog |
 | `cursor` | Cursor | acp | Cursor CLI, with a live model catalog |
 | `opencode` | OpenCode (experimental, opt-in) | acp | OpenCode CLI; real permission override proof pending |
 | `acp` | ACP agent | acp | any agent CLI that speaks the Agent Client Protocol, from a saved command |
@@ -21,7 +22,7 @@ UI do not know which engine they are talking to.
 Open **Settings → Engines** in the web UI or desktop app. **Check again**
 checks installation, login and endpoint readiness. An unavailable engine shows
 its reason without blocking the others. Sign in to Claude or Codex in a terminal;
-the app does not install engines or complete their login for you.
+Antigravity has its own install and Google sign-in controls below.
 
 For ACP, save the command and optional display name. For an OpenAI-compatible
 endpoint, save its base URL (including `/v1` when required), optional default
@@ -33,10 +34,63 @@ For OpenRouter, save an API key. The address is fixed to OpenRouter over HTTPS; 
 
 Settings forms come from each adapter's `config_fields` and `setup` descriptors.
 Ready engines appear before engines that need setup, including in engine pickers.
-Connection commands are displayed for the person to run; the app never installs
-a CLI. Under the generic endpoint card, **Fill address from template** supplies
+Connection commands for other engines are displayed for the person to run.
+Under the generic endpoint card, **Fill address from template** supplies
 an address for Ollama, LM Studio, Groq, Cerebras, Mistral or OpenAI. It supplies
 no key or model. These services have not been checked with real accounts.
+
+### Google account models through Antigravity
+
+In **Settings → Engines → Google Gemini (Antigravity)**, select **Install
+Antigravity**, then **Sign in with Google**, then **Continue to Google sign-in**.
+The installer downloads Google's official ACP runtime 1.4.3, checks the pinned
+SHA-256 from the [ACP registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json),
+rejects unexpected archive members, and validates its ACP identity before
+publishing the install. macOS and Linux on Intel and ARM64 are supported;
+Windows support is deferred. Installation requires 4 GiB free space.
+
+Sign in with an eligible personal Google account. This connection does not use
+Gemini API keys or Enterprise authentication. Google's [authentication guide](https://www.antigravity.google/docs/install?tab=cli)
+describes the available account routes; [model availability](https://www.antigravity.google/docs/models/)
+depends on the account's plan. Open Dots discovers the account's models after
+sign-in. **Refresh models** reloads them; **Check again** reads the saved
+catalog without starting another OAuth flow. Select Antigravity and one of
+these models in the normal chat or agent picker. Unsupported model IDs fail
+before a prompt is sent. The advanced default model must be in this catalog.
+
+One Google account is connected at a time. **Switch Google account** prepares
+a new isolated profile and replaces the old one only after successful sign-in
+and model discovery. **Remove Google account** deletes the app's profile and
+credentials; it does not revoke the grant at Google. Existing native sessions
+cannot resume under a replacement account: start a new session. When the app
+runs on another computer, use the sign-in card's redirect URL field to forward
+the complete localhost redirect back to the server. The callback must match
+the pending loopback port and OAuth state. Pending sign-in can be cancelled
+and expires after five minutes of waiting for authentication.
+
+Runtime files and UUID account profiles live under `antigravity/` next to the
+configured SQLite path (also on PostgreSQL). The official runtime manages its
+refresh credentials in the private profile's `antigravity-acp/acp_token.json`;
+the profile reference and default model use the encrypted engine configuration.
+`GEMINI_HOME` and forced file storage isolate it from the IDE and global Gemini
+login. Google API keys, ADC/project configuration and provider overrides are
+removed from the child environment. OAuth URLs stay in pending setup memory;
+native stderr is discarded and callback codes are excluded from request logs.
+
+Every new or resumed session must confirm `mode=default` before a prompt.
+Open Dots handles the resulting permission requests, including plan-mode
+denials and workspace-limited accept-edits. Native sessions resume through
+`session/resume`; Stop sends `session/cancel`. Images, agent computers and
+Enterprise sign-in are not enabled for this engine.
+
+Verification on 2026-10-25: synthetic process and API tests cover installation
+integrity checks, account isolation/switch/removal, callback validation,
+discovery, model and approval-mode confirmation, permission handling, Stop,
+and resume. The official macOS ARM64 1.4.3 archive passed SHA-256 validation,
+ACP initialization, and OAuth URL startup in a temporary profile. A completed
+real-account sign-in, refresh, model prompt, approval and restart/resume run
+is still required before claiming end-to-end account compatibility. Other
+platform assets are pinned from the registry but have not been executed here.
 
 Choose an engine and model in the Agents panel or before sending a new chat.
 The model field offers catalog suggestions and accepts a custom ID only when
@@ -294,7 +348,7 @@ Gemini CLI (`gemini`) and Cursor (`cursor`) use the same ACP transport, approval
 - **Cursor:** install from [Cursor's CLI documentation](https://cursor.com/docs/cli), then `cursor-agent login` or save a key. Starts with `cursor-agent acp`, without automatic approval flags. Credentials suppress ACP browser authentication. Status and model discovery use bounded CLI commands. A selected model must be offered by the session and accepted by `session/set_model`; refusal ends the turn before the prompt. Cursor's `cursor/ask_question` extension is answered as unsupported, so it cannot hang waiting for a question card.
 - **OpenCode (experimental):** install `npm install -g opencode-ai` and run `opencode auth login`. Discovery uses `opencode models` without creating a session. A model must be offered by the session's configuration and confirmed by `session/set_config_option`. Additional saved provider-key maps are not implemented. OpenCode strips ambient foreign API keys and configuration overrides, pins project configuration off, and supplies `OPENCODE_PERMISSION` asking for every tool (edit/bash denied in plan mode, all tools denied when tools are off). This override has **not** been proven against hostile real CLI configuration; OpenCode is disabled by default.
 
-`OPEN_DOTS_PRESET_ENGINES` selects enabled presets by comma-separated ID. Unset enables `gemini,cursor,openrouter`. An empty value disables all presets; `gemini,cursor,openrouter,opencode` also enables experimental OpenCode. Custom ACP and OpenAI-compatible engines are always registered. Preset CLIs are not supported on Windows yet.
+`OPEN_DOTS_PRESET_ENGINES` selects enabled presets by comma-separated ID. Unset enables `gemini,cursor,openrouter,antigravity`. An empty value disables all presets; add `opencode` to also enable experimental OpenCode. Include `antigravity` when setting an explicit list to show Google account setup. Custom ACP and OpenAI-compatible engines are always registered. Preset CLIs are not supported on Windows yet.
 
 For ask and accept-edits modes, Gemini always uses `--approval-mode default`, Cursor receives no automatic approval flag, and OpenCode receives ask rules. Every permission request uses the existing approval gate; accept-edits only auto-allows edits whose listed locations all lie inside the workspace. Plan mode and tools-off refuse permission requests. A vendor's own configuration can allow tools without sending a request, especially Cursor allow rules; these presets do not provide a filesystem sandbox. Review CLI configuration before enabling tools.
 

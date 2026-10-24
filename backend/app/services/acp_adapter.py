@@ -152,6 +152,19 @@ class _Stopped(Exception):
 
 
 class AcpAdapter:
+    resume_method = "session/load"
+    redact_diagnostics = False
+    exit_grace_seconds = 0
+
+    def validate_initialize(self, initialized: dict) -> None:
+        pass
+
+    async def configure_session(self, call, session_id, session, ctx) -> None:
+        pass
+
+    def diagnostic(self, line: str) -> None:
+        pass
+
     config_fields = [
         {"name": "command", "label": "ACP command", "required": True, "placeholder": "agent-cli --acp"},
         {"name": "label", "label": "Display name", "placeholder": "ACP agent"},
@@ -357,7 +370,8 @@ class _AcpTurn:
         self.ctx.on_abort(lambda: loop.call_soon_threadsafe(self.aborted.set))
         try:
             self.rpc = await StdioRpc.spawn(
-                self.argv, cwd=str(self.workspace), max_bytes=self.max_text * RAW_STREAM_SIZE_FACTOR, env=self.env
+                self.argv, cwd=str(self.workspace), max_bytes=self.max_text * RAW_STREAM_SIZE_FACTOR, env=self.env,
+                diagnostic=self.adapter.diagnostic if self.adapter.redact_diagnostics else None,
             )
         except (OSError, ValueError):
             return TurnOutcome("failed", error="The agent's command could not be started.", error_code="cli_unavailable")
@@ -376,7 +390,7 @@ class _AcpTurn:
                 task.cancel()
             if self.answering:
                 await asyncio.gather(*self.answering, return_exceptions=True)
-            await self.rpc.close()
+            await self.rpc.close(grace_seconds=self.adapter.exit_grace_seconds)
         return self._outcome()
 
     def _common(self) -> dict:
@@ -442,6 +456,10 @@ class _AcpTurn:
         except (RpcError, RpcClosed, asyncio.TimeoutError) as exc:
             return self._failed(self._why(exc, "The agent did not answer the ACP handshake."), "cli_error")
         init = init if isinstance(init, dict) else {}
+        try:
+            self.adapter.validate_initialize(init)
+        except InvalidConfig:
+            return self._failed("The runtime did not identify as a supported ACP agent.", "cli_error")
         config = self.ctx.engine_config or self.adapter.config or {}
         method = self.adapter.authenticate(init.get("authMethods") or [], self.env or {})
         if method:
@@ -458,7 +476,7 @@ class _AcpTurn:
             try:
                 # Replayed history arrives before the prompt and is dropped.
                 session = await self._call(
-                    "session/load",
+                    self.adapter.resume_method,
                     {"sessionId": self.saved_session, "cwd": str(self.workspace), "mcpServers": self._mcp_servers()},
                     handle_incoming=True,
                 )
@@ -495,6 +513,10 @@ class _AcpTurn:
                 return self._failed("The agent did not return a session id.", "acp_error")
             self.session_id = session_id
             session = created
+        try:
+            await self.adapter.configure_session(self._call, self.session_id, session or {}, self.ctx)
+        except (RpcError, RpcClosed, asyncio.TimeoutError, InvalidConfig):
+            return self._failed("The engine could not confirm its tool approval mode.", "engine_permission_mode_unavailable")
         try:
             self.confirmed_model = await self.adapter.select_model(
                 self._call, self.session_id, session or {}, self.ctx.model or config.get("model")

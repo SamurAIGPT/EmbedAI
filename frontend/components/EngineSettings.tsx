@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type Engine, type EngineConfigField } from "@/lib/api";
 import { ENDPOINT_TEMPLATES, engineConfig, engineDraft, engineGroups } from "@/lib/engines";
+import { GoogleEngineSetup } from "./GoogleEngineSetup";
 
 const FIELD = "mt-1 w-full rounded-md border border-line bg-transparent px-3 py-2 text-sm";
 const BUTTON = "cursor-pointer rounded-md border border-line px-3 py-2 text-sm hover:bg-hover disabled:opacity-50";
@@ -62,10 +63,13 @@ export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engin
   const field = (engine: Engine, descriptor: EngineConfigField) => {
     const hasSecret = descriptor.kind === "secret" && engine.config?.[`has_${descriptor.name}`] === true;
     return <label key={descriptor.name} className="block min-w-0 text-xs text-muted">{descriptor.label}{hasSecret ? " (saved; leave empty to keep)" : descriptor.required ? "" : " (optional)"}
-      <input className={FIELD} type={descriptor.kind === "secret" ? "password" : descriptor.kind === "url" ? "url" : "text"}
+      {engine.id === "antigravity" && descriptor.name === "model" ? <select className={FIELD} value={drafts[engine.id]?.model ?? ""}
+        onChange={(event) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], model: event.target.value } }))}>
+        <option value="">Account default</option>{engine.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+      </select> : <input className={FIELD} type={descriptor.kind === "secret" ? "password" : descriptor.kind === "url" ? "url" : "text"}
         required={descriptor.required && !hasSecret} value={drafts[engine.id]?.[descriptor.name] ?? ""}
         placeholder={descriptor.placeholder ?? undefined} autoComplete={descriptor.kind === "secret" ? "new-password" : "off"}
-        onChange={(event) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], [descriptor.name]: event.target.value } }))} />
+        onChange={(event) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], [descriptor.name]: event.target.value } }))} />}
       {descriptor.help && <span className="mt-1 block">{descriptor.help}</span>}
     </label>;
   };
@@ -80,6 +84,10 @@ export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engin
       return <article key={engine.id} className="min-w-0 space-y-3 rounded-md border border-line p-4">
         <div className="flex flex-wrap items-center gap-2"><h5 className="font-medium">{engine.label}</h5><span className={`rounded px-2 py-0.5 text-xs ${engine.available ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{engine.available ? "Ready" : "Needs setup"}</span>{engine.version && <span className="text-xs text-muted">{engine.version}</span>}</div>
         {!engine.available && <p className="break-words text-xs text-muted">{engine.reason}</p>}
+        {engine.id === "antigravity" && <GoogleEngineSetup engine={engine} onChanged={() => {
+          setDrafts((previous) => { const next = { ...previous }; delete next.antigravity; return next; });
+          setRefresh((n) => n + 1);
+        }} />}
         {engine.setup && <div className="space-y-1 text-xs text-muted">
           {engine.setup.install && <p>Install: <code className="break-all">{engine.setup.install}</code></p>}
           {engine.setup.sign_in && <p>Sign in: <code className="break-all">{engine.setup.sign_in}</code></p>}
@@ -91,7 +99,7 @@ export function EngineSettings({ onEnginesChanged }: { onEnginesChanged?: (engin
           {fields.some((item) => item.name === "base_url") && <label className="block text-xs text-muted">Fill address from template<select className={FIELD} value="" onChange={(event) => setDrafts((old) => ({ ...old, [engine.id]: { ...old[engine.id], base_url: event.target.value } }))}><option value="">Choose a service…</option>{ENDPOINT_TEMPLATES.map((template) => <option key={template.label} value={template.url}>{template.label}</option>)}</select></label>}
           <div className="grid gap-3 sm:grid-cols-2">{fields.filter((item) => !item.advanced).map((item) => field(engine, item))}</div>
           {fields.some((item) => item.advanced) && <details><summary className="cursor-pointer text-sm">Advanced</summary><div className="mt-3 grid gap-3 sm:grid-cols-2">{fields.filter((item) => item.advanced).map((item) => field(engine, item))}</div></details>}
-          <div className="flex flex-wrap gap-2"><button type="submit" className={BUTTON}>{busy === engine.id ? "Saving…" : "Save engine"}</button>{engine.config && <button type="button" className={BUTTON} onClick={() => void forget(engine)}>Forget settings</button>}</div>
+          <div className="flex flex-wrap gap-2"><button type="submit" className={BUTTON}>{busy === engine.id ? "Saving…" : "Save engine"}</button>{engine.config && engine.id !== "antigravity" && <button type="button" className={BUTTON} onClick={() => void forget(engine)}>Forget settings</button>}</div>
         </fieldset></form>}
       </article>;
     })}</div>)}

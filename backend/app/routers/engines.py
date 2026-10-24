@@ -8,7 +8,9 @@ or hangs reports the engine as unavailable with the reason; it never fails
 the request.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from contextlib import nullcontext
+import shutil
 
 from app.schemas.engine import EngineConfigRequest, EngineResponse
 from app.services import engine_config
@@ -61,6 +63,13 @@ async def save_engine_config(
     """Save the engine's configuration (encrypted, like every credential) and
     check the engine again. The response never includes a key."""
     adapter = _configurable(rt, engine_id)
+    if engine_id == "antigravity" and (adapter.lock.locked() or (adapter.task and not adapter.task.done())):
+        raise _error(409, "engine_busy", "Wait for Antigravity to finish before changing settings.")
+    async with adapter.lock if engine_id == "antigravity" else nullcontext():
+        return await _save_config(engine_id, payload, rt, adapter)
+
+
+async def _save_config(engine_id, payload, rt, adapter):
     fields = getattr(adapter, "config_fields", None)
     if fields is not None:
         allowed = {field["name"] for field in fields}
@@ -86,7 +95,83 @@ async def save_engine_config(
 @router.delete("/{engine_id}/config", status_code=204)
 async def delete_engine_config(engine_id: str, rt: ThreadRuntime = Depends(get_runtime)):
     """Forget the engine's configuration, key included."""
-    _configurable(rt, engine_id)
-    async with rt.session() as db:
-        await engine_config.remove(db, rt.owner_id, engine_id)
-    rt.engines.forget(engine_id)
+    adapter = _configurable(rt, engine_id)
+    if engine_id == "antigravity":
+        if adapter.lock.locked() or (adapter.task and not adapter.task.done()):
+            raise _error(409, "engine_busy", "Stop the conversation or cancel setup before removing the account.")
+    async with adapter.lock if engine_id == "antigravity" else nullcontext():
+        if engine_id == "antigravity":
+            from app.services.antigravity_adapter import profile_dir
+
+            config = await rt.engine_config(engine_id)
+            if config and config.get("profile"):
+                path = profile_dir(config)
+                if path.exists():
+                    shutil.rmtree(path)
+        async with rt.session() as db:
+            await engine_config.remove(db, rt.owner_id, engine_id)
+        adapter.config = None
+        rt.engines.forget(engine_id)
+
+
+def _antigravity(rt):
+    from app.services.antigravity_adapter import AntigravityAdapter
+
+    adapter = rt.adapters.get("antigravity")
+    if not isinstance(adapter, AntigravityAdapter):
+        raise _error(404, "engine_unavailable", "Antigravity is disabled on this server.")
+    return adapter
+
+
+@router.post("/antigravity/setup/{action}", status_code=202)
+async def setup_antigravity(action: str, response: Response, rt: ThreadRuntime = Depends(get_runtime)):
+    from app.services import antigravity_runtime
+
+    adapter = _antigravity(rt)
+    response.headers["Cache-Control"] = "no-store"
+    await rt.prepare_adapter("antigravity", adapter)
+    async def save(config):
+        async with rt.session() as db:
+            await engine_config.save(db, rt.owner_id, "antigravity", config)
+        rt.engines.forget("antigravity")
+
+    async def work():
+        if action == "install":
+            await antigravity_runtime.install(adapter.validate_runtime)
+        elif action == "sign_in":
+            if not antigravity_runtime.installed():
+                raise ValueError("Install Antigravity first.")
+            await adapter.sign_in(save)
+        else:
+            await adapter.discover(adapter.config or {})
+        rt.engines.forget("antigravity")
+
+    if action not in {"install", "sign_in", "models"}:
+        raise HTTPException(status_code=404, detail="Unknown setup action")
+    try:
+        return adapter.start_operation(action, work)
+    except ValueError as exc:
+        raise _error(409, "engine_busy", str(exc)) from None
+
+
+@router.get("/antigravity/setup/status")
+async def antigravity_setup_status(response: Response, rt: ThreadRuntime = Depends(get_runtime)):
+    response.headers["Cache-Control"] = "no-store"
+    return _antigravity(rt).operation
+
+
+@router.delete("/antigravity/setup", status_code=204)
+async def cancel_antigravity_setup(rt: ThreadRuntime = Depends(get_runtime)):
+    await _antigravity(rt).close()
+
+
+@router.post("/antigravity/callback", status_code=204)
+async def antigravity_callback(request: Request, rt: ThreadRuntime = Depends(get_runtime)):
+    try:
+        payload = await request.json()
+        operation_id, callback = payload["operation_id"], payload["callback_url"]
+        if not isinstance(operation_id, str) or len(operation_id) > 32 or not isinstance(callback, str) or len(callback) > 16384:
+            raise ValueError
+        await _antigravity(rt).complete_callback(operation_id, callback)
+    except (ValueError, OSError, TypeError, KeyError):
+        raise _error(422, "invalid_google_callback", "This sign-in response is invalid or expired. Start sign-in again.") from None

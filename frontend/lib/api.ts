@@ -535,7 +535,7 @@ export type Engine = {
   can_write_text?: boolean;
   config: Record<string, unknown> | null;
   preset?: boolean;
-  setup?: { install?: string | null; sign_in?: string | null; docs_url?: string | null; credential?: string; notes?: string[] } | null;
+  setup?: { managed_install?: boolean; install?: string | null; sign_in?: string | null; docs_url?: string | null; credential?: string; notes?: string[] } | null;
   config_fields?: EngineConfigField[];
   // Set while the engine refuses turns for a usage or rate limit or no credits.
   limit?: EngineLimit | null;
@@ -554,6 +554,14 @@ export type EngineConfigInput = {
   api_key?: string;
   clear_api_key?: boolean;
   context_tokens?: number;
+};
+
+export type GoogleSetupOperation = {
+  id: string;
+  kind: "install" | "sign_in" | "models";
+  phase: "running" | "succeeded" | "failed" | "cancelled";
+  authorization_url: string | null;
+  error: string | null;
 };
 
 // Topic notes (memory/<topic>.md), the journal and proposed notes (docs/MEMORY.md).
@@ -855,6 +863,10 @@ export const api = {
   roomExportUrl: (id: number, format: "md" | "json") => requestBlobUrl(`/rooms/${id}/export?format=${format}`),
   requestTeamLead: (agentId: number) => request<{ id: number; lead_agent_id: number }>("/team/lead", { method: "POST", body: JSON.stringify({ agent_id: agentId }) }),
   getEngines: (refresh = false) => request<Engine[]>(`/engines${refresh ? "?refresh=true" : ""}`),
+  startGoogleSetup: (action: "install" | "sign_in" | "models") => request<GoogleSetupOperation>(`/engines/antigravity/setup/${action}`, { method: "POST" }),
+  googleSetupStatus: () => request<GoogleSetupOperation | null>("/engines/antigravity/setup/status"),
+  cancelGoogleSetup: () => request<void>("/engines/antigravity/setup", { method: "DELETE" }),
+  completeGoogleSetup: (operationId: string, callbackUrl: string) => request<void>("/engines/antigravity/callback", { method: "POST", body: JSON.stringify({ operation_id: operationId, callback_url: callbackUrl }) }),
   saveEngineConfig: (engineId: string, config: EngineConfigInput) =>
     request<Engine>(`/engines/${encodeURIComponent(engineId)}/config`, { method: "PUT", body: JSON.stringify(config) }),
   deleteEngineConfig: (engineId: string) => request<void>(`/engines/${encodeURIComponent(engineId)}/config`, { method: "DELETE" }),

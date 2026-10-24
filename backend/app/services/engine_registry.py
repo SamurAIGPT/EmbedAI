@@ -72,6 +72,7 @@ class UnavailableAdapter:
 def default_adapters() -> dict:
     """Every built-in engine. One that cannot be built is kept as unavailable."""
     from app.services.acp_adapter import AcpAdapter
+    from app.services.antigravity_adapter import AntigravityAdapter
     from app.services.acp_presets import GeminiAdapter, CursorAdapter, OpenCodeAdapter
     from app.services.claude_adapter import ClaudeAdapter
     from app.services.codex_adapter import CodexAdapter
@@ -83,14 +84,15 @@ def default_adapters() -> dict:
         ("codex", "Codex", CodexAdapter),
         ("cursor", "Cursor", CursorAdapter),
         ("gemini", "Gemini CLI", GeminiAdapter),
+        ("antigravity", "Google Gemini (Antigravity)", AntigravityAdapter),
         ("opencode", "OpenCode (experimental)", OpenCodeAdapter),
         ("openrouter", "OpenRouter", OpenRouterAdapter),
         ("acp", "ACP agent", AcpAdapter),
         ("openai_compat", "OpenAI-compatible", OpenAIChatAdapter),
     ):
         selected = os.environ.get("OPEN_DOTS_PRESET_ENGINES")
-        enabled = {name.strip() for name in selected.split(",")} if selected is not None else {"gemini", "cursor", "openrouter"}
-        if key in {"gemini", "cursor", "opencode", "openrouter"} and key not in enabled:
+        enabled = {name.strip() for name in selected.split(",")} if selected is not None else {"gemini", "cursor", "openrouter", "antigravity"}
+        if key in {"gemini", "cursor", "opencode", "openrouter", "antigravity"} and key not in enabled:
             continue
         try:
             adapters[key] = factory()

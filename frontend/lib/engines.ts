@@ -7,7 +7,7 @@ export function engineGroups(engines: Engine[]): { label: string; engines: Engin
   ].filter((group) => group.engines.length > 0);
 }
 
-const FIRST_RUN_ORDER = ["claude", "codex", "cursor", "opencode", "gemini", "openrouter"];
+const FIRST_RUN_ORDER = ["claude", "codex", "cursor", "opencode", "antigravity", "gemini", "openrouter"];
 
 export function firstReadyEngine(engines: Engine[], current?: string): string | null {
   if (current && engines.some((engine) => engine.id === current && engine.available)) return current;

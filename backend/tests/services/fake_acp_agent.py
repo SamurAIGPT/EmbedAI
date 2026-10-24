@@ -139,8 +139,11 @@ for line in sys.stdin:
     if method == "initialize":
         if plan.get("hang_init"):
             time.sleep(60)
-        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": bool(plan.get("load"))}, "agentInfo": {"name": "fake-agent", "version": "1.2"}, "authMethods": plan.get("auth_methods", [])}})
+        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": bool(plan.get("load"))}, "agentInfo": plan.get("agent_info", {"name": "fake-agent", "version": "1.2"}), "authMethods": plan.get("auth_methods", [])}})
     elif method == "authenticate":
+        if plan.get("auth_write_token"):
+            token = pathlib.Path(os.environ["GEMINI_HOME"]) / "antigravity-acp" / "acp_token.json"
+            token.write_text(json.dumps({"client_id": "fixture", "client_secret": "fixture", "refresh_token": "fixture"}))
         if plan.get("auth_error"):
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": plan["auth_error"]}})
         else:
@@ -149,19 +152,19 @@ for line in sys.stdin:
         if plan.get("model_error"):
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": plan["model_error"], "message": "Model refused"}})
         else:
-            result = {"configOptions": [{"id": "model", "currentValue": params.get("value")}]} if method == "session/set_config_option" else {}
+            result = {"configOptions": [{"id": params.get("configId"), "currentValue": plan.get("mode_result", params.get("value")) if params.get("configId") == "mode" else params.get("value")}]} if method == "session/set_config_option" else {}
             send({"jsonrpc": "2.0", "id": rid, "result": result})
     elif method == "session/new":
         session_id = "sess_" + uuid.uuid4().hex[:8]
         (sessions / session_id).write_text("x")
         send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session_id, **plan.get("session", {})}})
-    elif method == "session/load":
+    elif method in ("session/load", "session/resume"):
         session_id = params.get("sessionId")
         if not (sessions / str(session_id)).exists():
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32002, "message": "session not found"}})
         else:
             chunk(session_id, "REPLAYED OLD TEXT")
-            send({"jsonrpc": "2.0", "id": rid, "result": None})
+            send({"jsonrpc": "2.0", "id": rid, "result": plan.get("session") if method == "session/resume" else None})
     elif method == "session/prompt":
         threading.Thread(target=prompt, args=(rid, params), daemon=True).start()
     elif method == "session/cancel":

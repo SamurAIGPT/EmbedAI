@@ -1459,6 +1459,10 @@ class ThreadRuntime:
         tasks = [run.task for run in runs if run.task is not None]
         if tasks:
             await asyncio.wait(tasks, timeout=SHUTDOWN_WAIT_SECONDS)
+        for adapter in self.adapters.values():
+            close = getattr(adapter, "close", None)
+            if callable(close):
+                await close()
 
 
 def _fallback_handoff(events) -> str:

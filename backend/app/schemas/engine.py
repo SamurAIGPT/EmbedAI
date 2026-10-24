@@ -17,6 +17,7 @@ class EngineCapabilities(BaseModel):
 
 
 class EngineSetup(BaseModel):
+    managed_install: bool = False
     install: str | None = None
     sign_in: str | None = None
     docs_url: str | None = None

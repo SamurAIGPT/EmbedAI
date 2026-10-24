@@ -244,7 +244,7 @@ def _cron_summary(expression: str) -> str | None:
     if day == month == "*":
         if weekday == "*":
             return f"Every day at {at}"
-        if weekday in ("1-5", "MON-FRI", "mon-fri"):
+        if weekday.lower() in ("1-5", "mon-fri"):
             return f"Mon–Fri at {at}"
         if re.fullmatch(r"[0-6](,[0-6])*", weekday):
             return f"{_day_list(sorted({int(d) for d in weekday.split(',')}))} at {at}"

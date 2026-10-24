@@ -146,6 +146,7 @@ export function ChatApp() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [agentTick, setAgentTick] = useState(0);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [deleteAgentTarget, setDeleteAgentTarget] = useState<Agent | null>(null);
   // The Agents panel opened from New agent starts on the form.
   const [agentsCreate, setAgentsCreate] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
@@ -620,6 +621,7 @@ export function ChatApp() {
         router.push("/chat");
       }}
       onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
+      onDeleteAgent={agents !== null ? (agent) => { setAgentsCreate(false); setDeleteAgentTarget(agent); setAgentsOpen(true); } : undefined}
       onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
       collaboration={ready ? <RoomList selected={roomId} onTeam={() => setTeamOpen(true)} onNavigate={() => setDrawerOpen(false)} /> : undefined}
       onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
@@ -726,8 +728,9 @@ export function ChatApp() {
         <AgentsPanel
           agents={agents}
           startCreating={agentsCreate}
-          onClose={() => setAgentsOpen(false)}
-          onChanged={() => setAgentTick((n) => n + 1)}
+          initialDeleteAgent={deleteAgentTarget}
+          onClose={() => { setAgentsOpen(false); setDeleteAgentTarget(null); }}
+          onChanged={() => { setAgentTick((n) => n + 1); setDeleteAgentTarget(null); }}
           onCreated={(agent) => setNewAgentId(agent.id)}
         />
       )}

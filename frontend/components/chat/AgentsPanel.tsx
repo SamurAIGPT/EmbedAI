@@ -131,12 +131,15 @@ export function AgentsPanel({
   onClose,
   onChanged,
   startCreating = false,
+  initialDeleteAgent = null,
   onCreated,
 }: {
   agents: Agent[];
   onClose: () => void;
   // Open straight on the new-agent form (the sidebar's New agent button).
   startCreating?: boolean;
+  // Open with the delete confirmation for an agent selected from the sidebar.
+  initialDeleteAgent?: Agent | null;
   // Called after any change, so the page reads the agent list again.
   onChanged: () => void;
   // Called with an agent made from a template, so the page can select it.
@@ -151,6 +154,7 @@ export function AgentsPanel({
   const [importing, setImporting] = useState<ImportState | null>(null);
   const [computerOf, setComputerOf] = useState<Agent | null>(null);
   const [skillsOf, setSkillsOf] = useState<Agent | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Agent | null>(initialDeleteAgent);
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -344,6 +348,7 @@ export function AgentsPanel({
     setImporting(null);
     setComputerOf(null);
     setSkillsOf(null);
+    setDeleteConfirm(null);
     setError(null);
   };
 
@@ -675,7 +680,36 @@ export function AgentsPanel({
                           >
                             {archived ? "Restore" : "Archive"}
                           </button>
+                          <button
+                            onClick={() => setDeleteConfirm(agent)}
+                            disabled={busy}
+                            className={`${SMALL} text-danger`}
+                          >
+                            Delete
+                          </button>
                         </div>
+                        {deleteConfirm?.id === agent.id && (
+                          <div role="alert" className="mt-3 rounded-md border border-danger/50 p-3 text-xs">
+                            <p className="font-medium">Delete {agent.name} permanently?</p>
+                            <p className="mt-1 text-muted">
+                              This removes the agent, its notes and skills, and its computer. Its conversations stay in history
+                              but become unlinked and continue without this agent&apos;s instructions. Its workspace folder stays;
+                              routines assigned to it will fail and pause. This cannot be undone.
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                onClick={() => run(() => api.deleteAgent(agent.id), () => setDeleteConfirm(null))}
+                                disabled={busy}
+                                className={`${SMALL} border-danger/50 text-danger`}
+                              >
+                                {busy ? "Deleting…" : "Delete permanently"}
+                              </button>
+                              <button onClick={() => setDeleteConfirm(null)} disabled={busy} className={SMALL}>
+                                Keep agent
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </li>
                     );
                   })}

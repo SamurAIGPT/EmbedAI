@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, CalendarClock, Plus, Settings, SlidersHorizontal } from "lucide-react";
+import { Archive, CalendarClock, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import type { Agent, Thread } from "@/lib/api";
@@ -49,6 +49,7 @@ export function Sidebar({
   error,
   onNewChat,
   onManageAgents,
+  onDeleteAgent,
   onNewAgent,
   onOpenRoutines,
   onNavigate,
@@ -70,6 +71,7 @@ export function Sidebar({
   // Start a conversation: with the given agent, or (no argument) with whatever is chosen now.
   onNewChat: (agentId?: number) => void;
   onManageAgents?: () => void;
+  onDeleteAgent?: (agent: Agent) => void;
   // Open the new-agent form. Offered even when there are no agents yet.
   onNewAgent?: () => void;
   onOpenRoutines?: () => void;
@@ -137,15 +139,24 @@ export function Sidebar({
                 );
                 const cls = cn(ROW, isSelected ? "bg-hover" : "hover:bg-hover/60");
                 return (
-                  <li key={agent.id}>
+                  <li key={agent.id} className="flex min-w-0 items-center gap-1">
                     {target.kind === "thread" ? (
-                      <Link href={`/chat?thread=${target.id}`} onClick={onNavigate} aria-current={isSelected ? "page" : undefined} className={cls}>
+                      <Link href={`/chat?thread=${target.id}`} onClick={onNavigate} aria-current={isSelected ? "page" : undefined} className={cn(cls, "min-w-0 flex-1")}>
                         {body}
                       </Link>
                     ) : (
-                      <button type="button" onClick={() => newChat(agent.id)} aria-current={isSelected ? "page" : undefined} className={cls}>
+                      <button type="button" onClick={() => newChat(agent.id)} aria-current={isSelected ? "page" : undefined} className={cn(cls, "min-w-0 flex-1")}>
                         {body}
                       </button>
+                    )}
+                    {onDeleteAgent && (
+                      <IconButton
+                        label={`Delete ${agent.name}`}
+                        onClick={() => onDeleteAgent(agent)}
+                        className="size-8 text-muted hover:text-danger touch:size-10"
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </IconButton>
                     )}
                   </li>
                 );

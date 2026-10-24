@@ -288,7 +288,7 @@ Each field has its own **Save** and **Discard**, source, effective value, defaul
 **Limits of this version**
 
 - Verified on Windows only (Windows 11, Electron 43, Node 22, Claude Code 2.1.232): starting with no `.env`, the token, a restart that keeps the data, a real conversation with an approval, Deny and Stop. The code is written for Windows, macOS and Linux, but macOS and Linux have not been run; on Linux the app also needs a running keyring. It has not been tried on a machine that never ran it before, or by anyone but its author.
-- No automatic updates, and the installers are unsigned. Settings and Browse are available; storage locations cannot be changed here.
+- Updates are assisted, not automatic: the installed app checks the project's GitHub releases (15 seconds after start, then every 6 hours; set `OPEN_DOTS_DISABLE_UPDATE_CHECK=1` to stop) and Settings → App updates can download the installer for your computer, check its SHA-256 digest and open it when you click. The app never replaces itself, because the installers are unsigned. Not run against a real newer release yet. Settings and Browse are available; storage locations cannot be changed here.
 - One app per data folder (a second start brings the first window forward), but this is the app's own lock, not a lock on the data folder: do not point two copies at one folder with `OPEN_DOTS_DATA_DIR`.
 - If the backend stops while the app is open, the app tells you and closes; it does not restart it.
 - The page's address (and so its browser storage) changes on every start. The page keeps nothing there that matters.

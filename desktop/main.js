@@ -10,7 +10,7 @@
 // Everything that can be tested without Electron is in src/. This file only
 // connects those pieces to Electron.
 
-const { app, BrowserWindow, dialog, safeStorage, session, ipcMain, systemPreferences } = require("electron");
+const { app, BrowserWindow, dialog, safeStorage, session, ipcMain, shell, systemPreferences } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -21,6 +21,8 @@ const { attachTokenTo, lockDown, sameOrigin } = require("./src/origin");
 const { registerPathPicker } = require("./src/path-picker");
 const { lastReason, describeFailure, describeUnexpectedExit } = require("./src/messages");
 const { NativeControl, registerNativeControl } = require("./src/native-control");
+const { createUpdater } = require("./src/updater");
+const { registerUpdates } = require("./src/updates-ipc");
 
 const mode = process.argv.includes("--mode=dev") ? "dev" : "start";
 // An installed app carries its own frozen backend and page; a checkout uses its own folders.
@@ -47,6 +49,7 @@ let backendStopped = false;
 let shutdown = null;
 let backendOrigin = null;
 let nativeControl = null;
+let updater = null;
 
 // Stops what this launch started, once: this app's own connections first (the
 // backend waits for its connected clients, and idle keep-alive sockets held here
@@ -140,6 +143,24 @@ async function main() {
   registerNativeControl({ ipcMain, dialog, service: nativeControl, getWindow: () => window, getOrigin: () => backendOrigin });
   const nativeConnection = await nativeControl.listen();
   registerPathPicker({ ipcMain, dialog, getWindow: () => window, getOrigin: () => backendOrigin });
+  updater = createUpdater({
+    currentVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    cacheDir: path.join(userData, "updates"),
+    downloadsDir: app.getPath("downloads"),
+    openFile: (file) => shell.openPath(file),
+    onState: (state) => {
+      if (window && !window.isDestroyed()) window.webContents.send("open-dots:update-state", state);
+    },
+  });
+  registerUpdates({
+    ipcMain,
+    openExternal: (url) => shell.openExternal(url),
+    updater,
+    getWindow: () => window,
+    getOrigin: () => backendOrigin,
+  });
   window = createWindow();
   window.on("closed", () => {
     window = null;
@@ -220,6 +241,14 @@ async function main() {
     const replaced = error?.code === "ERR_ABORTED" && window && sameOrigin(window.webContents.getURL(), started.origin);
     if (!quitting && !replaced) throw error;
   }
+  startUpdateChecks();
+}
+
+// Background checks only run in an installed app, and can be switched off.
+function startUpdateChecks() {
+  if (!app.isPackaged || process.env.OPEN_DOTS_DISABLE_UPDATE_CHECK === "1") return;
+  setTimeout(() => void updater?.check(), 15_000).unref();
+  setInterval(() => void updater?.check(), 6 * 60 * 60 * 1000).unref();
 }
 
 app.on("window-all-closed", () => {

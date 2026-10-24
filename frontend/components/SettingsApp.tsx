@@ -8,6 +8,7 @@ import { ApprovalsTabs } from "@/components/approvals/ApprovalsPanel";
 import { EngineSettings } from "@/components/EngineSettings";
 import { DesktopSetup } from "@/components/DesktopSetup";
 import { DevicesSection } from "@/components/DevicesSection";
+import { AppUpdates } from "@/components/AppUpdates";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 declare global {
@@ -15,6 +16,7 @@ declare global {
     openDots?: {
       choosePath(kind: "file" | "folder"): Promise<string | null>;
       nativeControl(request: import("@/components/chat/NativeComputer").NativeRequest): Promise<import("@/components/chat/NativeComputer").NativeStatus | { held: boolean }>;
+      updates?: import("@/components/AppUpdates").UpdatesBridge;
     };
   }
 }
@@ -104,6 +106,7 @@ export function SettingsApp() {
         <div><h3 className="font-semibold">Appearance</h3><p className="mt-1 text-xs text-muted">Follows your system by default. Saved in this browser only.</p></div>
         <ThemeToggle />
       </section>
+      <AppUpdates />
       {error && <p role="alert" className="rounded-md border border-danger/50 p-3 text-sm text-danger">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-line p-3 text-sm">{notice}</p>}
       {headless && <p className="text-sm text-muted">Workspace, executable and timeout preferences use the backend environment configuration in this installation.</p>}

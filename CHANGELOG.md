@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.0 (2026-10-24)
+
 ### Added
 - Desktop app updates: the installed app checks GitHub releases in the background and Settings → App updates shows a newer version, downloads the installer for macOS arm64 or Windows x64 into Downloads, checks its size and SHA-256 digest, and opens it on a click. Assisted rather than automatic because the installers are unsigned (in-place restart install needs signing first). Unit-tested with stubbed GitHub responses; not run against a real newer release or a packaged build.
 - Skills: an agent can keep saved, text-only instructions (`skills/<name>/SKILL.md` in its folder) and a message can name up to three of them; they are added before that one message as guidance, never grant permission or change approvals, and are never used unless named. Import preview, an agent-file round trip (imported skills arrive off), secret redaction and link refusal are included. Tested with a scripted engine on SQLite; a real model following a skill and PostgreSQL were not run.

@@ -34,7 +34,7 @@ test("builds a static export that talks to the server it was loaded from", () =>
   const out = buildUi({ frontend, log: quiet });
   assert.equal(out, path.join(frontend, "out"));
   const seen = JSON.parse(fs.readFileSync(path.join(frontend, "env.json"), "utf8"));
-  assert.deepEqual(seen, { args: ["build"], export: "1", base: "/api/v1" });
+  assert.deepEqual(seen, { args: ["build", "--webpack"], export: "1", base: "/api/v1" });
 });
 
 test("the server needs the sign-in and pairing pages too", () => {

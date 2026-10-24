@@ -161,7 +161,7 @@ export function parseInline(text: string): Inline[] {
 }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/;
-const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+const HEADING = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const BULLET = /^( {0,3})[-*+]\s+(.*)$/;
 const ORDERED = /^( {0,3})(\d{1,9})[.)]\s+(.*)$/;

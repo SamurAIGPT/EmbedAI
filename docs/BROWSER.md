@@ -8,6 +8,10 @@ it applies to the next turn. Turning it off removes the tools; it does not
 erase the profile. No browser tool attaches to a host browser.
 Shell and native desktop computers expose no `browser_*` tools.
 
+With Browser tools off, a desktop starts empty (no browser is open) and the
+agent is told so. It may launch Chromium or Firefox ESR in the background
+through `exec` for a quick visit, or ask the person to enable Browser tools.
+
 | Tool | Purpose |
 |---|---|
 | `browser_open` | Navigate the active tab to an HTTP(S) URL or `about:blank`; return a snapshot. |

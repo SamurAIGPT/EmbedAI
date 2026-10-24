@@ -186,7 +186,7 @@ async def test_agents_and_threads_validate_provider_and_model(api):
     assert code_of(await api.patch(f"/api/v1/threads/{thread.json()['id']}", json={"model": "-bad"})) == "unknown_model"
 
 
-async def test_computers_are_claude_only(api):
+async def test_engines_without_computer_support_are_refused(api):
     other = (await api.post("/api/v1/agents", json={"name": "oa", "provider": "openai_compat"})).json()
     refused = await api.post(f"/api/v1/agents/{other['id']}/computer", json={})
     assert refused.status_code == 409 and code_of(refused) == "engine_without_computers"

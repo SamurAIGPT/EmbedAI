@@ -17,6 +17,10 @@ Turn N plays steps[N] (the last repeats). A step is
   {"type": "command", "command": "...", "then": "..."}   asks before running
   {"type": "file", "path": "...", "then": "..."}         asks before writing
   {"type": "mcp"}                                         an MCP approval elicitation
+  {"type": "computer", "tool": "exec", "arguments": {}}   a call of the computer MCP server mounted in the
+                                                          thread config: asks like Codex does, and on accept
+                                                          runs the real server (stdio) and reports its result
+plan.json also takes "user_mcp": {name: {...}}, the person's own MCP servers that `config/read` reports.
   {"type": "unknown_request"}                             a request no client knows
   {"type": "slow"}                                        waits for turn/interrupt
   {"type": "fail", "message": "..."}                      turn/completed failed
@@ -99,6 +103,28 @@ def ask(method, params):
 counter = base / "turns"
 
 
+thread_configs = {}
+
+
+def call_mcp(config, server_name, tool, arguments):
+    import subprocess
+
+    server = config["mcp_servers"][server_name]
+    proc = subprocess.Popen(
+        [server["command"], *server["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        env={**os.environ, **server.get("env", {})}, text=True,
+    )
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool, "arguments": arguments}},
+    ]
+    out, _ = proc.communicate("".join(json.dumps(r) + "\n" for r in requests), timeout=60)
+    replies = [json.loads(line) for line in out.splitlines() if line.strip()]
+    result = next(r for r in replies if r.get("id") == 2)["result"]
+    return "".join(c.get("text", "") for c in result["content"]), bool(result.get("isError"))
+
+
 def next_step():
     n = int(counter.read_text()) if counter.exists() else 0
     counter.write_text(str(n + 1))
@@ -153,6 +179,25 @@ def play(thread_id, turn_id, step):
         log(event="approval_answer", answer=answer)
         message(thread_id, turn_id, "mcp done")
         complete(thread_id, turn_id)
+    elif kind == "computer":
+        tool, arguments = step.get("tool", "exec"), step.get("arguments", {})
+        item_id = "mcp-" + uuid.uuid4().hex[:8]
+        item = {"type": "mcpToolCall", "id": item_id, "server": "computer", "tool": tool, "status": "inProgress", "arguments": arguments}
+        notify("item/started", {"threadId": thread_id, "turnId": turn_id, "item": item})
+        answer = ask("mcpServer/elicitation/request", {
+            "threadId": thread_id, "turnId": turn_id, "serverName": "computer", "mode": "form",
+            "message": f'Allow the computer MCP server to run tool "{tool}"?',
+            "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_params": arguments},
+            "requestedSchema": {"type": "object", "properties": {}},
+        })
+        log(event="approval_answer", answer=answer)
+        accepted = isinstance(answer, dict) and answer.get("result", {}).get("action") == "accept"
+        if accepted:
+            text, is_error = call_mcp(thread_configs[thread_id], "computer", tool, arguments)
+            log(event="mcp_result", content=text, is_error=is_error)
+        notify("item/completed", {"threadId": thread_id, "turnId": turn_id, "item": {**item, "status": "completed" if accepted else "declined"}})
+        message(thread_id, turn_id, "ran" if accepted else "declined")
+        complete(thread_id, turn_id)
     elif kind == "unknown_request":
         answer = ask("item/tool/call", {"threadId": thread_id, "tool": "x"})
         log(event="approval_answer", answer=answer)
@@ -192,6 +237,7 @@ for line in sys.stdin:
         continue
     method, rid, params = msg["method"], msg.get("id"), msg.get("params") or {}
     if method == "initialize":
+        log(event="initialize", params=params)
         send({"id": rid, "result": {"userAgent": "fake"}})
     elif method == "initialized":
         pass
@@ -201,12 +247,16 @@ for line in sys.stdin:
             {"id": "gpt-fake-mini", "displayName": "GPT Fake Mini", "hidden": False, "isDefault": False},
             {"id": "gpt-hidden", "displayName": "Hidden", "hidden": True, "isDefault": False},
         ]}})
+    elif method == "config/read":
+        send({"id": rid, "result": {"config": {"mcp_servers": plan.get("user_mcp", {})}, "origins": {}}})
     elif method == "thread/start":
         thread_id = str(uuid.uuid4())
+        thread_configs[thread_id] = params.get("config") or {}
         (threads_dir / thread_id).write_text("x")
         send({"id": rid, "result": thread_result(thread_id, params)})
     elif method == "thread/resume":
         thread_id = params.get("threadId")
+        thread_configs[thread_id] = params.get("config") or {}
         if not (threads_dir / str(thread_id)).exists():
             send({"id": rid, "error": {"code": -32600, "message": f"no rollout found for thread id {thread_id}"}})
         else:

@@ -264,5 +264,7 @@ without computers the button explains that and nothing else changes.
   folder on the server, not the local workspace.
 - A screen queue across conversations. Desktop and browser input currently
   refuse another conversation while its screen ownership lease is active.
-- Other providers than Claude: the computer reaches a turn through an MCP
-  server, which another provider adapter could mount the same way.
+- Other providers than Claude and Codex: the computer reaches a turn through an
+  MCP server, which another provider adapter could mount the same way once it
+  can switch off its own host tools (Codex does: see [ENGINES.md](ENGINES.md#codex)).
+  The native Mac desktop stays Claude-only.

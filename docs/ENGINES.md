@@ -87,7 +87,7 @@ defaults (no capabilities, any model, a probe derived from `status()`).
 | mcp | yes (the computer's server) | no | no | no |
 | images | yes (stream-json content blocks) | no | no | no |
 | resume | `--resume` | `thread/resume` | `session/load`, or the transcript as text | stored history each turn |
-| computers | yes | no | no | no |
+| computers | yes | yes (Docker computers) | no | no |
 
 ## The registry
 
@@ -115,7 +115,8 @@ defaults (no capabilities, any model, a probe derived from `status()`).
   `custom_models: false` (the ACP agent) take only their catalog.
 - An agent can change engine. Its conversations keep the engine they started
   on; an agent's model applies only to conversations on the agent's engine.
-- Computers stay Claude-only: `POST /agents/{id}/computer` answers 409
+- Computers need an engine with the `computers` flag (Claude, and Codex for
+  Docker computers): `POST /agents/{id}/computer` answers 409
   `engine_without_computers` for an engine without the flag, moving an agent
   with a computer to such an engine is refused the same way, and a turn that
   still meets this combination fails with that code.
@@ -141,6 +142,22 @@ for servers in your own Codex config go through the gate; other requests
 (`item/tool/call`, user-input questions, extra permissions, other
 elicitations) are refused. Stop sends `turn/interrupt`, then the process group
 is killed. A missing Codex thread on resume marks the session `broken`.
+
+**Agent computers.** A Codex agent can have a Docker computer (not the native
+Mac desktop, which stays Claude-only). The turn mounts the computer's MCP server
+as the `computer` server for that thread only, asked about on every call (the
+card, saved rules and the one-use permit are the same as Claude's, and the tool
+is `mcp__computer__<tool>`). Codex's own tools are switched off so nothing can
+run on this machine: the thread config sets `features.shell_tool`,
+`features.unified_exec`, `features.view_image` to false and `web_search` to
+disabled, every turn is sent with `environments: []` (this needs the
+`experimentalApi` capability, requested only for computer turns), the sandbox is
+read-only, and your own `config.toml` MCP servers are disabled for the thread.
+If a command or file-change item still starts, the turn is stopped with
+`codex_confinement_failed` and nothing is approved. Checked against codex-cli
+0.164.0 with a real Docker computer: the command ran in the container and no
+file appeared on the host. An older Codex that rejects these fields fails the
+turn instead of running unconfined.
 
 Known differences from Claude: Codex loads your own `~/.codex/config.toml`
 (including its MCP servers) and its read-only sandbox lets it read files
@@ -265,7 +282,7 @@ Limits are per backend process (a restart forgets them until the next refusal).
   own engine is limited; a fallback chain of more than one engine; usage-limit
   meters read ahead of a refusal.
 - Model prices, context windows and usage-limit meters.
-- Images (attached text files work everywhere), team-tool MCP servers or computers for engines other than Claude (Codex and ACP agents get only the read-only memory search).
+- Images (attached text files work everywhere), team-tool MCP servers for engines other than Claude, and computers for engines other than Claude and Codex (Codex mounts the computer's tools and the read-only memory search; ACP agents get only the memory search).
 - A long-lived engine process across turns (each turn starts one).
 
 

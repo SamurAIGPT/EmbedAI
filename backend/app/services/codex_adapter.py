@@ -43,11 +43,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from app.computers import grants
+from app.computers.policy import COMPUTER_TOOL_PREFIX
 from app.core import app_settings
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services import cli_probe, local_claude_runner, memory_bridge
 from app.services.local_approval_broker import MAX_REVIEWABLE_INPUT_CHARS
+from app.services.local_claude_stream import summarize_tool
 from app.services.provider_adapter import (
     ALLOW,
     LOST,
@@ -80,6 +83,21 @@ NOT_FOUND = (
 COMMAND_REQUESTS = ("item/commandExecution/requestApproval", "execCommandApproval")
 FILE_REQUESTS = ("item/fileChange/requestApproval", "applyPatchApproval")
 LEGACY_REQUESTS = ("execCommandApproval", "applyPatchApproval")
+COMPUTER_SERVER = local_claude_runner.COMPUTER_SERVER
+# A computer turn runs only the computer's tools: Codex's own shell, unified
+# exec, image read and web search are switched off for the thread (checked
+# against codex-cli 0.164.0), and `environments: []` on every turn removes the
+# execution environment those tools need. Either alone removes the shell; both
+# are sent so a Codex that ignores one still has none.
+COMPUTER_CONFINEMENT = {
+    "features": {"shell_tool": False, "unified_exec": False, "view_image": False},
+    "web_search": "disabled",
+}
+CONFINEMENT_BREACH = (
+    "Codex tried to use its own tools on this machine during a computer turn, so the turn was stopped. "
+    "Update Codex, or switch this agent to Claude."
+)
+_MCP_TOOL_MESSAGE = re.compile(r'run tool "([A-Za-z0-9_]+)"')
 TOOL_ITEMS = ("commandExecution", "fileChange", "mcpToolCall", "webSearch")
 
 
@@ -90,9 +108,13 @@ class CodexPolicy:
     sandbox_type: str  # turn/start spelling
 
 
-def codex_policy(mode: str | None, tools: bool) -> CodexPolicy:
+def codex_policy(mode: str | None, tools: bool, computer: bool = False) -> CodexPolicy:
     if not tools or mode == "plan":
         return CodexPolicy("never", "read-only", "readOnly")
+    if computer:
+        # Nothing of Codex's own may touch this machine; MCP calls are asked about
+        # through their own approval mode, not this sandbox.
+        return CodexPolicy("untrusted", "read-only", "readOnly")
     return CodexPolicy("untrusted", "workspace-write", "workspaceWrite")
 
 
@@ -103,6 +125,21 @@ def resolve_codex_executable() -> Path | None:
         return path if path.is_file() else None
     found = shutil.which("codex")
     return Path(found) if found else None
+
+
+def _mcp_text(result) -> str | None:
+    """The text blocks of an MCP tool result, joined, or None if it has none."""
+    content = result.get("content") if isinstance(result, dict) else None
+    if not isinstance(content, list):
+        return None
+    texts = [block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return "\n".join(texts) if texts else None
+
+
+def _computer_kind(tool: str) -> str:
+    from app.services.claude_adapter import _KINDS
+
+    return _KINDS.get(COMPUTER_TOOL_PREFIX + tool, "other")
 
 
 def _clip(message: str) -> str:
@@ -172,11 +209,12 @@ class CodexAdapter:
     key = "codex"
     label = "Codex"
     kind = "cli"
-    # Tools with approvals and resume. No MCP from this app except the read-only
-    # past-conversation search (`memory_tools`), no images, and no agent computers
-    # (Codex runs its tools on this machine).
+    # Tools with approvals and resume. No team tools (`mcp`) and no images. The
+    # only MCP servers this app mounts are the read-only past-conversation search
+    # (`memory_tools`) and, for an agent with a computer, that computer's tools
+    # with Codex's own shell and file tools switched off.
     capabilities = Capabilities(
-        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=False, memory_tools=True
+        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=True, memory_tools=True
     )
     models: list[ModelOption] = []
     custom_models = True
@@ -281,10 +319,11 @@ class CodexAdapter:
                 error_code="session_resume_failed",
                 session_state="broken",
             )
-        if ctx.computer is not None:
+        if ctx.computer is not None and getattr(ctx.computer, "provider", None) == "native":
+            # Native control of the person's Mac needs per-call epochs only the Claude path has.
             return TurnOutcome(
                 "failed",
-                error="Codex cannot run its tools in an agent computer.",
+                error="Codex cannot control this Mac's desktop. Use a Docker computer, or switch this agent to Claude.",
                 error_code="engine_without_computers",
             )
         run = _CodexTurn(ctx, sink, gate, exe, codex_thread)
@@ -317,11 +356,16 @@ class _CodexTurn:
     file_items: dict = field(default_factory=dict)
     requests: dict = field(default_factory=dict)
     answering: set = field(default_factory=set)
+    mcp_calls: dict = field(default_factory=dict)  # item id -> (server, tool, arguments)
+    permit_inputs: dict = field(default_factory=dict)  # request id -> the call's arguments
+    breach: bool = False
 
     def __post_init__(self) -> None:
-        self.tools = bool(app_settings.get("LOCAL_TOOLS_ENABLED"))
+        self.computer = self.ctx.computer
+        # A computer is the agent's sandbox: its turns always have tools, and they are the computer's.
+        self.tools = bool(app_settings.get("LOCAL_TOOLS_ENABLED")) or self.computer is not None
         self.mode = self.ctx.approval_mode or "ask"
-        self.policy = codex_policy(self.mode, self.tools)
+        self.policy = codex_policy(self.mode, self.tools, self.computer is not None)
         self.max_text = app_settings.get("LOCAL_MAX_OUTPUT_BYTES")
         self.clock = TurnClock(app_settings.get("LOCAL_TASK_TIMEOUT_SECONDS"))
         self.workspace = self.ctx.workspace or local_claude_runner.workspace_dir()
@@ -393,7 +437,11 @@ class _CodexTurn:
 
     async def _start(self) -> TurnOutcome | None:
         try:
-            await self._call("initialize", {"clientInfo": {"name": "open-dots", "title": "Open Duet", "version": "0"}})
+            info = {"clientInfo": {"name": "open-dots", "title": "Open Duet", "version": "0"}}
+            if self.computer is not None:
+                # `environments` on turn/start is an experimental field; without this it is rejected.
+                info["capabilities"] = {"experimentalApi": True}
+            await self._call("initialize", info)
         except (RpcError, RpcClosed, asyncio.TimeoutError) as exc:
             return self._failed(self._why(exc, "Codex did not start its app-server."), "cli_error")
         self.rpc.notify("initialized", {})
@@ -407,14 +455,22 @@ class _CodexTurn:
             common["model"] = self.ctx.model
         instructions = self.ctx.instructions
         launch = self.ctx.memory_launch
+        if self.computer is not None:
+            try:
+                common["config"] = await self._computer_config()
+            except (RpcError, RpcClosed, asyncio.TimeoutError) as exc:
+                return self._failed(self._why(exc, "Codex would not confirm its tool setup."), "codex_error")
+            note = self.computer.prompt_note() + " Your own shell and file tools are turned off."
+            instructions = f"{instructions}\n\n{note}" if instructions else note
         if launch is not None:
             # The read-only past-conversation search, as one MCP server for this thread
             # only (a config override, never written to the person's config.toml).
-            common["config"] = {"mcp_servers": {memory_bridge.SERVER: {
+            common.setdefault("config", {}).setdefault("mcp_servers", {})
+            common["config"]["mcp_servers"].update({memory_bridge.SERVER: {
                 "command": launch.command, "args": list(launch.args), "env": dict(launch.env),
                 # Only the two read-only tools, and Codex does not ask about them (no card).
                 "enabled_tools": list(memory_bridge.TOOLS), "default_tools_approval_mode": "approve",
-            }}}
+            }})
             instructions = f"{instructions}\n\n{memory_bridge.TOOL_NOTE}" if instructions else memory_bridge.TOOL_NOTE
         if instructions:
             common["developerInstructions"] = instructions
@@ -460,6 +516,8 @@ class _CodexTurn:
         }
         if self.ctx.model:
             turn_params["model"] = self.ctx.model
+        if self.computer is not None:
+            turn_params["environments"] = []
         try:
             turn = await self._call("turn/start", turn_params)
         except RpcError as exc:
@@ -470,6 +528,23 @@ class _CodexTurn:
         if isinstance(turn_info, dict) and isinstance(turn_info.get("id"), str):
             self.codex_turn_id = turn_info["id"]
         return None
+
+    async def _computer_config(self) -> dict:
+        """Thread config for a computer turn: the computer's MCP server (asked about
+        every call), Codex's own tools off, and the person's own MCP servers off
+        (they would run on this machine)."""
+        launch = self.computer.launch
+        servers: dict = {}
+        current = await self._call("config/read", {"includeLayers": False, "cwd": str(self.workspace)})
+        config = current.get("config") if isinstance(current, dict) else None
+        theirs = config.get("mcp_servers") if isinstance(config, dict) else None
+        if isinstance(theirs, dict):
+            servers.update({name: {"enabled": False} for name in theirs if name != COMPUTER_SERVER})
+        servers[COMPUTER_SERVER] = {
+            "command": launch.command, "args": list(launch.args), "env": dict(launch.env),
+            "enabled": True, "default_tools_approval_mode": "prompt",
+        }
+        return {**COMPUTER_CONFINEMENT, "mcp_servers": servers}
 
     def _why(self, exc: Exception, default: str) -> str:
         tail = self.rpc.stderr_tail.strip() if self.rpc is not None else ""
@@ -506,7 +581,7 @@ class _CodexTurn:
                     await self._server_request(message)
                 else:
                     await self._notification(message)
-                if self.over_text or self.rpc.over_limit:
+                if self.over_text or self.rpc.over_limit or self.breach:
                     raise _Stopped()
         finally:
             stop.cancel()
@@ -578,6 +653,23 @@ class _CodexTurn:
                 if isinstance(error, dict) and isinstance(error.get("message"), str):
                     self.turn_error = error["message"]
 
+    def _computer_call(self, server: str, message: str, meta: dict) -> tuple[str, dict] | None:
+        """(tool, arguments) of the computer call Codex is asking about, or None.
+        The arguments come from the request itself; the tool name is the one on the
+        call's own item (matched by those arguments), else the one in the question's text."""
+        arguments = meta.get("tool_params")
+        if not isinstance(arguments, dict):
+            return None
+        named = {tool for srv, tool, args in self.mcp_calls.values() if srv == server and args == arguments}
+        if len(named) == 1:
+            tool = named.pop()
+        else:
+            match = _MCP_TOOL_MESSAGE.search(message)
+            tool = match.group(1) if match else None
+        if not isinstance(tool, str) or not re.fullmatch(r"[A-Za-z0-9_]+", tool):
+            return None
+        return tool, arguments
+
     def _count(self, text: str) -> None:
         self.text_bytes += len(text.encode("utf-8"))
         if self.text_bytes > self.max_text:
@@ -586,6 +678,11 @@ class _CodexTurn:
     async def _item_started(self, item: dict) -> None:
         kind, item_id = item.get("type"), item.get("id")
         if kind not in TOOL_ITEMS or not isinstance(item_id, str):
+            return
+        if self.computer is not None and kind != "mcpToolCall":
+            # Codex's own tools were switched off for this thread; one starting anyway
+            # means they were not, and the turn does not go on.
+            self.breach = True
             return
         if kind == "commandExecution":
             full = item.get("command") if isinstance(item.get("command"), str) else ""
@@ -599,9 +696,16 @@ class _CodexTurn:
             summary = ("Edit " + ", ".join(paths))[:200] if paths else "Edit files"
             tool_input = {"changes": [{"path": c["path"], "kind": c["kind"]} for c in changes]}
         elif kind == "mcpToolCall":
-            name = f"mcp:{item.get('server')}.{item.get('tool')}"
-            summary = name
             tool_input = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
+            self.mcp_calls[item_id] = (item.get("server"), item.get("tool"), tool_input)
+            if item.get("server") == COMPUTER_SERVER and isinstance(item.get("tool"), str):
+                # Named as the Claude path names it, so the card, saved rules and the
+                # activity rows treat a computer call the same whichever engine made it.
+                name = COMPUTER_TOOL_PREFIX + item["tool"]
+                summary = summarize_tool(name, tool_input)
+            else:
+                name = f"mcp:{item.get('server')}.{item.get('tool')}"
+                summary = name
         else:
             name, summary = "web_search", str(item.get("query") or "web search")[:200]
             tool_input = {"query": item.get("query")}
@@ -629,6 +733,8 @@ class _CodexTurn:
                 output = f"{output}\n(exit code {item.get('exitCode')})".strip()
         elif kind == "fileChange":
             output = "\n".join(f"{c['kind']} {c['path']}" for c in _changes(item.get("changes")))
+        elif kind == "mcpToolCall" and _mcp_text(item.get("result")) is not None:
+            output = _mcp_text(item.get("result"))
         else:
             raw = item.get("error") or item.get("result") or item.get("action")
             output = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False) if raw is not None else ""
@@ -661,6 +767,12 @@ class _CodexTurn:
             return
         else:
             self.rpc.respond(rid, error={"code": -32601, "message": "Not supported by this app."})
+            return
+
+        if self.computer is not None and kind != "mcp":
+            # A command or file approval during a computer turn: Codex's own tools are on.
+            self.rpc.respond(rid, {"decision": "denied" if method in LEGACY_REQUESTS else "decline"})
+            self.breach = True
             return
 
         legacy = method in LEGACY_REQUESTS
@@ -703,16 +815,27 @@ class _CodexTurn:
             summary = ("Edit " + ", ".join(paths))[:200] if paths else "Edit files"
         else:
             server = params.get("serverName") if isinstance(params.get("serverName"), str) else "mcp"
-            tool, approval_kind = f"mcp:{server}", "other"
             text = params.get("message") if isinstance(params.get("message"), str) else ""
-            tool_input = {"server": server, "message": text}
-            summary = text[:200] or tool
+            if self.computer is not None:
+                # Only the computer's own tools can be asked about here.
+                found = self._computer_call(server, text, meta) if server == COMPUTER_SERVER else None
+                if found is None:
+                    self.rpc.respond(rid, payload(False))
+                    return
+                name, tool_input = found
+                tool, approval_kind = COMPUTER_TOOL_PREFIX + name, _computer_kind(name)
+                summary = summarize_tool(tool, tool_input)
+            else:
+                tool, approval_kind = f"mcp:{server}", "other"
+                tool_input = {"server": server, "message": text}
+                summary = text[:200] or tool
 
         if len(json.dumps(tool_input, ensure_ascii=False)) > MAX_REVIEWABLE_INPUT_CHARS:
             self.rpc.respond(rid, payload(False))  # too big to show in full: refused
             return
         request_id = f"codex-{rid}"
         self.requests[rid] = request_id
+        self.permit_inputs[rid] = tool_input
         handle = await self.gate.open(
             request_id=request_id, tool=tool, input=tool_input, summary=summary, kind=approval_kind
         )
@@ -732,7 +855,16 @@ class _CodexTurn:
         self.requests.pop(rid, None)
         if decision.kind == LOST:
             return
-        self.rpc.respond(rid, payload(decision.kind == ALLOW))
+        allow = decision.kind == ALLOW
+        permit_input = self.permit_inputs.pop(rid, {})
+        if allow and self.computer is not None and handle.tool.startswith(COMPUTER_TOOL_PREFIX):
+            # The computer's MCP server runs a call only after it removes this one-use permit.
+            try:
+                grants.issue(self.computer.grants_dir, handle.tool[len(COMPUTER_TOOL_PREFIX):], permit_input)
+            except OSError:
+                logger.exception("could not write a computer permit", thread_id=self.ctx.thread_id)
+                allow = False
+        self.rpc.respond(rid, payload(allow))
 
     # -- how it ended ----------------------------------------------------------------------
 
@@ -746,6 +878,8 @@ class _CodexTurn:
 
         if self.ctx.aborted:
             return failed("The run was stopped because it no longer owns its turn.", "lost")
+        if self.breach:
+            return failed(CONFINEMENT_BREACH, "codex_confinement_failed")
         if crashed:
             return failed("Local run failed unexpectedly", "runner_error")
         if self.timed_out:

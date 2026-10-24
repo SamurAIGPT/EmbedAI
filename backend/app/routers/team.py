@@ -9,6 +9,7 @@ from app.routers.threads import get_runtime
 from app.team import service, jobs, setup
 from app.services.engine_registry import capabilities_of
 from app.core.config import settings
+from app.core import app_settings
 
 router = APIRouter(prefix='/team', tags=['Team'], dependencies=[Depends(require_local_access)])
 
@@ -40,7 +41,7 @@ async def get_team(rt=Depends(get_runtime)):
     async with rt.session() as db:
         team = await service.team_for(db, rt.owner_id)
         if not team:
-            return {'team': None, 'agents': [], 'limits': {'max_agents': settings.TEAM_MAX_AGENTS, 'max_depth': settings.TEAM_MAX_DEPTH}, 'lead_ready': {'ok': False, 'reason': 'Choose a team lead.'}}
+            return {'enabled': bool(app_settings.get('TEAM_ENABLED')), 'team': None, 'agents': [], 'limits': {'max_agents': settings.TEAM_MAX_AGENTS, 'max_depth': settings.TEAM_MAX_DEPTH}, 'lead_ready': {'ok': False, 'reason': 'Choose a team lead.'}}
         rows = list((await db.execute(select(Agent).where(Agent.owner_id == rt.owner_id, Agent.team_id == team.id, Agent.archived_at.is_(None)).order_by(Agent.id))).scalars())
         output = []
         for agent in rows:
@@ -52,9 +53,9 @@ async def get_team(rt=Depends(get_runtime)):
             output.append(data)
         lead = next((a for a in rows if a.id == team.lead_agent_id), None)
         available = bool(lead and lead_engine_ok(rt, lead))
-        return {'team': {'id': team.id, 'name': team.name, 'lead_agent_id': team.lead_agent_id}, 'agents': output,
+        return {'enabled': bool(app_settings.get('TEAM_ENABLED')), 'team': {'id': team.id, 'name': team.name, 'lead_agent_id': team.lead_agent_id}, 'agents': output,
                 'limits': {'max_agents': settings.TEAM_MAX_AGENTS, 'max_depth': settings.TEAM_MAX_DEPTH, 'max_parallel': settings.TEAM_MAX_PARALLEL},
-                'lead_ready': {'ok': available, 'reason': None if available else 'This lead needs an engine with team tools (Claude).'}}
+                'lead_ready': {'ok': available, 'reason': None if available else 'This lead needs an engine with team tools (Claude or Codex).'}}
 
 
 def lead_engine_ok(rt, agent):
@@ -68,10 +69,24 @@ async def lead(payload: LeadRequest, rt=Depends(get_runtime)):
         async with rt.session() as db:
             candidate = await db.get(Agent, payload.agent_id)
             if candidate is not None and not lead_engine_ok(rt, candidate):
-                raise service.TeamError('lead_engine', 'A lead needs an engine with team tools (Claude).')
+                raise service.TeamError('lead_engine', 'A lead needs an engine with team tools (Claude or Codex).')
             await service.set_lead(db, rt.owner_id, payload.agent_id, payload.name)
     except service.TeamError as exc:
         raise error(exc) from None
+    return await get_team(rt)
+
+
+@router.delete('/lead')
+async def clear_lead(agent_id: int = Query(...), rt=Depends(get_runtime)):
+    async with rt.session() as db:
+        await begin_write(db)
+        team = await service.team_for(db, rt.owner_id, lock=True)
+        if team is None or team.lead_agent_id != agent_id:
+            raise HTTPException(409, detail={'error_code': 'changed_since', 'message': 'The lead changed. Refresh the team.'})
+        team.lead_agent_id = None
+        team.updated_at = service.now()
+        service.audit(db, team, 'lead_removed', agent_id=agent_id)
+        await db.commit()
     return await get_team(rt)
 
 
@@ -139,7 +154,18 @@ async def list_setup(limit: int = Query(20, ge=1, le=100), rt=Depends(get_runtim
     async with rt.session() as db:
         rows = list((await db.execute(select(TeamSetupRequest).where(TeamSetupRequest.owner_id == rt.owner_id).order_by(TeamSetupRequest.id.desc()).limit(limit))).scalars())
         return [{'request_id': r.request_id, 'kind': r.kind, 'state': r.state, 'results': r.result.get('results', []), 'thread_id': r.thread_id,
-                 'undo_available': r.kind == 'setup' and r.state == 'applied', 'created_at': r.created_at} for r in rows]
+                 'undo_available': (await setup.undo_status(db, r))['available'], 'created_at': r.created_at} for r in rows]
+
+
+@router.get('/setup/{request_id}')
+async def setup_receipt(request_id: str, rt=Depends(get_runtime)):
+    async with rt.session() as db:
+        row = await setup.existing(db, rt.owner_id, request_id)
+        if row is None:
+            raise HTTPException(404, 'Team change not found')
+        status = await setup.undo_status(db, row)
+        return {**row.result, 'request_id': row.request_id, 'state': row.state,
+                'undo_available': status['available'], 'undo_reason': status['reason']}
 
 
 @router.post('/setup/{request_id}/undo')

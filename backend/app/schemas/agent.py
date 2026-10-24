@@ -35,6 +35,7 @@ def _optional_line(value: str | None) -> str | None:
 
 
 class AgentCreateRequest(BaseModel):
+    make_lead: bool = False
     name: str = Field(min_length=1, max_length=80)
     # A short role line and a longer description, for lists and pickers.
     title: str | None = Field(default=None, max_length=200)
@@ -88,6 +89,7 @@ class AgentUpdateRequest(BaseModel):
     """Change any of these; send at least one. `title`, `description`, `model`
     and `workspace_path` accept an explicit null to go back to the default."""
 
+    make_lead: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=80)
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=4000)

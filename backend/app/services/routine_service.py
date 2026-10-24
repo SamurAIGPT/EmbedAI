@@ -194,7 +194,7 @@ def _apply(routine: Routine, now: datetime) -> None:
 
 
 async def create_routine(
-    db: AsyncSession, owner_id: str, data: dict, *, now: datetime | None = None
+    db: AsyncSession, owner_id: str, data: dict, *, now: datetime | None = None, commit: bool = True
 ) -> Routine:
     now = now or utcnow()
     await begin_write(db)
@@ -224,7 +224,9 @@ async def create_routine(
     )
     _apply(routine, now)
     db.add(routine)
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
     await db.refresh(routine)
     return routine
 
@@ -244,7 +246,7 @@ async def list_routines(db: AsyncSession, owner_id: str) -> list[Routine]:
 
 
 async def update_routine(
-    db: AsyncSession, owner_id: str, routine_id: int, changes: dict, *, now: datetime | None = None
+    db: AsyncSession, owner_id: str, routine_id: int, changes: dict, *, now: datetime | None = None, commit: bool = True
 ) -> Routine:
     now = now or utcnow()
     await begin_write(db)
@@ -274,23 +276,27 @@ async def update_routine(
         if "timezone" in changes:
             routine.timezone = (changes["timezone"] or "UTC").strip()
         _apply(routine, now)
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
     await db.refresh(routine)
     return routine
 
 
-async def delete_routine(db: AsyncSession, owner_id: str, routine_id: int) -> None:
+async def delete_routine(db: AsyncSession, owner_id: str, routine_id: int, *, commit: bool = True) -> None:
     """Deletes the routine and its run history. Conversations its runs made
     stay, as ordinary conversations of the agent."""
     await begin_write(db)
     routine = await get_routine(db, owner_id, routine_id)
     await db.execute(delete(RoutineRun).where(RoutineRun.routine_id == routine.id))
     await db.delete(routine)
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
 
 
 async def set_paused(
-    db: AsyncSession, owner_id: str, routine_id: int, paused: bool, *, now: datetime | None = None
+    db: AsyncSession, owner_id: str, routine_id: int, paused: bool, *, now: datetime | None = None, commit: bool = True
 ) -> Routine:
     now = now or utcnow()
     await begin_write(db)
@@ -311,7 +317,9 @@ async def set_paused(
     routine.next_run_at = None if paused else schedules.next_after(
         routine.schedule_kind, routine.schedule_spec, routine.timezone, now
     )
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
     await db.refresh(routine)
     return routine
 
@@ -335,7 +343,7 @@ async def _count_active(db: AsyncSession, routine_id: int, trigger: str) -> int:
 
 
 async def run_now(
-    db: AsyncSession, owner_id: str, routine_id: int, *, now: datetime | None = None
+    db: AsyncSession, owner_id: str, routine_id: int, *, now: datetime | None = None, commit: bool = True
 ) -> RoutineRun:
     now = now or utcnow()
     await begin_write(db)
@@ -352,7 +360,9 @@ async def run_now(
         ),
     )
     db.add(run)
-    await db.commit()
+    await db.flush()
+    if commit:
+        await db.commit()
     await db.refresh(run)
     return run
 

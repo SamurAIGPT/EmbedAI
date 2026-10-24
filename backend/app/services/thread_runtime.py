@@ -633,6 +633,7 @@ class ThreadRuntime:
         attachment_ids: list[str] | None = None,
         skills: list[str] | None = None,
         team_origin: str = "person",
+        configuration_allowed: bool = True,
         internal: bool = False,
     ) -> store.Turn:
         """Start a turn and run it in the background. Raises ThreadNotFound,
@@ -647,6 +648,9 @@ class ThreadRuntime:
         `approval_mode` replaces the agent's mode for this turn (a routine
         passes the stricter of its own and the agent's); `approval_timeout`
         replaces the approval timeout setting for this turn's approvals."""
+        if not configuration_allowed:
+            from app.team.policy import strictest
+            team_origin = strictest([team_origin, 'restricted'])
         if self._closing:
             raise ProviderUnavailable("The app is shutting down; send this again after it restarts.")
         async with self.session() as db:
@@ -814,7 +818,7 @@ class ThreadRuntime:
             if team is not None and team.owner_id == self.owner_id:
                 ctx.team = TurnTeam(team.id, agent.id, team.lead_agent_id == agent.id,
                                     app_settings.get("TEAM_LEAD_AUTO"), origin=team_origin,
-                                    delegation_enabled=agent.delegation_enabled)
+                                    delegation_enabled=agent.delegation_enabled, configuration_allowed=configuration_allowed)
                 from app.team import prompt as team_prompt
                 async with self.session() as db:
                     intro = await team_prompt.build(db, team=team, agent=agent, owner_id=self.owner_id)

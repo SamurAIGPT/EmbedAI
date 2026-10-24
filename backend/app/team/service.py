@@ -38,7 +38,7 @@ async def member(db, owner, agent_id, *, team_id=None):
     return agent
 
 
-async def set_lead(db, owner, agent_id, name='My team'):
+async def set_lead(db, owner, agent_id, name='My team', *, commit=True):
     await begin_write(db)
     agent = await member(db, owner, agent_id)
     team = await team_for(db, owner, lock=True)
@@ -53,7 +53,8 @@ async def set_lead(db, owner, agent_id, name='My team'):
         team.updated_at = now()
         agent.team_id = team.id
         audit(db, team, 'lead_set', agent_id=agent.id)
-    await db.commit()
+    if commit:
+        await db.commit()
     return team
 
 
@@ -89,43 +90,12 @@ def clean_line(value, limit, label):
 
 
 async def create_specialist(db, owner, caller_id, turn_id, arguments):
-    from app.core.config import settings
-    await begin_write(db)
-    caller = await member(db, owner, caller_id)
-    team = await team_for(db, owner, lock=True)
-    if not team or caller.team_id != team.id or team.lead_agent_id != caller.id:
-        raise TeamError('lead_only', 'Only the team lead can add specialists.')
-    unknown = set(arguments) - {'name', 'title', 'instructions', 'share_workspace'}
-    if unknown:
+    from app.team import setup
+    if set(arguments) - {'name', 'title', 'instructions', 'share_workspace'}:
         raise TeamError('invalid_input', 'Unrecognised specialist settings.')
-    name = clean_line(arguments.get('name'), 80, 'Name')
-    title = clean_line(arguments.get('title', 'Specialist'), 120, 'Title')
-    instructions = arguments.get('instructions', '')
-    if not isinstance(instructions, str) or len(instructions) > 2000:
-        raise TeamError('invalid_input', 'Instructions must be at most 2000 characters.')
-    instructions = agent_memory.redact_secrets(instructions)[0]
-    count = await db.scalar(select(func.count()).select_from(TeamEvent).where(
-        TeamEvent.team_id == team.id, TeamEvent.kind == 'agent_created', TeamEvent.data['turn_id'].as_integer() == turn_id))
-    if count >= settings.TEAM_MAX_CREATED_PER_TURN:
-        raise TeamError('creation_limit', 'This turn reached its specialist creation limit.')
-    total = await db.scalar(select(func.count()).select_from(Agent).where(Agent.owner_id == owner, Agent.archived_at.is_(None)))
-    if total >= settings.TEAM_MAX_AGENTS:
-        raise TeamError('agent_limit', 'The live agent limit has been reached.')
-    if await db.scalar(select(Agent.id).where(Agent.owner_id == owner, Agent.name == name, Agent.archived_at.is_(None))):
-        raise TeamError('name_taken', 'A live agent already uses that name.')
-    workspace = None
-    if arguments.get('share_workspace'):
-        if not caller.workspace_path:
-            raise TeamError('project_required', 'Give the lead a project folder first.')
-        workspace = caller.workspace_path
-    agent = Agent(owner_id=owner, name=name, title=title, instructions=instructions,
-                  team_id=team.id, created_by_agent_id=caller.id, provider=caller.provider,
-                  model=caller.model, approval_mode='ask', workspace_path=workspace)
-    db.add(agent)
-    await db.flush()
-    audit(db, team, 'agent_created', agent_id=agent.id, data={'turn_id': turn_id, 'instructions_length': len(instructions)})
-    await db.commit()
-    return agent
+    result = await setup.propose(db, owner, caller_id, turn_id, None,
+                                 {'operations': [{'op': 'create', **arguments}]}, check_engine=lambda provider, model: None)
+    return await db.get(Agent, result['results'][0]['agent_id'])
 
 
 async def _used(db, agent):

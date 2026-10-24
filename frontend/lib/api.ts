@@ -487,6 +487,7 @@ export type Agent = {
 };
 
 export type AgentInput = {
+  make_lead?: boolean;
   name: string;
   title?: string | null;
   description?: string | null;

@@ -355,3 +355,10 @@ test('a team setup event becomes one settled card with its request id and rows',
   assert.equal(state.items[0].kind,'team_setup'); assert.equal(state.items[0].requestId,'r1'); assert.equal(state.items[0].undoAvailable,true);
   assert.deepEqual(state.items[0].rows.map(r=>[r.action,r.name]),[['created','Scribe'],['updated','Worker']]);
 });
+
+test('a retried setup receipt keeps one card and its field-level changes', () => {
+  const payload = {request_id:'saved-once',undo_available:true,results:[{action:'updated',agent_id:4,name:'Researcher',changes:[{field:'instructions',before:'Old brief',after:'Product Hunt launches'}]}]};
+  const state = run([ev('team.setup.applied',payload),ev('team.setup.applied',payload)]);
+  assert.equal(state.items.length,1);
+  assert.deepEqual(state.items[0].rows[0].changes,[{field:'instructions',before:'Old brief',after:'Product Hunt launches'}]);
+});

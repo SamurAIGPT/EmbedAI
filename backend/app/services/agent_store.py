@@ -90,6 +90,7 @@ async def create_agent(
     memory_upkeep: bool = True,
     compaction_summary: bool = True,
     use_helper: bool = True,
+    make_lead: bool = False,
     fallback_provider: str | None = None,
     fallback_model: str | None = None,
 ) -> Agent:
@@ -124,15 +125,20 @@ async def create_agent(
     db.add(agent)
     try:
         await db.flush()
+        if make_lead:
+            from app.team.service import set_lead
+            await set_lead(db, owner_id, agent.id, commit=False)
         await db.commit()
     except IntegrityError:
         await db.rollback()
         raise AgentNameTaken(name) from None
+    if make_lead:
+        await db.refresh(agent)
     return agent
 
 
 async def update_agent(
-    db: AsyncSession, agent_id: int, *, archived: bool | None = None, **changes
+    db: AsyncSession, agent_id: int, *, archived: bool | None = None, make_lead: bool | None = None, **changes
 ) -> Agent:
     """Change the given fields. Raises AgentNotFound, ValueError, or
     AgentNameTaken (also when un-archiving into a name now in use)."""
@@ -159,6 +165,18 @@ async def update_agent(
         agent.archived_at = _utcnow() if archived else None
         if archived:
             await _leave_team(db, agent)
+    if make_lead is True:
+        if agent.archived_at is not None:
+            raise ValueError('Restore this agent before making it lead.')
+        from app.team.service import set_lead
+        await set_lead(db, agent.owner_id, agent.id, commit=False)
+    elif make_lead is False:
+        from app.team.service import team_for, audit
+        team = await team_for(db, agent.owner_id, lock=True)
+        if team is not None and team.lead_agent_id == agent.id:
+            team.lead_agent_id = None
+            team.updated_at = _utcnow()
+            audit(db, team, 'lead_removed', agent_id=agent.id)
     agent.updated_at = _utcnow()
     name = agent.name  # read now: after a rollback the row is expired
     try:

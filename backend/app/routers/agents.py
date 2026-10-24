@@ -159,6 +159,11 @@ def _check_fallback(rt: ThreadRuntime, provider: str, fallback: str | None, mode
 
 @router.post("", response_model=AgentResponse, status_code=201)
 async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(get_runtime)):
+    if payload.make_lead:
+        from app.services.engine_registry import capabilities_of
+        adapter = rt.adapters.get(payload.provider)
+        if adapter is None or not capabilities_of(adapter).mcp:
+            raise _error(409, 'lead_engine', 'A lead needs an engine with team tools (Claude or Codex).')
     _check_engine(rt, payload.provider, payload.model)
     _check_fallback(rt, payload.provider, payload.fallback_provider, payload.fallback_model)
     workspace = _check_workspace(payload.workspace_path)
@@ -183,6 +188,7 @@ async def create_agent(payload: AgentCreateRequest, rt: ThreadRuntime = Depends(
                 use_helper=payload.use_helper,
                 fallback_provider=payload.fallback_provider,
                 fallback_model=payload.fallback_model,
+                make_lead=payload.make_lead,
             )
     except store.AgentNameTaken:
         raise _error(409, "agent_name_taken", "An agent with this name already exists.") from None
@@ -256,6 +262,12 @@ async def update_agent(
                 "This agent has a computer, and that engine cannot run its tools in one. "
                 "Remove the computer first, or keep an engine that supports computers.",
             )
+    from app.team.service import team_for
+    async with rt.session() as db:
+        current_team = await team_for(db, rt.owner_id)
+    keeps_lead = payload.make_lead is True or (payload.make_lead is not False and current_team is not None and current_team.lead_agent_id == agent_id)
+    if keeps_lead and not rt.engines.capabilities(provider).mcp:
+        raise _error(409, 'lead_engine', 'A lead needs an engine with team tools (Claude or Codex). Remove the lead role to change to this engine.')
     if "provider" in changes or "model" in changes:
         _check_engine(rt, provider, changes.get("model", agent.model if provider == agent.provider else None))
     if {"provider", "fallback_provider", "fallback_model"} & set(changes):
@@ -270,7 +282,7 @@ async def update_agent(
     try:
         async with rt.session() as db:
             agent = await store.update_agent(
-                db, agent_id, archived=payload.archived, **changes
+                db, agent_id, archived=payload.archived, make_lead=payload.make_lead, **changes
             )
         return (await _with_computers(rt, [agent]))[0]
     except store.AgentNotFound:

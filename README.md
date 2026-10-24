@@ -150,6 +150,7 @@ is needed for the agent workspace.
 - [First-run setup and approvals](docs/SETUP.md)
 - [Engines and models](docs/ENGINES.md)
 - [Teams and delegated work](docs/TEAMS.md)
+- [Agent settings and chat management](docs/CHAT_MANAGEMENT.md)
 - [Memory and context](docs/MEMORY.md)
 - [Routines](docs/ROUTINES.md)
 - [Tasks and calendar](docs/TASKS.md)

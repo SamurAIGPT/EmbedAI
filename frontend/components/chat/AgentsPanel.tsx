@@ -19,6 +19,9 @@ import { EngineModelFields } from "./EngineModelFields";
 import { MemoryPanel } from "./MemoryPanel";
 import { TemplateSkillChoices, TemplatesGallery } from "./TemplatesGallery";
 import { installTemplateSkills, skillInstallNotice, uniqueAgentName, type AgentTemplate } from "@/lib/templates";
+import { useSession } from "@/components/AuthGate";
+import { collaboration, type TeamState } from "@/lib/collaboration";
+import { AgentSetupEntry } from "./AgentSetupEntry";
 import { SkillsPanel } from "./SkillsPanel";
 
 type Draft = {
@@ -133,8 +136,12 @@ export function AgentsPanel({
   startCreating = false,
   initialDeleteAgent = null,
   onCreated,
+  onSetupChat,
+  initialEditAgent = null,
 }: {
   agents: Agent[];
+  onSetupChat?: (id: number) => void;
+  initialEditAgent?: Agent | null;
   onClose: () => void;
   // Open straight on the new-agent form (the sidebar's New agent button).
   startCreating?: boolean;
@@ -148,7 +155,7 @@ export function AgentsPanel({
   // The template browser, and the template (with the suggested skills still ticked) the form was filled from.
   const [gallery, setGallery] = useState(false);
   const [fromTemplate, setFromTemplate] = useState<{ template: AgentTemplate; skills: string[] } | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(startCreating ? EMPTY : null);
+  const [draft, setDraft] = useState<Draft | null>(initialEditAgent ? toDraft(initialEditAgent) : startCreating ? EMPTY : null);
   const [notes, setNotes] = useState<NotesState | null>(null);
   const [exporting, setExporting] = useState<ExportState | null>(null);
   const [importing, setImporting] = useState<ImportState | null>(null);
@@ -159,6 +166,14 @@ export function AgentsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [engines, setEngines] = useState<Engine[]>([]);
+  const { session } = useSession();
+  const admin = session?.scopes.includes("admin") === true;
+  const [team, setTeam] = useState<TeamState | null>(null);
+  const [roleChoice, setRoleChoice] = useState<{ id: number | null; value: boolean } | null>(null);
+  const [memberChoices, setMemberChoices] = useState<Record<number, boolean>>({});
+  const isLead = draft !== null && (roleChoice?.id === draft.id ? roleChoice.value : draft.id !== null && team?.team?.lead_agent_id === draft.id);
+  const roleSupported = engines.some(engine => engine.id === draft?.provider && engine.capabilities.mcp);
+  useEffect(() => { let live = true; collaboration.team().then(value => { if (live) setTeam(value); }).catch(() => {}); return () => { live = false; }; }, []);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -195,8 +210,20 @@ export function AgentsPanel({
     const input = toInput(draft);
     if (draft.id === null && fromTemplate) return createFromTemplate(input, fromTemplate);
     run(
-      () => (draft.id === null ? api.createAgent(input) : api.updateAgent(draft.id, input)),
-      () => setDraft(null)
+      async () => {
+        const agent = draft.id === null ? await api.createAgent({ ...input, make_lead: isLead }) : await api.updateAgent(draft.id, { ...input, ...(roleChoice?.id === draft.id ? { make_lead: isLead } : {}) });
+        // Creation is already saved; subsequent coordination errors must not create another agent on retry.
+        setDraft(toDraft(agent));
+        setRoleChoice({ id: agent.id, value: isLead });
+        setTeam(await collaboration.team());
+        if (isLead) for (const [id, included] of Object.entries(memberChoices)) {
+          if (Number(id) === agent.id) continue;
+          if (included) await collaboration.addMember(Number(id));
+          else if (team?.agents.some(member => member.id === Number(id))) await collaboration.removeMember(Number(id));
+        }
+        setTeam(await collaboration.team());
+      },
+      () => { setDraft(null); setRoleChoice(null); setMemberChoices({}); }
     );
   };
 
@@ -205,7 +232,15 @@ export function AgentsPanel({
     setBusy(true);
     setError(null);
     try {
-      const agent = await api.createAgent(input);
+      const agent = await api.createAgent({ ...input, make_lead: isLead });
+      setDraft(toDraft(agent));
+      setFromTemplate(null);
+      setRoleChoice({ id: agent.id, value: isLead });
+      if (isLead) for (const [id, included] of Object.entries(memberChoices)) {
+        if (included) await collaboration.addMember(Number(id));
+        else if (team?.agents.some(member => member.id === Number(id))) await collaboration.removeMember(Number(id));
+      }
+      setTeam(await collaboration.team());
       const chosen = source.template.skills.filter((skill) => source.skills.includes(skill.name));
       const notice = skillInstallNotice(await installTemplateSkills(agent.id, source.template.id, chosen, api.installTemplateSkill));
       setDraft(null);
@@ -343,6 +378,8 @@ export function AgentsPanel({
     setGallery(fromTemplate !== null && draft !== null);
     setFromTemplate(null);
     setDraft(null);
+    setRoleChoice(null);
+    setMemberChoices({});
     setNotes(null);
     setExporting(null);
     setImporting(null);
@@ -368,6 +405,7 @@ export function AgentsPanel({
                 save();
               }}
             >
+              {draft.id === null && onSetupChat && admin && <AgentSetupEntry agents={agents} engines={engines} onStart={onSetupChat} onCreateLead={() => setRoleChoice({ id: null, value: true })} />}
               <label className="block text-xs text-muted">
                 Name
                 <input
@@ -433,6 +471,16 @@ export function AgentsPanel({
               )}
               <EngineModelFields engines={engines} provider={draft.provider} model={draft.model} disabled={busy} hasComputer={agents.some((agent) => agent.id === draft.id && agent.computer != null)} onChange={(provider, model) => setDraft({ ...draft, provider, model })} />
               <p className="text-xs text-muted">Engine changes apply to new conversations. Existing conversations keep their engine.</p>
+              {admin && <fieldset className="space-y-2 rounded-field border border-line p-3">
+                <legend className="px-1 text-sm font-medium">Team permissions</legend>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isLead} disabled={busy || !team || (!roleSupported && !isLead)} onChange={event => setRoleChoice({ id: draft.id, value: event.target.checked })} />Team lead (Chief of Staff)</label>
+                <p className="text-xs text-muted">Can create and configure specialists, delegate work, and follow up with the agents selected below. Each agent keeps its own approvals. One lead per team; enabling this replaces the current lead.</p>
+                {!team && <p className="text-xs text-warning">Team permissions could not be loaded yet. Reopen Agents to retry.</p>}
+                {!roleSupported && <p className="text-xs text-warning">Choose Claude or Codex to use team tools.</p>}
+                {team?.enabled === false && <p className="text-xs text-warning">Teams are disabled in settings. This role takes effect when Teams are enabled.</p>}
+                {isLead && <div className="space-y-2"><p className="text-xs font-medium">Agents this lead can coordinate</p>{agents.filter(agent => !agent.archived_at && agent.id !== draft.id).map(agent => <label key={agent.id} className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={busy} checked={memberChoices[agent.id] ?? team?.agents.some(member => member.id === agent.id) ?? false} onChange={event => setMemberChoices({ ...memberChoices, [agent.id]: event.target.checked })} />{agent.name}</label>)}<p className="text-xs text-muted">Selection is saved with this agent. Removing the role keeps team membership and existing work.</p></div>}
+              </fieldset>}
+
               <label className="block text-xs text-muted">
                 Fallback engine when limited
                 <select
@@ -638,7 +686,7 @@ export function AgentsPanel({
                         )}
                         {engines.find((engine) => engine.id === agent.provider)?.available === false && <p className="mt-1 text-xs text-warning">Connect an AI: {engines.find((engine) => engine.id === agent.provider)?.reason} <a href="/settings/" className="underline">Open engine settings</a></p>}
                         <div className="mt-2 flex flex-wrap gap-1">
-                          <button onClick={() => setDraft(toDraft(agent))} disabled={busy} className={SMALL}>
+                          <button onClick={() => { setDraft(toDraft(agent)); setRoleChoice(null); setMemberChoices({}); }} disabled={busy} className={SMALL}>
                             Edit
                           </button>
                           <button onClick={() => openNotes(agent)} disabled={busy} className={SMALL}>
@@ -715,6 +763,7 @@ export function AgentsPanel({
                   })}
                 </ul>
               )}
+              {onSetupChat && admin && <div className="mt-4"><AgentSetupEntry agents={agents} engines={engines} onStart={onSetupChat} onCreateLead={() => { setDraft(EMPTY); setRoleChoice({ id: null, value: true }); }} /></div>}
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button onClick={() => setDraft(EMPTY)} className={PRIMARY}>
                   New agent

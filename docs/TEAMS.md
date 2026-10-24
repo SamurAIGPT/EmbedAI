@@ -1,6 +1,6 @@
 # Teams and delegated work
 
-A team has a lead and specialists. Existing agents keep their settings until you choose a lead or add them to the team. A team can contain an agent on any engine; team tools currently require Claude.
+A team has a lead and specialists. Existing agents keep their settings until you choose a lead or add them to the team. A team can contain an agent on any engine; team tools are available through Claude and Codex. Choose the lead and coordinated agents in the new-agent form or existing agent settings. See [chat management](CHAT_MANAGEMENT.md) for conversational setup, supported controls and verification limits.
 
 The database stores team membership, creation records, jobs, room membership and reply queues. Chat threads keep their existing kind after migration. Job and member work use their own conversation records; room conversation records hold visible messages.
 
@@ -10,7 +10,7 @@ The foundation migration uses additive columns and new tables, with an SQLite-sa
 
 A room is a shared conversation for selected agents, with shared instructions
 and one visible transcript. Create one from the Chat page's Rooms panel or let
-a Claude team lead create it with `create_room`. Choose one to twelve agents
+a Claude or Codex team lead create it with `create_room`. Choose one to twelve agents
 when creating it; the member list is fixed after creation. You can edit the
 room name, shared instructions and default responder setting later.
 

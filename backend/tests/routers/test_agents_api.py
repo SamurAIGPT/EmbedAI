@@ -403,3 +403,29 @@ async def test_an_agent_may_name_a_fallback_engine_and_it_is_checked(api):
     assert unknown.status_code == 422 and code_of(unknown) == "unknown_provider"
     orphan = await api.patch(f"/api/v1/agents/{agent['id']}", json={"fallback_model": "x"})
     assert orphan.status_code == 422 and code_of(orphan) == "invalid_fallback"
+
+
+async def test_person_can_choose_lead_in_create_and_agent_settings(api, sessions, owner):
+    from app.team import service
+    first = await make(api, name='First coordinator', make_lead=True)
+    second = await make(api, name='Next coordinator')
+    async with sessions() as db:
+        assert (await service.team_for(db, owner)).lead_agent_id == first['id']
+    changed = await api.patch(f"/api/v1/agents/{second['id']}", json={'make_lead': True})
+    assert changed.status_code == 200, changed.text
+    async with sessions() as db:
+        assert (await service.team_for(db, owner)).lead_agent_id == second['id']
+    changed = await api.patch(f"/api/v1/agents/{second['id']}", json={'make_lead': False})
+    assert changed.status_code == 200, changed.text
+    async with sessions() as db:
+        team = await service.team_for(db, owner)
+        assert team.lead_agent_id is None
+        assert (await db.get(Agent, second['id'])).team_id == team.id
+
+
+async def test_unsupported_lead_creation_leaves_no_agent(api, sessions, owner):
+    from sqlalchemy import select
+    response = await api.post('/api/v1/agents', json={'name': 'Bad coordinator', 'provider': 'unknown', 'make_lead': True})
+    assert response.status_code == 409
+    async with sessions() as db:
+        assert not await db.scalar(select(Agent.id).where(Agent.owner_id == owner, Agent.name == 'Bad coordinator'))

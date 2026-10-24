@@ -347,3 +347,47 @@ async def test_probe_without_codex(monkeypatch):
     monkeypatch.setattr(codex_adapter, "resolve_codex_executable", lambda: None)
     probe = await CodexAdapter().probe()
     assert not probe.installed and not probe.ready and "not found" in probe.reason
+
+
+async def test_team_mcp_create_uses_one_use_gate_with_host_tools_off(crt, sessions, owner, codex, monkeypatch):
+    from app.team import service
+    from app.db.models import Approval, TeamSetupRequest
+    from sqlalchemy import select
+    monkeypatch.setattr(settings, 'TEAM_ENABLED', True)
+    monkeypatch.setattr(settings, 'TEAM_LEAD_AUTO', True)
+    async with sessions() as db:
+        lead = await agent_store.create_agent(db, owner_id=owner, name='Coordinator', provider='codex')
+        await service.set_lead(db, owner, lead.id)
+    codex.plan({'type': 'team', 'tool': 'create_agent', 'arguments': {'name': 'File reader', 'instructions': 'Summarize local files in concise bullets.'}})
+    thread = await crt.create_thread(provider='codex', agent_id=lead.id)
+    await crt.send_turn(thread.id, 'Create a file reader agent')
+    await finished(sessions, thread.id)
+    started = codex.received('thread/start')[0]['params']
+    assert started['config']['mcp_servers']['team']['default_tools_approval_mode'] == 'prompt'
+    assert started['sandbox'] == 'read-only'  # team access never enables host writes
+    assert started['approvalPolicy'] == 'untrusted'  # the CLI must be able to ask about MCP calls
+    async with sessions() as db:
+        worker = await db.scalar(select(Agent).where(Agent.owner_id == owner, Agent.name == 'File reader'))
+        assert worker is not None and worker.approval_mode == 'ask'
+        approved = await db.scalar(select(Approval).where(Approval.turn_id == (await crt_turns(sessions, thread.id))[0], Approval.tool == 'mcp__team__create_agent'))
+        assert approved.status == 'allowed' and approved.consumed_at is not None
+        assert await db.scalar(select(TeamSetupRequest).where(TeamSetupRequest.owner_id == owner))
+    events = await events_of(sessions, thread.id)
+    assert data_of(events, 'team.setup.applied')[0]['results'][0]['changes']
+
+
+@pytest.mark.parametrize('mode,origin', [('plan', 'person'), ('ask', 'outside'), ('ask', 'routine')])
+async def test_codex_team_mutations_preserve_policy_floor(crt, sessions, owner, codex, monkeypatch, mode, origin):
+    from app.team import service
+    from sqlalchemy import select
+    monkeypatch.setattr(settings, 'TEAM_ENABLED', True)
+    async with sessions() as db:
+        lead = await agent_store.create_agent(db, owner_id=owner, name='Coordinator', provider='codex', approval_mode=mode)
+        await service.set_lead(db, owner, lead.id)
+    codex.plan({'type': 'team', 'tool': 'create_agent', 'arguments': {'name': 'Forbidden worker', 'instructions': 'Read files.'}})
+    thread = await crt.create_thread(provider='codex', agent_id=lead.id)
+    await crt.send_turn(thread.id, 'create an agent', team_origin=origin)
+    await finished(sessions, thread.id)
+    assert codex.answers()[0]['result']['action'] == 'decline'
+    async with sessions() as db:
+        assert not await db.scalar(select(Agent).where(Agent.owner_id == owner, Agent.name == 'Forbidden worker'))

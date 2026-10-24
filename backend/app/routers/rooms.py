@@ -1,7 +1,7 @@
 """Shared conversations and member controls."""
 import json
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select
@@ -96,9 +96,11 @@ async def messages(room_id: int, rt=Depends(get_runtime)):
 
 
 @router.post('/{room_id}/messages', status_code=201)
-async def post(room_id: int, payload: Message, rt=Depends(get_runtime)):
+async def post(room_id: int, payload: Message, request: Request, rt=Depends(get_runtime)):
     try:
-        seq = await rt.rooms.post(room_id, payload.text)
+        from app.auth.middleware import principal_of
+        principal = principal_of(request.scope)
+        seq = await rt.rooms.post(room_id, payload.text, source={'origin': 'person' if principal is None or principal.is_admin else 'restricted'})
         # A saved post is independent of dispatch startup. Scheduler tick also
         # picks it up after a process restart.
         await rt.rooms.tick()

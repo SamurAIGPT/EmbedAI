@@ -61,7 +61,7 @@ the engine default. Changing an agent's engine affects new conversations.
   | `tools` | can run tools (commands, file edits) in the workspace |
   | `approvals` | its tool calls go through the approval gate |
   | `mcp` | can mount an MCP server this app gives it |
-  | `memory_tools` | mounts only the read-only past-conversation search ([MEMORY.md](MEMORY.md)); Codex and ACP agents set this, not `mcp`, so the team tools are not offered to them |
+  | `memory_tools` | mounts only the read-only past-conversation search ([MEMORY.md](MEMORY.md)); ACP agents set this without `mcp`; Claude and Codex also mount team tools through `mcp` |
   | `images` | accepts images attached to a message ([EVERYDAY.md](EVERYDAY.md)); an image for any other engine is refused with `images_unsupported` |
   | `resume` | a conversation continues with the engine's earlier context |
   | `computers` | its turns can run their tools in an agent computer |
@@ -282,7 +282,7 @@ Limits are per backend process (a restart forgets them until the next refusal).
   own engine is limited; a fallback chain of more than one engine; usage-limit
   meters read ahead of a refusal.
 - Model prices, context windows and usage-limit meters.
-- Images (attached text files work everywhere), team-tool MCP servers for engines other than Claude, and computers for engines other than Claude and Codex (Codex mounts the computer's tools and the read-only memory search; ACP agents get only the memory search).
+- Images (attached text files work everywhere), team-tool MCP servers for engines other than Claude and Codex, and computers for engines other than Claude and Codex (Codex mounts team tools, the computer's tools and the read-only memory search; ACP agents get only the memory search).
 - A long-lived engine process across turns (each turn starts one).
 
 

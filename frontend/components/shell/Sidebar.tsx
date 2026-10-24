@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, CalendarClock, Columns3, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, Columns3, Plus, Settings, SlidersHorizontal, Trash2, Crown } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import type { Agent, Thread } from "@/lib/api";
@@ -50,6 +50,9 @@ export function Sidebar({
   onNewChat,
   onManageAgents,
   onDeleteAgent,
+  onEditAgent,
+  onChangeLead,
+  leadAgentId = null,
   onNewAgent,
   onOpenRoutines,
   onOpenPlanner,
@@ -73,6 +76,9 @@ export function Sidebar({
   onNewChat: (agentId?: number) => void;
   onManageAgents?: () => void;
   onDeleteAgent?: (agent: Agent) => void;
+  onEditAgent?: (agent: Agent) => void;
+  onChangeLead?: (agent: Agent, remove: boolean) => Promise<void>;
+  leadAgentId?: number | null;
   // Open the new-agent form. Offered even when there are no agents yet.
   onNewAgent?: () => void;
   onOpenRoutines?: () => void;
@@ -133,7 +139,7 @@ export function Sidebar({
                   <>
                     <Avatar agentId={agent.id} name={agent.name} size="md" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{agent.name}</span>
+                      <span className="block truncate font-medium">{agent.name}{leadAgentId === agent.id ? " · Lead" : ""}</span>
                       {agent.title ? <span className="block truncate text-xs text-muted">{agent.title}</span> : null}
                     </span>
                     <StatusDot status={status} />
@@ -151,6 +157,8 @@ export function Sidebar({
                         {body}
                       </button>
                     )}
+                    {onEditAgent && <IconButton label={`Settings for ${agent.name}`} onClick={() => onEditAgent(agent)} className="size-8 text-muted touch:size-10"><Settings size={14} aria-hidden="true" /></IconButton>}
+                    {onChangeLead && <IconButton label={leadAgentId === agent.id ? `Remove lead role from ${agent.name}` : `Make ${agent.name} lead`} onClick={() => void onChangeLead(agent, leadAgentId === agent.id)} className="size-8 text-muted touch:size-10"><Crown size={14} aria-hidden="true" /></IconButton>}
                     {onDeleteAgent && (
                       <IconButton
                         label={`Delete ${agent.name}`}

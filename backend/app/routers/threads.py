@@ -207,7 +207,7 @@ async def delete_thread(thread_id: int, rt: ThreadRuntime = Depends(get_runtime)
 
 @router.post("/{thread_id}/turns", response_model=TurnResponse, status_code=202)
 async def send_turn(
-    thread_id: int, payload: TurnCreateRequest, rt: ThreadRuntime = Depends(get_runtime)
+    thread_id: int, payload: TurnCreateRequest, request: Request, rt: ThreadRuntime = Depends(get_runtime)
 ):
     """Send a message. The answer arrives as events (stream or poll); this returns
     as soon as the turn has started."""
@@ -215,8 +215,11 @@ async def send_turn(
     if thread.kind in ("room", "room_member"):
         raise _error(409, thread.kind + "_thread", "Talk to this agent in the room.")
     try:
+        from app.auth.middleware import principal_of
+        principal = principal_of(request.scope)
         return await rt.send_turn(
-            thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids, skills=payload.skills
+            thread_id, payload.prompt_text, attachment_ids=payload.attachment_ids, skills=payload.skills,
+            configuration_allowed=principal is None or principal.is_admin,
         )
     except SkillError as error:
         raise _error(error.status, error.code, error.message)

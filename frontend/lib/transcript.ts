@@ -23,7 +23,7 @@ export type TranscriptItem =
   | TeamJobItem
   | NeedsYouItem
   | { kind: "team_notice"; key: string; turnId: number | null; tone: "incident" | "escalation" | "refused" | "retried"; text: string; threadId: number | null }
-  | { kind: "team_setup"; key: string; turnId: number | null; requestId: string; undoAvailable: boolean; rows: { action: string; agentId: number; name: string }[] }
+  | { kind: "team_setup"; key: string; turnId: number | null; requestId: string; undoAvailable: boolean; rows: { action: string; agentId: number; name: string; changes?: { field: string; before: unknown; after: unknown }[] }[] }
   | { kind: "agent_created"; key: string; turnId: number | null; agentId: number; name: string; title: string }
   | { kind: "user"; key: string; turnId: number | null; text: string; attachments: AttachmentRef[]; skills?: string[] }
   | {
@@ -367,9 +367,14 @@ export function applyEvent(state: Transcript, event: ThreadEvent): Transcript {
     case "team.setup.applied": {
       if (typeof data.request_id !== "string" || !Array.isArray(data.results)) return base;
       const rows = data.results.flatMap((row: unknown) => {
-        const r = row as { action?: unknown; agent_id?: unknown; name?: unknown };
-        return typeof r?.action === "string" && typeof r.agent_id === "number" ? [{ action: r.action, agentId: r.agent_id, name: text(r.name) }] : [];
+        const r = row as { action?: unknown; agent_id?: unknown; name?: unknown; changes?: unknown };
+        const changes = Array.isArray(r?.changes) ? r.changes.flatMap((change: unknown) => {
+          const c = change as { field?: unknown; before?: unknown; after?: unknown };
+          return typeof c?.field === "string" ? [{ field: c.field, before: c.before, after: c.after }] : [];
+        }) : undefined;
+        return typeof r?.action === "string" && typeof r.agent_id === "number" ? [{ action: r.action, agentId: r.agent_id, name: text(r.name), ...(changes ? { changes } : {}) }] : [];
       });
+      if (state.items.some(item => item.kind === "team_setup" && item.requestId === data.request_id)) return base;
       return { ...base, items: [...state.items, { kind: "team_setup", key, turnId: id, requestId: data.request_id, undoAvailable: data.undo_available === true, rows }] };
     }
 

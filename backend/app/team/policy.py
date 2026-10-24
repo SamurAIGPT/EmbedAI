@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 
 # Origins that no person is watching: they may not create agents or rooms.
-UNATTENDED = ('outside', 'webhook', 'routine', 'harness')
+UNATTENDED = ('outside', 'webhook', 'routine', 'harness', 'restricted')
 # Least to most trusted-away; a room turn takes the strictest origin it read.
-_RANK = ('person', 'harness', 'routine', 'webhook', 'outside')
+_RANK = ('person', 'restricted', 'harness', 'routine', 'webhook', 'outside')
 
 
 def strictest(origins):
@@ -22,6 +22,7 @@ class TurnTeam:
     origin: str = 'person'
     depth: int = 0
     delegation_enabled: bool = True
+    configuration_allowed: bool = True
 
 
 def automatic(tool, mode, team, arguments):
@@ -30,7 +31,10 @@ def automatic(tool, mode, team, arguments):
     if team is None:
         return 'denied', 'no_team'
     name = tool.removeprefix('mcp__team__')
-    if name in ('list_agents', 'list_rooms', 'list_team_setup', 'list_threads', 'job_status'):
+    if not team.configuration_allowed and name in ('create_agent', 'create_room', 'propose_team_setup', 'propose_bot_deletion',
+                                                  'propose_profile', 'propose_model', 'create_routine', 'manage_routine', 'skill_manage', 'close_thread'):
+        return 'denied', 'admin_scope_required'
+    if name in ('list_agents', 'list_rooms', 'list_team_setup', 'list_threads', 'job_status', 'list_management_capabilities', 'list_routines', 'preview_schedule', 'skills_list'):
         return 'allowed', 'team_read'
     if name in ('ask_agent', 'delegate'):
         if not team.delegation_enabled:
@@ -41,6 +45,10 @@ def automatic(tool, mode, team, arguments):
             return 'denied', 'plan_mode'
         if team.origin in ('outside', 'webhook'):
             return None
+    elif name in ('propose_profile', 'propose_model', 'create_routine', 'manage_routine', 'skill_manage'):
+        if mode == 'plan' or team.origin in UNATTENDED:
+            return 'denied', 'configuration_forbidden'
+        return None  # Configuration outside the setup plan needs a person decision.
     elif name in ('create_agent', 'create_room', 'propose_team_setup', 'propose_bot_deletion', 'close_thread'):
         if mode == 'plan':
             return 'denied', 'plan_mode'

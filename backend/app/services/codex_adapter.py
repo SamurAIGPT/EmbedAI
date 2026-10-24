@@ -22,7 +22,10 @@ checked before the turn starts (a mismatch fails the turn):
                   asked and nothing can be written
     tools off     (LOCAL_TOOLS_ENABLED unset, no agent computer) as plan
 
-Any question that still arrives in plan or with tools off is declined. MCP
+Native-tool questions in plan or with local tools off are declined. Team MCP
+calls use the app's team policy: read calls can proceed while mutations are
+refused in plan. With team tools attached the upstream policy permits MCP
+elicitation even when the filesystem sandbox remains read-only. MCP
 tool approvals Codex raises for servers in the person's own Codex config go
 through the gate too; every other question this app does not know is
 refused. Codex reads files under its read-only sandbox without asking, more
@@ -209,12 +212,8 @@ class CodexAdapter:
     key = "codex"
     label = "Codex"
     kind = "cli"
-    # Tools with approvals and resume. No team tools (`mcp`) and no images. The
-    # only MCP servers this app mounts are the read-only past-conversation search
-    # (`memory_tools`) and, for an agent with a computer, that computer's tools
-    # with Codex's own shell and file tools switched off.
     capabilities = Capabilities(
-        tools=True, approvals=True, mcp=False, images=False, resume=True, computers=True, memory_tools=True
+        tools=True, approvals=True, mcp=True, images=False, resume=True, computers=True, memory_tools=True
     )
     models: list[ModelOption] = []
     custom_models = True
@@ -366,6 +365,10 @@ class _CodexTurn:
         self.tools = bool(app_settings.get("LOCAL_TOOLS_ENABLED")) or self.computer is not None
         self.mode = self.ctx.approval_mode or "ask"
         self.policy = codex_policy(self.mode, self.tools, self.computer is not None)
+        if self.ctx.team_launch is not None and (not self.tools or self.mode == 'plan'):
+            # Codex 0.164 refuses MCP elicitation with approvalPolicy=never. The
+            # app still gates every team call; native tools stay read-only/denied.
+            self.policy = CodexPolicy('untrusted', 'read-only', 'readOnly')
         self.max_text = app_settings.get("LOCAL_MAX_OUTPUT_BYTES")
         self.clock = TurnClock(app_settings.get("LOCAL_TASK_TIMEOUT_SECONDS"))
         self.workspace = self.ctx.workspace or local_claude_runner.workspace_dir()
@@ -472,6 +475,12 @@ class _CodexTurn:
                 "enabled_tools": list(memory_bridge.TOOLS), "default_tools_approval_mode": "approve",
             }})
             instructions = f"{instructions}\n\n{memory_bridge.TOOL_NOTE}" if instructions else memory_bridge.TOOL_NOTE
+        if self.ctx.team_launch is not None:
+            team_launch = self.ctx.team_launch
+            common.setdefault("config", {}).setdefault("mcp_servers", {})["team"] = {
+                "command": team_launch.command, "args": list(team_launch.args), "env": dict(team_launch.env),
+                "default_tools_approval_mode": "prompt",
+            }
         if instructions:
             common["developerInstructions"] = instructions
         try:
@@ -703,6 +712,9 @@ class _CodexTurn:
                 # activity rows treat a computer call the same whichever engine made it.
                 name = COMPUTER_TOOL_PREFIX + item["tool"]
                 summary = summarize_tool(name, tool_input)
+            elif item.get("server") == "team" and self.ctx.team_launch is not None and isinstance(item.get("tool"), str):
+                name = "mcp__team__" + item["tool"]
+                summary = summarize_tool(name, tool_input)
             else:
                 name = f"mcp:{item.get('server')}.{item.get('tool')}"
                 summary = name
@@ -784,7 +796,9 @@ class _CodexTurn:
                 return {"decision": "approved" if allow else "denied"}
             return {"decision": "accept" if allow else "decline"}
 
-        if not self.tools or self.mode == "plan":
+        team_call = kind == "mcp" and params.get("serverName") == "team" and self.ctx.team_launch is not None
+        # Team policy decides read/consult versus mutation even with local shell tools off.
+        if not team_call and (not self.tools or self.mode == "plan"):
             self.rpc.respond(rid, payload(False))
             return
 
@@ -816,7 +830,19 @@ class _CodexTurn:
         else:
             server = params.get("serverName") if isinstance(params.get("serverName"), str) else "mcp"
             text = params.get("message") if isinstance(params.get("message"), str) else ""
-            if self.computer is not None:
+            if team_call:
+                found = self._computer_call(server, text, meta)
+                if found is None:
+                    self.rpc.respond(rid, payload(False))
+                    return
+                name, tool_input = found
+                from app.team.mcp_server import TOOLS
+                if name not in {entry['name'] for entry in TOOLS}:
+                    self.rpc.respond(rid, payload(False))
+                    return
+                tool, approval_kind = "mcp__team__" + name, "other"
+                summary = summarize_tool(tool, tool_input)
+            elif self.computer is not None:
                 # Only the computer's own tools can be asked about here.
                 found = self._computer_call(server, text, meta) if server == COMPUTER_SERVER else None
                 if found is None:

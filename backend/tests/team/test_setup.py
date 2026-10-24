@@ -244,8 +244,8 @@ async def test_tools_apply_through_the_turn_and_record_events(harness, sessions,
     async def handler(ctx, sink, gate):
         run = rt._runs[ctx.turn_id]
         seen['setup'] = await setup.call(rt, run, 'list_team_setup', {})
-        seen['made'] = await setup.call(rt, run, 'propose_team_setup', {'operations': [{'op': 'create', 'name': 'Scribe'}]})
-        seen['again'] = await setup.call(rt, run, 'propose_team_setup', {'operations': [{'op': 'create', 'name': 'Scribe'}]})
+        seen['made'] = await setup.call(rt, run, 'propose_team_setup', {'operations': [{'op': 'create', 'name': 'Scribe', 'instructions': 'Summarize files.'}]})
+        seen['again'] = await setup.call(rt, run, 'propose_team_setup', {'operations': [{'op': 'create', 'name': 'Scribe', 'instructions': 'Summarize files.'}]})
         seen['deleted'] = await setup.call(rt, run, 'propose_bot_deletion', {'agent_id': worker.id, 'reason': 'Not needed'})
         try:
             await setup.call(rt, run, 'propose_bot_deletion', {'agent_id': lead.id, 'reason': 'x'})
@@ -264,3 +264,69 @@ async def test_tools_apply_through_the_turn_and_record_events(harness, sessions,
         assert await db.scalar(select(Agent.id).where(Agent.name == 'Scribe'))
         kinds = set((await db.execute(select(TeamEvent.kind))).scalars())
         assert {'agent_created', 'agent_deleted'} <= kinds
+
+
+async def test_receipt_reuse_binds_plan_caller_and_source(sessions, owner, team):
+    lead, worker = team
+    plan = {'operations': [{'op': 'create', 'name': 'Once'}]}
+    await propose(sessions, owner, lead, plan, request_id='bound')
+    async with sessions() as db:
+        with pytest.raises(service.TeamError) as exc:
+            await setup.propose(db, owner, lead, 2, 11, plan, check_engine=engine_check, request_id='bound')
+    assert exc.value.code == 'request_conflict'
+    with pytest.raises(service.TeamError) as exc:
+        await propose(sessions, owner, lead, {'operations': [{'op': 'create', 'name': 'Other'}]}, request_id='bound')
+    assert exc.value.code == 'request_conflict'
+    async with sessions() as db:
+        await service.set_lead(db, owner, worker)
+    with pytest.raises(service.TeamError) as exc:
+        await propose(sessions, owner, worker, plan, request_id='bound')
+    assert exc.value.code == 'request_conflict'
+
+
+async def test_receipt_undo_readiness_changes_after_first_chat(sessions, owner, team):
+    result = await propose(sessions, owner, team[0], {'operations': [{'op': 'create', 'name': 'Unused'}]}, request_id='status')
+    async with sessions() as db:
+        row = await setup.existing(db, owner, 'status')
+        assert (await setup.undo_status(db, row))['available']
+        db.add(Thread(owner_id=owner, provider='claude', agent_id=result['results'][0]['agent_id']))
+        await db.commit()
+        assert (await setup.undo_status(db, row))['available'] is False
+
+
+async def test_stop_between_validation_and_commit_rolls_back_plan(sessions, owner, team):
+    checks = 0
+    async def authorize(db):
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise service.TeamError('forbidden', 'Stopped before commit')
+    async with sessions() as db:
+        with pytest.raises(service.TeamError):
+            await setup.propose(db, owner, team[0], 1, 10, {'operations': [{'op': 'create', 'name': 'Stopped'}]}, check_engine=engine_check, authorize=authorize)
+    async with sessions() as db:
+        assert not await db.scalar(select(Agent.id).where(Agent.owner_id == owner, Agent.name == 'Stopped'))
+        assert not await db.scalar(select(TeamSetupRequest).where(TeamSetupRequest.owner_id == owner))
+
+
+async def test_setup_plan_redacts_secrets_but_retries_match_original(sessions, owner, team):
+    secret = 'sk-' + 'a' * 48
+    plan = {'operations': [{'op': 'create', 'name': 'Sanitized', 'instructions': f'Summarize files. Key: {secret}'}]}
+    result = await propose(sessions, owner, team[0], plan, request_id='sanitized')
+    async with sessions() as db:
+        row = await setup.existing(db, owner, 'sanitized')
+        import json
+        assert secret not in json.dumps(row.plan) and secret not in json.dumps(row.result)
+    replay = await propose(sessions, owner, team[0], plan, request_id='sanitized')
+    assert replay['replayed'] is True and replay['results'] == result['results']
+
+
+async def test_undo_keeps_created_agent_promoted_to_lead(sessions, owner, team):
+    made = await propose(sessions, owner, team[0], {'operations': [{'op': 'create', 'name': 'Promoted'}]}, request_id='promoted')
+    async with sessions() as db:
+        await service.set_lead(db, owner, made['results'][0]['agent_id'])
+        row = await setup.existing(db, owner, 'promoted')
+        assert (await setup.undo_status(db, row))['available'] is False
+        with pytest.raises(service.TeamError) as exc:
+            await setup.undo(db, owner, 'promoted')
+        assert exc.value.code == 'changed_since'

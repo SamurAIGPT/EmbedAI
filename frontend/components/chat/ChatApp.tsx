@@ -34,6 +34,9 @@ import { chatHref, parsePanel, type Panel } from "@/lib/panel";
 import { parseSkillCommand, skillErrorText, toggleSkill, type SkillSummary } from "@/lib/skills";
 import { RoomList } from "./RoomList";
 import { RoomView } from "./RoomView";
+import { collaboration, type TeamState } from "@/lib/collaboration";
+import { useSession } from "@/components/AuthGate";
+import { SETUP_STARTER } from "./AgentSetupEntry";
 import { TeamPanel } from "./TeamPanel";
 import { parseRoom, roomHref } from "@/lib/rooms";
 import { useThreadStream } from "./useThreadStream";
@@ -114,6 +117,9 @@ export function ChatApp() {
   const threadId = parseThreadId(params.get("thread"));
   const roomId = parseRoom(params.get("room"));
   const [teamOpen, setTeamOpen] = useState(false);
+  const [teamState, setTeamState] = useState<TeamState | null>(null);
+  const [editAgent, setEditAgent] = useState<Agent | null>(null);
+  const { session } = useSession();
 
   const [gate, setGate] = useState<Gate>({ phase: "loading" });
   // Bumped by "Check again": Claude may have been installed or signed in since.
@@ -288,7 +294,28 @@ export function ChatApp() {
     return () => {
       cancelled = true;
     };
-  }, [ready, agentTick]);
+  }, [ready, agentTick, transcript.runningTurnId]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let live = true;
+    collaboration.team().then(value => { if (live) setTeamState(value); }).catch(() => {});
+    return () => { live = false; };
+  }, [ready, agentTick, transcript.runningTurnId]);
+
+  useEffect(() => {
+    const openAgent = (event: Event) => {
+      const detail = (event as CustomEvent<{ id: number; edit: boolean }>).detail;
+      if (detail.edit) {
+        const target = agents?.find(agent => agent.id === detail.id);
+        if (target) { setEditAgent(target); setAgentsCreate(false); setAgentsOpen(true); }
+      } else {
+        setNewAgentId(detail.id); setNewModel(null); router.push(`/chat?agent=${detail.id}`); setFocusComposer(true);
+      }
+    };
+    window.addEventListener("open-dots:open-agent", openAgent);
+    return () => window.removeEventListener("open-dots:open-agent", openAgent);
+  }, [agents, router]);
 
   useEffect(() => {
     if (!ready) return;
@@ -622,9 +649,15 @@ export function ChatApp() {
         setFocusComposer(true);
         router.push("/chat");
       }}
-      onManageAgents={agents !== null ? () => { setAgentsCreate(false); setAgentsOpen(true); } : undefined}
+      onManageAgents={agents !== null ? () => { setEditAgent(null); setAgentsCreate(false); setAgentsOpen(true); } : undefined}
+      leadAgentId={teamState?.team?.lead_agent_id ?? null}
+      onChangeLead={session?.scopes.includes("admin") ? async (agent, remove) => {
+        try { setTeamState(await (remove ? collaboration.clearLead(agent.id) : collaboration.lead(agent.id))); setAgentTick(value => value + 1); }
+        catch (err) { setManageError(err instanceof ApiError ? err.message : "Could not change the lead."); }
+      } : undefined}
+      onEditAgent={session?.scopes.includes("admin") ? agent => { setEditAgent(agent); setAgentsCreate(false); setAgentsOpen(true); } : undefined}
       onDeleteAgent={agents !== null ? (agent) => { setAgentsCreate(false); setDeleteAgentTarget(agent); setAgentsOpen(true); } : undefined}
-      onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
+      onNewAgent={agents !== null ? () => { setEditAgent(null); setAgentsCreate(true); setAgentsOpen(true); } : undefined}
       collaboration={ready ? <RoomList selected={roomId} onTeam={() => setTeamOpen(true)} onNavigate={() => setDrawerOpen(false)} /> : undefined}
       onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
       onOpenPlanner={ready && agents !== null ? () => setPlannerOpen(true) : undefined}
@@ -732,8 +765,16 @@ export function ChatApp() {
         <AgentsPanel
           agents={agents}
           startCreating={agentsCreate}
+          initialEditAgent={editAgent}
+          onSetupChat={id => {
+            setAgentTick(value => value + 1);
+            setAgentsOpen(false); setEditAgent(null); setDeleteAgentTarget(null);
+            const target = threads?.find(item => item.agent_id === id && !item.archived_at && item.session_state !== "broken");
+            setNewAgentId(id); setNewModel(null); setDraft(SETUP_STARTER); setFocusComposer(true);
+            router.push(target ? `/chat?thread=${target.id}` : `/chat?agent=${id}`);
+          }}
           initialDeleteAgent={deleteAgentTarget}
-          onClose={() => { setAgentsOpen(false); setDeleteAgentTarget(null); }}
+          onClose={() => { setAgentsOpen(false); setEditAgent(null); setDeleteAgentTarget(null); }}
           onChanged={() => { setAgentTick((n) => n + 1); setDeleteAgentTarget(null); }}
           onCreated={(agent) => setNewAgentId(agent.id)}
         />

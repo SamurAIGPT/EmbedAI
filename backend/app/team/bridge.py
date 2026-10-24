@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from sqlalchemy import select, update
 from app.db.models import Approval, Turn, Agent
 from app.db.transactions import begin_write
-from app.team import fence, notices, policy, service, setup
+from app.team import fence, management, notices, policy, service, setup
 
 
 def canonical(value):
@@ -111,13 +111,8 @@ class TeamBridge:
             if name == 'list_agents':
                 rows = (await db.execute(select(Agent).where(Agent.team_id == caller.team_id, Agent.owner_id == rt.owner_id, Agent.archived_at.is_(None)).order_by(Agent.id))).scalars()
                 return {'agents': [{'id': a.id, 'name': fence.line(a.name), 'title': fence.line(a.title), 'can_delegate': a.delegation_enabled} for a in rows]}
-            if name == 'create_agent':
-                # A permission card cannot widen the immutable origin or plan floor.
-                if run.ctx.approval_mode == 'plan' or run.ctx.team.origin in policy.UNATTENDED:
-                    raise service.TeamError('forbidden', 'Creating an agent is unavailable for this turn.')
-                agent = await service.create_specialist(db, rt.owner_id, run.agent_id, run.turn_id, args)
-                await run.recorder.emit('team.agent.created', {'agent_id': agent.id, 'name': agent.name, 'title': agent.title, 'created_by_agent_id': run.agent_id, 'undo_until_used': True})
-                return {'agent_id': agent.id, 'name': agent.name, 'approval_mode': 'ask'}
+        if name in management.TOOLS:
+            return await management.call(rt, run, name, args)
         if name in setup.TOOLS:
             return await setup.call(rt, run, name, args)
         if name == 'ask_agent':

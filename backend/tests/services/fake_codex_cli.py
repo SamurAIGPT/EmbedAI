@@ -179,21 +179,22 @@ def play(thread_id, turn_id, step):
         log(event="approval_answer", answer=answer)
         message(thread_id, turn_id, "mcp done")
         complete(thread_id, turn_id)
-    elif kind == "computer":
+    elif kind in ("computer", "team"):
+        server_name = step.get("server", kind)
         tool, arguments = step.get("tool", "exec"), step.get("arguments", {})
         item_id = "mcp-" + uuid.uuid4().hex[:8]
-        item = {"type": "mcpToolCall", "id": item_id, "server": "computer", "tool": tool, "status": "inProgress", "arguments": arguments}
+        item = {"type": "mcpToolCall", "id": item_id, "server": server_name, "tool": tool, "status": "inProgress", "arguments": arguments}
         notify("item/started", {"threadId": thread_id, "turnId": turn_id, "item": item})
         answer = ask("mcpServer/elicitation/request", {
-            "threadId": thread_id, "turnId": turn_id, "serverName": "computer", "mode": "form",
-            "message": f'Allow the computer MCP server to run tool "{tool}"?',
+            "threadId": thread_id, "turnId": turn_id, "serverName": server_name, "mode": "form",
+            "message": f'Allow the {server_name} MCP server to run tool "{tool}"?',
             "_meta": {"codex_approval_kind": "mcp_tool_call", "tool_params": arguments},
             "requestedSchema": {"type": "object", "properties": {}},
         })
         log(event="approval_answer", answer=answer)
         accepted = isinstance(answer, dict) and answer.get("result", {}).get("action") == "accept"
         if accepted:
-            text, is_error = call_mcp(thread_configs[thread_id], "computer", tool, arguments)
+            text, is_error = call_mcp(thread_configs[thread_id], server_name, tool, arguments)
             log(event="mcp_result", content=text, is_error=is_error)
         notify("item/completed", {"threadId": thread_id, "turnId": turn_id, "item": {**item, "status": "completed" if accepted else "declined"}})
         message(thread_id, turn_id, "ran" if accepted else "declined")

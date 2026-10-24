@@ -20,7 +20,9 @@ TEXT_FIELDS = {'name': 80, 'title': 120, 'description': 200}
 EDITABLE = ('name', 'title', 'description', 'instructions', 'provider', 'model')
 CREATE_KEYS = set(EDITABLE) | {'op', 'share_workspace'}
 UPDATE_KEYS = {'op', 'agent_id', 'fields', 'expected_revision'}
-HASHED = EDITABLE + ('team_id', 'archived_at', 'approval_mode', 'workspace_path')
+HASHED = EDITABLE + ('team_id', 'archived_at', 'approval_mode', 'workspace_path', 'delegation_enabled',
+                    'memory_enabled', 'recall_enabled', 'memory_upkeep', 'compaction_summary', 'use_helper',
+                    'fallback_provider', 'fallback_model', 'pinned')
 ACTIVE_JOBS = ('queued', 'running', 'needs_input', 'waiting', 'resume')
 
 
@@ -30,7 +32,7 @@ def digest(value):
 
 def revision(agent):
     """Short hash of the fields a plan may edit; pins an update to what the lead saw."""
-    return digest({f: getattr(agent, f) for f in EDITABLE})[:16]
+    return full_hash(agent)[:16]
 
 
 def full_hash(agent):
@@ -43,22 +45,21 @@ def snapshot(agent):
 
 
 async def engine_catalog(rt):
-    from app.services.engine_registry import static_models
-    rows = []
-    for key, adapter in rt.adapters.items():
-        rows.append({'id': key, 'models': [m.id for m in static_models(adapter)][:20]})
-    return rows
+    return await rt.engines.describe()
 
 
 async def catalog(db, owner, caller_id, *, engines):
+    caller = await member(db, owner, caller_id)
     team = await team_for(db, owner)
-    if not team:
+    if not team or caller.team_id != team.id:
         raise TeamError('no_team', 'Choose a team lead first.')
     rows = (await db.execute(select(Agent).where(Agent.owner_id == owner, Agent.team_id == team.id, Agent.archived_at.is_(None)).order_by(Agent.id))).scalars()
     return {
         'team': fence.line(team.name), 'lead_agent_id': team.lead_agent_id,
         'agents': [{'id': a.id, 'name': fence.line(a.name), 'title': fence.line(a.title or ''), 'provider': a.provider, 'model': a.model,
-                    'is_lead': a.id == team.lead_agent_id, 'revision': revision(a)} for a in rows],
+                    'is_lead': a.id == team.lead_agent_id, 'revision': revision(a),
+                    'description': fence.line(a.description or ''), 'instructions': agent_memory.redact_secrets(a.instructions or '')[0],
+                    'workspace_path': a.workspace_path} for a in rows],
         'engines': engines,
         'limits': {'max_operations': MAX_OPERATIONS, 'max_created_per_turn': settings.TEAM_MAX_CREATED_PER_TURN, 'max_agents': settings.TEAM_MAX_AGENTS},
         'scope': 'You may create specialists and edit name, title, description, instructions and engine of teammates. Permissions, approvals and memory are never changed here.',
@@ -97,10 +98,12 @@ async def validate(db, owner, team, caller, plan, *, turn_id, check_engine):
     """Normalise and check a plan against the current state. Raises TeamError."""
     if team is None or caller.team_id != team.id or team.lead_agent_id != caller.id:
         raise TeamError('lead_only', 'Only the team lead can change the team.')
-    operations = plan.get('operations') if isinstance(plan, dict) else None
+    if not isinstance(plan, dict):
+        raise TeamError('invalid_input', 'A plan must be an object.')
+    operations = plan.get('operations')
     if set(plan or ()) - {'operations', 'summary'} or not isinstance(operations, list) or not 1 <= len(operations) <= MAX_OPERATIONS:
         raise TeamError('invalid_input', f'A plan needs one to {MAX_OPERATIONS} operations.')
-    live = list((await db.execute(select(Agent).where(Agent.owner_id == owner, Agent.archived_at.is_(None)))).scalars())
+    live = list((await db.execute(select(Agent).where(Agent.owner_id == owner, Agent.archived_at.is_(None)).order_by(Agent.id).with_for_update().execution_options(populate_existing=True))).scalars())
     names = {a.id: a.name for a in live}
     out, touched, creating = [], set(), 0
     for raw in operations:
@@ -116,6 +119,8 @@ async def validate(db, owner, team, caller, plan, *, turn_id, check_engine):
             if 'model' not in raw:
                 fields['model'] = caller.model if fields['provider'] == caller.provider else None
             check_engine(fields['provider'], fields['model'])
+            if 'share_workspace' in raw and type(raw['share_workspace']) is not bool:
+                raise TeamError('invalid_input', 'share_workspace must be a boolean.')
             if raw.get('share_workspace') is True:
                 if not caller.workspace_path:
                     raise TeamError('project_required', 'Give the lead a project folder first.')
@@ -162,6 +167,46 @@ async def validate(db, owner, team, caller, plan, *, turn_id, check_engine):
     return out
 
 
+def redacted(value):
+    if isinstance(value, str):
+        return agent_memory.redact_secrets(value)[0]
+    if isinstance(value, dict):
+        return {key: redacted(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redacted(item) for item in value]
+    return value
+
+
+def changes(before, after):
+    def safe(value):
+        return agent_memory.redact_secrets(value)[0] if isinstance(value, str) else value
+    return [{'field': key, 'before': safe(before.get(key)), 'after': safe(value)}
+            for key, value in after.items() if key not in before or before[key] != value]
+
+
+async def undo_status(db, row):
+    if row.kind != 'setup' or row.state != 'applied':
+        return {'available': False, 'reason': 'This change is no longer undoable.'}
+    team = await team_for(db, row.owner_id)
+    if team is None or team.id != row.team_id:
+        return {'available': False, 'reason': 'The team changed.'}
+    for kind in ('created', 'updated'):
+        for entry in (row.undo or {}).get(kind, []):
+            agent = await db.get(Agent, entry['agent_id'])
+            if agent is None or agent.archived_at is not None or full_hash(agent) != entry['hash']:
+                return {'available': False, 'reason': 'An agent changed after this setup.'}
+            if kind == 'created':
+                if agent.id == team.lead_agent_id:
+                    return {'available': False, 'reason': 'This agent is now the team lead.'}
+                used = await db.scalar(select(Thread.id).where(Thread.agent_id == agent.id).limit(1))
+                used = used or await db.scalar(select(AgentJob.id).where((AgentJob.assignee_agent_id == agent.id) | (AgentJob.requester_agent_id == agent.id)).limit(1))
+                if used:
+                    return {'available': False, 'reason': 'A created agent has already been used.'}
+            if await busy(db, agent.id):
+                return {'available': False, 'reason': 'An agent is working right now.'}
+    return {'available': True, 'reason': None}
+
+
 def replay(row):
     return {**row.result, 'request_id': row.request_id, 'state': row.state, 'replayed': True}
 
@@ -170,18 +215,32 @@ async def existing(db, owner, request_id):
     return await db.scalar(select(TeamSetupRequest).where(TeamSetupRequest.owner_id == owner, TeamSetupRequest.request_id == request_id))
 
 
-async def propose(db, owner, caller_id, turn_id, thread_id, plan, *, check_engine, request_id=None):
+async def propose(db, owner, caller_id, turn_id, thread_id, plan, *, check_engine, request_id=None, authorize=None, guided=False):
     await begin_write(db)
-    caller = await member(db, owner, caller_id)
     team = await team_for(db, owner, lock=True)
+    caller = await db.get(Agent, caller_id, with_for_update=True, populate_existing=True)
+    if caller is None or caller.owner_id != owner or caller.archived_at is not None or team is None or caller.team_id != team.id or team.lead_agent_id != caller_id:
+        raise TeamError('lead_only', 'Only the current team lead can change the team.')
+    if authorize:
+        await authorize(db)
     request_id = request_id or digest([turn_id, plan])[:32]
     if not isinstance(request_id, str) or not 0 < len(request_id) <= 64:
         raise TeamError('invalid_input', 'request_id must be at most 64 characters.')
     row = await existing(db, owner, request_id)
     if row is not None:
+        if row.kind != 'setup' or row.lead_agent_id != caller_id or row.thread_id != thread_id or row.plan.get('_request_digest', digest(row.plan)) != digest(plan):
+            raise TeamError('request_conflict', 'This request_id belongs to a different plan or conversation. Use a new request_id for a changed plan.')
         found = replay(row)
         await db.rollback()
         return found
+    if guided:
+        for operation in plan.get('operations', []) if isinstance(plan, dict) else []:
+            if not isinstance(operation, dict):
+                continue
+            if operation.get('op') == 'create' and (not isinstance(operation.get('instructions'), str) or not operation['instructions'].strip()):
+                raise TeamError('instructions_required', "Describe this specialist's purpose and expected output in its instructions.")
+            if operation.get('op') == 'update' and not operation.get('expected_revision'):
+                raise TeamError('revision_required', 'Read list_team_setup and include expected_revision before editing an agent.')
     operations = await validate(db, owner, team, caller, plan, turn_id=turn_id, check_engine=check_engine)
     results, undo = [], {'created': [], 'updated': []}
     for op in operations:
@@ -191,7 +250,8 @@ async def propose(db, owner, caller_id, turn_id, thread_id, plan, *, check_engin
             db.add(agent)
             await db.flush()
             audit(db, team, 'agent_created', agent_id=agent.id, thread_id=thread_id, data={'turn_id': turn_id, 'instructions_length': len(agent.instructions or '')})
-            results.append({'action': 'created', 'agent_id': agent.id, 'name': agent.name})
+            results.append({'action': 'created', 'agent_id': agent.id, 'name': agent.name,
+                            'changes': changes({}, {**snapshot(agent), 'workspace_path': agent.workspace_path, 'approval_mode': 'ask'})})
             undo['created'].append({'agent_id': agent.id, 'hash': None})
         else:
             agent = await db.get(Agent, op['agent_id'], with_for_update=True)
@@ -199,16 +259,23 @@ async def propose(db, owner, caller_id, turn_id, thread_id, plan, *, check_engin
             for key, value in op['fields'].items():
                 setattr(agent, key, value)
             audit(db, team, 'agent_updated', agent_id=agent.id, thread_id=thread_id, data={'turn_id': turn_id, 'fields': sorted(op['fields'])})
-            results.append({'action': 'updated', 'agent_id': agent.id, 'name': agent.name})
+            results.append({'action': 'updated', 'agent_id': agent.id, 'name': agent.name,
+                            'changes': changes(before, {key: getattr(agent, key) for key in op['fields']})})
             undo['updated'].append({'agent_id': agent.id, 'before': before, 'hash': None})
     await db.flush()
     for entry in undo['created']:
         entry['hash'] = full_hash(await db.get(Agent, entry['agent_id']))
     for entry in undo['updated']:
         entry['hash'] = full_hash(await db.get(Agent, entry['agent_id']))
-    result = {'results': results}
+    for result_row in results:
+        saved = await db.get(Agent, result_row['agent_id'])
+        check_engine(saved.provider, saved.model)
+    if authorize:
+        await authorize(db)
+    result = {'results': results, 'model_note': 'New conversations use the saved model defaults. Existing conversations retain their model.',
+              'capability_note': 'App connections, skills, computers and routines require their own setup.'}
     db.add(TeamSetupRequest(owner_id=owner, team_id=team.id, lead_agent_id=caller.id, thread_id=thread_id, turn_id=turn_id,
-                            request_id=request_id, kind='setup', plan=plan, state='applied', result=result, undo=undo, decided_at=now()))
+                            request_id=request_id, kind='setup', plan={**redacted(plan), '_request_digest': digest(plan)}, state='applied', result=result, undo=undo, decided_at=now()))
     await db.commit()
     return {**result, 'request_id': request_id, 'state': 'applied', 'replayed': False}
 
@@ -229,6 +296,9 @@ async def undo(db, owner, request_id):
         if agent is None or agent.archived_at is not None or full_hash(agent) != entry['hash']:
             await db.rollback()
             raise TeamError('changed_since', 'Something changed since this was applied, so it was left alone.')
+        if agent.id == team.lead_agent_id:
+            await db.rollback()
+            raise TeamError('changed_since', 'This agent is now the team lead, so it was kept.')
         used = await db.scalar(select(Thread.id).where(Thread.agent_id == agent.id).limit(1))
         used = used or await db.scalar(select(AgentJob.id).where((AgentJob.assignee_agent_id == agent.id) | (AgentJob.requester_agent_id == agent.id)).limit(1))
         if used:
@@ -359,8 +429,8 @@ async def close_thread(db, owner, caller_id, thread_id, *, current_thread_id):
 
 # --- tool dispatch (called by the team bridge) ----------------------------------------
 
-TOOLS = ('list_team_setup', 'propose_team_setup', 'propose_bot_deletion', 'list_threads', 'close_thread')
-WRITES = ('propose_team_setup', 'propose_bot_deletion')
+TOOLS = ('create_agent', 'list_team_setup', 'propose_team_setup', 'propose_bot_deletion', 'list_threads', 'close_thread')
+WRITES = ('create_agent', 'propose_team_setup', 'propose_bot_deletion')
 
 
 async def call(rt, run, name, args):
@@ -378,11 +448,19 @@ async def call(rt, run, name, args):
             return {'threads': await list_threads(db, owner, caller)}
         if name == 'close_thread':
             return await close_thread(db, owner, caller, args.get('thread_id'), current_thread_id=run.thread_id)
-        if name == 'propose_team_setup':
-            plan = {k: v for k, v in args.items() if k != 'request_id'}
-            result = await propose(db, owner, caller, run.turn_id, run.thread_id, plan, check_engine=_checker(rt), request_id=args.get('request_id'))
-            if not result['replayed']:
+        if name in ('create_agent', 'propose_team_setup'):
+            if name == 'create_agent':
+                if set(args) - {'name', 'title', 'instructions', 'share_workspace'}:
+                    raise TeamError('invalid_input', 'Unrecognised specialist settings.')
+                plan = {'operations': [{'op': 'create', **args}]}
+            else:
+                plan = {k: v for k, v in args.items() if k != 'request_id'}
+            result = await propose(db, owner, caller, run.turn_id, run.thread_id, plan, check_engine=_checker(rt),
+                                   request_id=args.get('request_id'), authorize=_authorizer(rt, run), guided=True)
+            if result['state'] == 'applied':
                 await run.recorder.emit('team.setup.applied', {'request_id': result['request_id'], 'results': result['results'], 'undo_available': True})
+            if name == 'create_agent':
+                result = {**result, **result['results'][0], 'approval_mode': 'ask'}
             return result
         record = await prepare_deletion(db, owner, caller, run.turn_id, run.thread_id, {k: v for k, v in args.items() if k != 'request_id'}, request_id=args.get('request_id'))
         previous = await existing(db, owner, record['request_id'])
@@ -397,6 +475,21 @@ async def call(rt, run, name, args):
     result = {'results': [{'action': 'deleted', 'agent_id': record['agent_id'], 'name': record['name']}], 'request_id': record['request_id'], 'state': 'applied', 'replayed': False}
     await run.recorder.emit('team.setup.applied', {'request_id': record['request_id'], 'results': result['results'], 'undo_available': False})
     return result
+
+
+def _authorizer(rt, run):
+    async def authorize(db):
+        from app.core import app_settings
+        from app.team import policy
+        turn = await db.get(Turn, run.turn_id, with_for_update=True, populate_existing=True)
+        thread = await db.get(Thread, run.thread_id)
+        if (run.ctx.aborted or not app_settings.get('TEAM_ENABLED') or turn is None or turn.status != 'running'
+                or turn.owner_token != run.owner_token or turn.origin in policy.UNATTENDED
+                or thread is None or thread.owner_id != rt.owner_id or thread.agent_id != run.agent_id
+                or run.ctx.approval_mode == 'plan' or run.ctx.team.origin in policy.UNATTENDED
+                or not run.ctx.team.configuration_allowed):
+            raise TeamError('forbidden', 'This turn no longer has permission to change the team.')
+    return authorize
 
 
 def _checker(rt):

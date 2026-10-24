@@ -50,9 +50,8 @@ class Capabilities:
     mcp        it can mount an MCP server this app gives it
     memory_tools  it mounts the read-only past-conversation search (session_search,
                session_read; memory_bridge.py) and lets those two calls through
-               without a card. Claude has this through `mcp`; Codex and ACP agents
-               mount only this one server, not the team tools, so they set this
-               and leave `mcp` off
+               without a card. Claude and Codex also mount team tools via `mcp`; ACP agents
+               mount only this history server and leave `mcp` off
     images     it accepts images attached to a message (TurnContext.images);
                an image sent to any other engine is refused before the turn
     resume     a conversation continues with the engine's earlier context

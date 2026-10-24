@@ -1,7 +1,7 @@
 import { request, type Agent } from "@/lib/api";
 
 export type TeamAgent = Agent & { is_lead: boolean; state: string; delegation_enabled: boolean; created_by_agent_id?: number | null; instructions_reviewed?: boolean };
-export type TeamState = { team: { id: number; name: string; lead_agent_id: number | null } | null; agents: TeamAgent[]; limits: Record<string, number>; lead_ready: { ok: boolean; reason?: string | null } };
+export type TeamState = { enabled?: boolean; team: { id: number; name: string; lead_agent_id: number | null } | null; agents: TeamAgent[]; limits: Record<string, number>; lead_ready: { ok: boolean; reason?: string | null } };
 export type SharedApproval = { id: string; thread_id: number; turn_id: number; tool: string; summary: string | null; input: Record<string, unknown>; kind: string | null; status: "pending" | "allowed" | "denied" | "expired" | "cancelled" };
 export type TeamJob = { id: number; root_id: number | null; parent_id: number | null; depth: number; requester_agent_id: number; assignee_agent_id: number; assignee_thread_id: number | null; mode: string; brief: string; status: string; result?: string | null; outcome?: string | null; outcome_detail?: string | null; children?: TeamJob[]; approvals?: SharedApproval[] };
 export type RoomMember = { agent_id: number; name: string; held: boolean; member_thread_id: number | null };
@@ -15,6 +15,8 @@ const patch = (body: unknown): RequestInit => ({ method: "PATCH", body: JSON.str
 export const collaboration = {
   team: () => request<TeamState>("/team"),
   lead: (agent_id: number) => request<TeamState>("/team/lead", post({ agent_id })),
+  clearLead: (id: number) => request<TeamState>(`/team/lead?agent_id=${id}`, { method: "DELETE" }),
+  setupReceipt: (id: string) => request<{ state: string; undo_available: boolean; undo_reason: string | null }>(`/team/setup/${encodeURIComponent(id)}`),
   addMember: (agent_id: number) => request<unknown>("/team/members", post({ agent_id })),
   removeMember: (id: number) => request<void>(`/team/members/${id}`, { method: "DELETE" }),
   delegation: (id: number, delegation_enabled: boolean) => request<unknown>(`/team/members/${id}`, patch({ delegation_enabled })),

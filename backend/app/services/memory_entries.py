@@ -57,26 +57,73 @@ def _opens_fence(line: str) -> bool:
     return line.count("```") % 2 == 1
 
 
+def _leading_fence(line: str) -> tuple[str, int] | None:
+    """A fence marker at the start of a line: (` or ~, how long)."""
+    match = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})", line)
+    if not match:
+        return None
+    marker = match.group(1)
+    return marker[0], len(marker)
+
+
+def _closing_fence(line: str, char: str, length: int) -> bool:
+    match = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$", line)
+    if not match:
+        return False
+    marker = match.group(1)
+    return marker[0] == char and len(marker) >= length
+
+
+def _skip_fence(lines: list[str], i: int) -> int | None:
+    """Index just after a code fence that starts at `i`, or None when `i` is not one."""
+    opened = _leading_fence(lines[i]) if not _DATED.match(lines[i]) else None
+    if opened is None:
+        return None
+    char, length = opened
+    j = i + 1
+    while j < len(lines) and not _closing_fence(lines[j], char, length):
+        j += 1
+    return min(j + 1, len(lines))
+
+
 def parse(text: str) -> list[Entry]:
-    """The dated entries, in order. Undated lines are not entries."""
+    """The dated entries, in order. Undated lines are not entries.
+    A dated line inside a code fence is part of the sample, not a new entry."""
     lines = text.split("\n")
     out: list[Entry] = []
     i = 0
     while i < len(lines):
+        skipped = _skip_fence(lines, i)
+        if skipped is not None:
+            i = skipped
+            continue
         match = _DATED.match(lines[i])
         if not match:
             i += 1
             continue
-        open_fence = _opens_fence(lines[i])
+        # A fact that itself contains an odd ``` run keeps the following lines
+        # until the run is closed, as before.
+        marker: tuple[str, int] | None = ("`", 3) if _opens_fence(lines[i]) else None
         end = i + 1
         j = i + 1
-        while j < len(lines) and not _DATED.match(lines[j]):
-            if not open_fence and not re.match(r"^[ \t]", lines[j]) and not lines[j].startswith("```"):
+        while j < len(lines):
+            # A sample may quote a dated bullet. That line stays in this entry.
+            if marker is None and _DATED.match(lines[j]):
                 break
-            if _opens_fence(lines[j]):
-                open_fence = not open_fence
-            if not open_fence:
-                end = j + 1
+            if marker is None and not re.match(r"^[ \t]", lines[j]) and _leading_fence(lines[j]) is None:
+                break
+            if marker is not None:
+                if _closing_fence(lines[j], marker[0], marker[1]):
+                    marker = None
+                    end = j + 1
+                j += 1
+                continue
+            spec = _leading_fence(lines[j])
+            if spec:
+                marker = spec
+                j += 1
+                continue
+            end = j + 1
             j += 1
         rest = match.group(3)
         struck = rest.startswith("~~")
@@ -106,8 +153,32 @@ def line_identity(line: str) -> str:
 
 
 def identities(text: str) -> set[str]:
-    """Every live fact in a file, by identity (for "already there")."""
-    return {k for k in (line_identity(line) for line in text.split("\n")) if k}
+    """Every live fact in a file, by identity (for "already there").
+    Continuation lines and code fences are not facts of their own, so a dated
+    example inside a sample is not treated as something already remembered."""
+    lines = text.split("\n")
+    skip: set[int] = set()
+    for entry in parse(text):
+        skip.update(range(entry.start + 1, entry.end))
+    i = 0
+    while i < len(lines):
+        if i in skip:
+            i += 1
+            continue
+        skipped = _skip_fence(lines, i)
+        if skipped is None:
+            i += 1
+            continue
+        skip.update(range(i, skipped))
+        i = skipped
+    keys: set[str] = set()
+    for index, line in enumerate(lines):
+        if index in skip:
+            continue
+        key = line_identity(line)
+        if key:
+            keys.add(key)
+    return keys
 
 
 def source_label(title: str | None, thread_id: int, *, kind: str = "chat") -> str:

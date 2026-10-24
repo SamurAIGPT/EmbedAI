@@ -77,6 +77,35 @@ def test_when_moving_everything_would_not_help_nothing_moves():
     assert room(text, lines=4) == (text, [])
 
 
+def test_a_dated_example_inside_a_code_fence_is_not_its_own_memory():
+    text = "\n".join([
+        "````",
+        "- 2026-01-01 · longer fence sample",
+        "```",
+        "````",
+        "- 2026-10-23 · from chat \"Notes\" · the real fact",
+        "```",
+        "- 2026-01-01 · this example must not become a memory · until 2026-01-02",
+        "```",
+        "- 2026-10-24 · the next real fact",
+        "~~~",
+        "- 2026-01-01 · tilde sample",
+        "~~~",
+    ])
+    assert [entry.body for entry in memory_entries.parse(text)] == ["the real fact", "the next real fact"]
+    known = memory_entries.identities(text)
+    assert "the real fact" in known and "the next real fact" in known
+    assert "this example must not become a memory" not in known
+    assert "tilde sample" not in known
+    assert "longer fence sample" not in known
+    # The sample stays in the file; only a real entry's own until-date can drop it.
+    visible, dropped = memory_entries.without_expired(text, "2026-06-01")
+    assert dropped == 0
+    assert "this example must not become a memory" in visible
+    assert "tilde sample" in visible
+    assert "longer fence sample" in visible
+
+
 def test_an_entry_moves_whole_with_its_continuation_lines():
     text = "\n".join([
         entry("2026-01-01", "has a block:"),

@@ -48,12 +48,18 @@ licenses/notices and a CycloneDX SBOM. Startup rejects missing, altered, extra
 or symlinked files and unsupported architectures. Nothing is downloaded at
 runtime, and a workspace cannot select a different driver or MCP descriptor.
 
-macOS packaging checks the staged resources before building. Native resources
-must be signed before generating their manifest; the outer packager leaves
-them intact. A release pipeline must use its Developer ID for the driver and
-native libraries, regenerate the pin, then sign/notarize the enclosing app.
+The desktop app validates the staged resources before starting the native
+driver. Native resources must be signed before generating their manifest; the
+outer packager must leave them intact. A release pipeline that includes native
+preview must use its Developer ID for the driver and native libraries,
+regenerate the pin, then sign/notarize the enclosing app.
 The current staged development bundle is ad-hoc signed and arm64 only. Intel
 needs its own reviewed bundle and matching pin; Linux/Windows are unavailable.
+
+The `v0.4.0` macOS installer omits this bundle, so native desktop preview is
+unavailable in that packaged app. It remains available from a source checkout
+when the reviewed bundle is staged; a future installer can include it after
+Developer ID signing and notarization are configured.
 
 Automated checks use a fake driver for approval/lease/permission contracts and
 a real loopback bridge. Real OS permission grant/revoke, semantic clicks in a

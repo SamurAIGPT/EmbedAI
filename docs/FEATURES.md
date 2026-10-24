@@ -22,10 +22,10 @@ for remaining work.
   past-conversation search, memory proposals and upkeep, compaction, and a
   journal with undo. Availability of model-powered upkeep depends on the
   selected engine or a configured helper. See [memory](MEMORY.md).
-- **Teams and rooms.** A Claude lead can delegate to specialists and manage
+- **Teams and rooms.** A Claude or Codex lead can delegate to specialists and manage
   shared rooms with member mentions, shared instructions, responder settings,
-  queued replies, approvals and run status. Team tools are gated and currently
-  require Claude. Room members are selected at creation and cannot yet be
+  queued replies, approvals and run status. Team tools are gated and require
+  Claude or Codex. Room members are selected at creation and cannot yet be
   changed afterward. See [teams](TEAMS.md).
 - **Skills.** Save or import reviewed Markdown instructions for an agent and
   choose them explicitly for a message. Skills do not execute scripts or grant

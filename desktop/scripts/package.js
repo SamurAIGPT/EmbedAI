@@ -30,14 +30,6 @@ if (!fs.existsSync(builder)) fail("electron-builder is not installed. Run: npm r
 
 const target = { win32: "--win", darwin: "--mac", linux: "--linux" }[process.platform];
 if (!target) fail(`No installer target for ${process.platform}.`);
-if (process.platform === "darwin") {
-  try {
-    require("../src/native-control").verifyBundle(path.join(paths.desktop, "native-control"), require("../src/native-control-pin.json"));
-  } catch {
-    fail("Native desktop resources are missing or changed. Stage the reviewed offline bundle before packaging; see docs/NATIVE-DESKTOP.md.");
-  }
-}
-
 run("Building the page", process.execPath, [path.join(__dirname, "build.js")], paths.desktop);
 run(
   "Freezing the backend",

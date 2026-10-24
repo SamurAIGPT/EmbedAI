@@ -23,14 +23,16 @@ def test_a_memory_call_is_recognised_only_for_the_two_tools_of_the_memory_server
     assert not ok(title="memory session_search " + "x" * 300)
 
 
-def test_only_codex_and_acp_set_the_memory_tools_flag_without_the_team_tools():
+def test_codex_and_acp_set_memory_tools_and_codex_also_has_team_tools():
     from app.services.acp_adapter import AcpAdapter
     from app.services.codex_adapter import CodexAdapter
     from app.services.openai_chat_adapter import OpenAIChatAdapter
 
     for adapter in (CodexAdapter, AcpAdapter):
         caps = adapter.capabilities
-        assert caps.memory_tools and not caps.mcp and caps.can_search_history
+        assert caps.memory_tools and caps.can_search_history
+    assert CodexAdapter.capabilities.mcp
+    assert not AcpAdapter.capabilities.mcp
     assert not OpenAIChatAdapter.capabilities.can_search_history
     assert Capabilities().can_search_history is False and Capabilities(mcp=True).can_search_history
 

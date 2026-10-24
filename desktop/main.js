@@ -134,10 +134,12 @@ async function main() {
   });
 
   await app.whenReady();
+  const nativeControlRoot = app.isPackaged ? path.join(process.resourcesPath, "native-control") : path.join(__dirname, "native-control");
   nativeControl = new NativeControl({
-    root: app.isPackaged ? path.join(process.resourcesPath, "native-control") : path.join(__dirname, "native-control"),
+    root: nativeControlRoot,
     pin: require("./src/native-control-pin.json"),
     userData,
+    available: fs.existsSync(path.join(nativeControlRoot, "manifest.json")),
     permissions: (prompt) => process.platform === "darwin" && systemPreferences.isTrustedAccessibilityClient(prompt) && systemPreferences.getMediaAccessStatus("screen") === "granted",
   });
   registerNativeControl({ ipcMain, dialog, service: nativeControl, getWindow: () => window, getOrigin: () => backendOrigin });

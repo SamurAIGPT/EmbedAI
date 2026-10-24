@@ -44,7 +44,7 @@ Optional legacy path: Telegram and Boat sandbox tasks
   specialists, and create shared rooms. Job and room-member turns use their own
   conversations; the room transcript stores visible messages and dispatch
   state. Teammate text is treated as data and cannot approve an action. Team
-  tools are gated and currently require Claude as the lead engine.
+  tools are gated and require Claude or Codex as the lead engine.
 - **Agent computers.** An assigned Docker computer runs the agent's bounded
   tools through a computer MCP server. Only the selected workspace is mounted;
   permits bind approval to one tool call and its exact input. Docker desktops

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.4.0 (2026-10-25)
+
+### Added
+- A persistent task planner with task boards and calendar views for work and deadlines.
+- Chat-based agent management and team lead settings for Claude and Codex.
+- The unsigned macOS installer omits native desktop preview; it remains available from a source checkout with the reviewed bundle staged.
+
+### Fixed
+- Computer agents now explain when browser tools are disabled.
+
 ## v0.3.0 (2026-10-24)
 
 ### Added

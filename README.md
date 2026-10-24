@@ -24,7 +24,7 @@ does not include a model or a model subscription.
   planning, writing, support, or development.
 - **Work as a team.** Set a lead and specialists, let the lead delegate tasks,
   and follow the results in chat. You can also bring agents together in shared
-  rooms. Team leads currently need to use Claude. See
+  rooms. Team leads can use Claude or Codex. See
   [teams and delegated work](docs/TEAMS.md).
 - **Keep useful context.** Agents can keep notes, recall relevant notes and
   earlier conversations, and search their own history. You can review and edit
@@ -47,8 +47,8 @@ does not include a model or a model subscription.
 
 Create a lead agent and a couple of specialists, such as a researcher and an
 editor. Give them the same project workspace, and set the lead's engine to
-Claude. Then ask the lead to prepare a briefing from the notes and reports in
-that folder.
+Claude or Codex. Then ask the lead to prepare a briefing from the notes and
+reports in that folder.
 
 The lead can split the request into smaller tasks and hand them to the
 specialists. Their work runs in its own conversations; when the results are
@@ -116,7 +116,7 @@ workspace and approval mode, and can create a starter agent. Then:
    approval before actions that need it.
 4. Add teammates or a routine when you want to split up work or repeat it later.
 
-As of 2026-10-24, the [Releases page](https://github.com/Anil-matcha/open-duet/releases) has a Windows x64 installer for `v0.3.0`; the latest macOS arm64 DMG is from `v0.2.0`. Both are experimental and unsigned. The `v0.3.0` Windows app includes an assisted update flow that offers a SHA-256-verified installer for you to open; it does not install updates automatically. The release-to-release update path has not been verified end to end.
+As of 2026-10-25, the [Releases page](https://github.com/Anil-matcha/open-duet/releases) has a Windows x64 installer and macOS arm64 DMG for `v0.4.0`. Both are experimental and unsigned. The macOS installer omits native desktop preview; that preview remains available from a source checkout with the reviewed bundle staged. The app includes an assisted update flow that offers a SHA-256-verified installer for you to open; it does not install updates automatically. The release-to-release update path has not been verified end to end.
 
 ## Scheduling tasks
 
@@ -133,7 +133,7 @@ is needed for the agent workspace.
 - Open Duet is early and changing. The server setup is experimental and
   intended for one owner with paired devices; it is not a multi-user
   organization workspace.
-- Team delegation is new, and the lead agent currently needs to use Claude.
+- Team delegation is new; lead agents need to use Claude or Codex.
 - Docker computers and their browser tools are experimental and opt-in. The
   macOS native desktop preview is also experimental and available only in the
   desktop app.

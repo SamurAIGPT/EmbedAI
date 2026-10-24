@@ -69,4 +69,4 @@ jobs:
 
             ## Installer availability
 
-            The Windows x64 installer is attached. A macOS installer is not included in this prerelease: the macOS preview driver bundle is not part of the hosted checkout, and the project requires Developer ID signing and notarization before shipping that native bundle. See `docs/NATIVE-DESKTOP.md` in the source archive.
+            The Windows x64 installer is attached. The macOS installer was not available in this workflow run. See the workflow logs and `docs/SETUP.md` in the source archive for platform-specific installer details.

@@ -1,8 +1,8 @@
 name: Release desktop
 
 # Builds unsigned desktop installers when a version tag is pushed and attaches
-# them to a GitHub release. Windows: NSIS installer (x64). macOS: DMG (arm64).
-# Installers are not code-signed or notarized; see docs/SETUP.md.
+# them to a GitHub release. Windows: NSIS installer (x64). macOS: DMG (arm64),
+# without native desktop preview. Installers are not code-signed or notarized.
 
 on:
   push:

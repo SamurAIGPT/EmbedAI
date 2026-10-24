@@ -33,7 +33,8 @@ function buildUi({ frontend, out = path.join(frontend, "out"), pages = SERVER_PA
   fs.rmSync(out, { recursive: true, force: true }); // only ever this build's own output
 
   log("==> Building the page (static export)");
-  const result = spawnSync(process.execPath, [next, "build"], {
+  // Turbopack's CSS worker cannot bind in this build environment; use webpack for the shared static export.
+  const result = spawnSync(process.execPath, [next, "build", "--webpack"], {
     cwd: frontend,
     stdio: "inherit",
     env: {

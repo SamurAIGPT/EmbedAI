@@ -1,6 +1,6 @@
 {
   "name": "open-dots-desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Open Duet desktop app: an Electron window around the local backend. Runs from a source checkout or installed.",
   "main": "main.js",
@@ -70,12 +70,6 @@
       "deleteAppDataOnUninstall": false
     },
     "mac": {
-      "extraResources": [{ "from": "native-control", "to": "native-control", "filter": ["**/*"] }],
-      "signIgnore": ["native-control/"],
-      "extendInfo": {
-        "NSAccessibilityUsageDescription": "Allow an explicitly enabled agent to interact with apps on this Mac.",
-        "NSScreenCaptureUsageDescription": "Allow an explicitly enabled agent to observe this Mac's screen."
-      },
       "target": [
         {
           "target": "dmg",

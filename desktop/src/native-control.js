@@ -130,12 +130,16 @@ class DriverRpc {
 }
 
 class NativeControl {
-  constructor({ root, pin, userData, permissions, loadSdk = url => import(url), rpc = c => new DriverRpc(c), platform = process.platform }) {
+  constructor({ root, pin, userData, permissions, loadSdk = url => import(url), rpc = c => new DriverRpc(c), platform = process.platform, available = true }) {
     fs.mkdirSync(userData, { recursive: true, mode: 0o700 });
     userData = fs.realpathSync(userData);
-    Object.assign(this, { root, pin, userData, permissions, loadSdk, rpc, platform });
+    Object.assign(this, { root, pin, userData, permissions, loadSdk, rpc, platform, available });
     this.enabled = new Set();
-    try { for (const id of JSON.parse(fs.readFileSync(path.join(userData, "native-agents.json")))) if (Number.isSafeInteger(id) && id > 0) this.enabled.add(id); } catch { /* disabled on first launch */ }
+    if (available) {
+      try { for (const id of JSON.parse(fs.readFileSync(path.join(userData, "native-agents.json")))) if (Number.isSafeInteger(id) && id > 0) this.enabled.add(id); } catch { /* disabled on first launch */ }
+    } else {
+      fs.writeFileSync(path.join(userData, "native-agents.json"), "[]", { mode: 0o600 });
+    }
     this.held = false;
     this.owner = null;
     this.generation = 0;
@@ -144,10 +148,10 @@ class NativeControl {
   }
   status(agent) {
     const permitted = this.platform === "darwin" && this.permissions(false);
-    return { supported: this.platform === "darwin", enabled: this.enabled.has(agent), held: this.held, busy: !!this.owner, ready: permitted && !!this.driver && !this.driver.closed, reason: this.reason || (this.enabled.has(agent) && !permitted ? "Grant Accessibility and Screen Recording to Open Duet in System Settings, then retry." : null) };
+    return { supported: this.platform === "darwin" && this.available, enabled: this.enabled.has(agent), held: this.held, busy: !!this.owner, ready: permitted && !!this.driver && !this.driver.closed, reason: this.reason || (this.enabled.has(agent) && !permitted ? "Grant Accessibility and Screen Recording to Open Duet in System Settings, then retry." : null) };
   }
   async configure(agent, enabled) {
-    if (!Number.isSafeInteger(agent) || agent < 1 || typeof enabled !== "boolean" || this.platform !== "darwin") fail();
+    if (!Number.isSafeInteger(agent) || agent < 1 || typeof enabled !== "boolean" || this.platform !== "darwin" || !this.available) fail();
     if (enabled) {
       await this.start(true);
       this.enabled.add(agent);
@@ -163,7 +167,7 @@ class NativeControl {
     return this.status(agent);
   }
   async start(prompt = false) {
-    if (this.closing || this.held || this.platform !== "darwin") fail();
+    if (this.closing || this.held || this.platform !== "darwin" || !this.available) fail();
     if (this.starting) return this.starting;
     this.starting = (async () => {
       const generation = this.generation;

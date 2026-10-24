@@ -113,7 +113,7 @@ workspace and approval mode, and can create a starter agent. Then:
    approval before actions that need it.
 4. Add teammates or a routine when you want to split up work or repeat it later.
 
-Tagged desktop installers may be available on the [Releases page](https://github.com/Anil-matcha/open-duet/releases). They are experimental, unsigned, and do not auto-update; the source checkout is the documented path.
+As of 2026-10-24, the [Releases page](https://github.com/Anil-matcha/open-duet/releases) has a Windows x64 installer for `v0.3.0`; the latest macOS arm64 DMG is from `v0.2.0`. Both are experimental and unsigned. The `v0.3.0` Windows app includes an assisted update flow that offers a SHA-256-verified installer for you to open; it does not install updates automatically. The release-to-release update path has not been verified end to end.
 
 ## Scheduling tasks
 

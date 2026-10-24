@@ -1,48 +1,140 @@
 # Roadmap
 
-Open Duet is a self-hosted workspace for AI coworkers: named agents with their own instructions, memory, routines, isolated computer and an approval step before they act. Agents run durable conversations on Claude, Codex, a generic ACP command or an OpenAI-compatible endpoint. The original Telegram and Boat-sandbox task flow still works and is optional.
+This page tracks gaps in the current product. Planned work is not a promise or
+a date. See [FEATURES.md](FEATURES.md) for the shipped surface and its guides.
 
-This page separates **shipped** from **planned**. Planned items are not promises or dates. For shipped behavior see [FEATURES.md](FEATURES.md).
+## Snapshot
 
-## Principles
+Reviewed 2026-10-24 against source `7eb56e8`; the latest desktop tag is
+`v0.3.0` at `c1148bc`. The tag includes the assisted update checker. Source is
+two commits beyond the tag, so changes after `v0.3.0` should be treated as
+source-only until a later installer is built and checked. The two commits add
+a browser-disabled computer message and a Windows release fallback workflow.
+The `v0.3.0` prerelease currently has a Windows x64 installer; its macOS build
+failed, and the newest macOS arm64 DMG is `v0.2.0`. The Windows fallback
+workflow successfully published the `v0.3.0` installer.
 
-- Ship small, tested vertical slices (backend, UI, persistence, tests, docs).
-- Keep working features (Boat sandboxes, Telegram, GitHub, schedules, permission rules) while adding the local path.
-- Security first: the owner signs in (or pairs a device) before anything runs, workspace-confined files, no silent privilege escalation.
+Current source already has named agents, an offline role gallery, explicitly
+invoked agent skills, memory and recall, search and attachments, routines,
+delegation and rooms, approval-gated Docker computers with desktop takeover,
+structured Chromium tools, a personal self-hosted mode, and desktop setup and
+updates. The product gaps below build on those features.
 
-## Sprint 1 — core beta (`v0.1.0-beta`)
+## Highest priority
 
-| ID | Feature | Status |
-|---|---|---|
-| F00 | Verified repo baseline and docs | Done |
-| F01 | Run Claude CLI locally from the web UI (loopback access policy, chat-only) | Done |
-| F02 | Stream assistant text and status (SSE) | Implemented, awaiting review |
-| F03 | Tool timeline and inline approvals | Implemented (opt-in, in memory), awaiting review |
-| F04 | Durable threads, turns, events and approvals, and a thread list (named agents are F06) | Implemented, with a Chat page; SQLite and PostgreSQL tested |
-| F05 | Stop, restart and resume | Stop implemented (Chat page and API); a stopped or interrupted message is never resumed or sent again, the conversation continues from the same session |
-| F06 | Multiple named agents with dedicated workspaces | Implemented: `/api/v1/agents`, `agent_id` on threads, per-agent folder, per-agent notes (`MEMORY.md`), starter notes, export/import as one file, and the Agents panel in the Chat page; SQLite and PostgreSQL tested |
-| F07 | Multiple engines and model selection | Implemented (experimental): Claude, Codex app-server, generic ACP and OpenAI-compatible chat; agent/new-chat engine and model controls, idle conversation model changes, web/desktop engine Settings. See [ENGINES.md](ENGINES.md) for capabilities and limits |
-| F08 | Browse/download agent workspace files | Implemented: list, text/image preview and download of a conversation's workspace, and a folder as a zip, confined to it with symlink, traversal and secret-file protection and size and file-count caps; admin scope only (see [EVERYDAY.md](EVERYDAY.md)). Editing and deleting not yet |
-| F09 | First-run onboarding and local storage | Implemented (experimental): desktop setup for engine/model, workspace, tools and approval modes; optional starter agent, durable completion, skip/replay; SQLite and database-backed desktop settings; source `doctor` command. Source flow verified on macOS; packaged first-run and Linux verification remain |
-| F10 | Installable beta, CI and documentation | In progress: CI runs the backend on SQLite and PostgreSQL, the frontend, the desktop tests and a real-process backend smoke; reliability promises and gaps in [RELIABILITY.md](RELIABILITY.md). v0.1.0 has unsigned Windows and macOS installers; `release.yml` builds them on a `v*` tag (not yet run) |
-| F12 | Owner authentication: passphrase, session cookie with CSRF, one-time pairing codes with QR, scoped and revocable device tokens, Host/Origin allowlist, opt-in loopback trust (see [AUTH.md](AUTH.md)) | Implemented; single owner, no accounts |
-| F11 | Agent computers: an isolated Docker container per agent, tools only through an approval-gated MCP server (see [COMPUTERS.md](COMPUTERS.md)) | Implemented (experimental): lifecycle, limits, network none/default, idle stop, orphan cleanup, Computer panel; egress allowlist, SSH server and desktop computers planned |
-| F13 | Self-hosting on a server you own (one owner, behind any reverse proxy; see [SELF-HOSTING.md](SELF-HOSTING.md)) | Implemented (experimental): `python -m app.server` serves the pages and the API; `migrate`, `doctor`, `backup`, `restore` and `service` commands; a Docker image and compose file; nginx and Caddy overlays with TLS; trusted-proxy handling; real-process smoke tests in CI. Run on Docker Desktop and in a clean Ubuntu container, not on a real server. Not yet: a published image, engine sign-in from the web app, certificates from a real certificate authority, a real-server run of the systemd unit |
+### P0 — Close the source-to-installer verification gap
 
-Beta gate: access restricted to the local owner, streaming local Claude, working allow/deny/cancel, history surviving restart, safe file download, passing tests/build, honest docs.
+Publish a per-engine and per-platform capability matrix and check the tagged
+installer against it. Include CLI/login prerequisites, model and attachment
+support, approval behavior, team and computer support, and whether each item is
+source-tested, manually checked, or present in a release. Verify setup,
+updates, teams/rooms and computer flows on the actual packaged builds. Restore a
+current macOS arm64 release after fixing the failed v0.3.0 build. Keep the
+unsigned/experimental label until the release path is dependable.
 
-## Sprint 2 — everyday usefulness (`v0.2.0`)
+### P1 — Make memory writes truthful and durable on every supported engine
 
-Thread search, attachments and images, workspace files and usage/cost visibility are implemented (see [EVERYDAY.md](EVERYDAY.md); still planned for them: relevance ranking or an FTS index, PDFs and office files, images for engines other than Claude, budgets and price tables for engines that report no cost). Agent topic notes, pre-turn recall, transcript compaction for replaying engines, a notes journal with undo and a proposed-notes queue are implemented (see [MEMORY.md](MEMORY.md); still planned for them: model-written summaries and proposals, journaling an agent's own file edits, topic notes in agent files, relevance beyond shared words). per-agent MCP servers, an additional connector, SKILL.md import, agent templates (an agent can already be exported and imported as one file). Scheduled agent routines with run history, in-app notifications and opt-in, bounded retry of failed runs are implemented (see [ROUTINES.md](ROUTINES.md)); still planned for them: webhook delivery de-duplication, keeping a sleeping computer awake for a due routine, and desktop notifications. Quota-aware engine fallback, model prices/context windows, multiple endpoint instances and richer non-Claude capabilities remain planned.
+A current-source Codex run with no helper could recall a fact from earlier
+conversation history but could not write it to private agent memory; the reply
+still implied that it had saved the fact. Make explicit “remember this” requests
+write a private, journaled note when supported, or clearly say when persistence
+is unavailable. Show note provenance in a fresh conversation, support
+correction and undo, and never move personal facts into team memory without
+explicit choice. See [memory](MEMORY.md).
 
-## Sprint 3 and beyond
+### P1 — Add guided agent setup by chatting
 
-A lead agent that creates specialist agents and delegates work to them, rooms (group chats of agents), more engine presets (Gemini, OpenCode, Cursor; an OpenRouter preset of the OpenAI-compatible engine exists, see [ENGINES.md](ENGINES.md#openrouter)), visible desktop computers the person can watch and take control of, per-turn sandboxing for server installs, routine results reported into the agent's chat, audit log, diffs, computer egress allowlist, bring-your-own server over SSH (the Docker computer provider exists, see F11), a packaged desktop app and installers (a source-checkout desktop app exists, see F09), multi-agent rooms, delegation, voice notes, further parity items based on user demand.
+The existing lead can propose and apply team configuration, but there is no
+discoverable user-facing “create an agent by chatting” flow. Add requirements
+gathering, exact engine/model discovery, a reviewable setup result, and safe
+undo. Reuse the current setup service and preserve approval settings and
+request receipts.
 
-Out of scope until explicitly approved: multi-tenant paid hosting, hosting third-party subscription credentials, enterprise roles/billing.
+### P1 — Connect calendar, email and a useful daily view
 
-## Known limitations today
+Add read-only Google Calendar context first, including meeting preparation and
+event freshness. Add Gmail read-only triage, then a separate draft-only action
+that can create a reply only in a thread already reviewed. Sending mail should
+remain a separately granted and explicitly approved action. Extend the
+existing **Needs you** card into a quiet, source-linked Today view for meetings,
+important mail, routine outcomes, approvals and connection problems. Do not
+report an unavailable provider as an empty inbox or calendar.
 
-Reliability gaps (other background jobs on PostgreSQL, orphans until the next start, fallback limits, scripted scenario tiers, Windows coverage of the real-process tests) are listed in [RELIABILITY.md](RELIABILITY.md#gaps). Done: one routine scheduler per PostgreSQL database, a startup sweep of engine processes a hard kill left running, replay classification of interrupted turns, and quota-aware fallback to an agent's second engine.
+### P1 — Let people manage routines from chat
 
-See the README's "Known limitations". Owner authentication and paired devices exist ([AUTH.md](AUTH.md)); still planned there: separate user accounts, passkeys or a second factor, and lockout counters shared across processes.
+Routines already have a UI, schedule preview, run history, webhooks, approvals
+and retry controls. Add bounded agent tools to inspect, propose, pause, resume,
+run and delete them. A new routine must stay disabled until its target, prompt,
+time zone, next run and approval floor are reviewed. Add webhook delivery
+receipts and, later, connected-app event triggers with explicit grants,
+provenance and bounded retries.
+
+### P1 — Finish room management and routing
+
+Rooms already support fixed-member, everyone and mention-based replies, shared
+instructions, separate member conversations, approval display, hold/resume and
+exports. Add safe roster editing while preserving history and queued work.
+Then consider opt-in model-assisted selection for untagged messages, with
+explicit-mention bypass, confidence thresholds, deterministic fallback and
+metadata-only routing logs. Keep tool approval rules unchanged.
+
+### P1 — Expand connected-app access after core trust work
+
+There is no first-party OAuth catalog for common apps such as Gmail, Calendar,
+Slack or Notion. Build on the first-party email/calendar work with scoped app
+connections, per-agent grants, custom MCP authentication and app-event
+triggers. Add idempotency, revocation, clear data provenance and bounded
+responses before expanding the catalog.
+
+### P1 — Verify memory, teams and computers across engines
+
+Keep a live compatibility matrix for Claude, Codex, ACP and API engines. Team
+tools currently require Claude; structured browser tools are Claude-only;
+computer access varies by engine. Test approvals, failures, hostile tool
+results and longer-running work for each supported path before broadening the
+claims.
+
+## Next product additions
+
+### P2 — Learn and share reviewed skills
+
+Open Duet already supports per-agent Markdown skills, import preview, secret
+redaction, explicit invocation and disabled-by-default imports. Add a flow to
+draft a skill from a successful run, review/edit it, and verify it on a second
+fixture before saving. Later allow safe team sharing with text-only export,
+secret scanning and imported skills disabled until review.
+
+### P2 — Extend templates into safe import and team sharing
+
+The bundled role gallery and single-agent import/export are shipped. Add local
+team-package import, GitHub and external-bot import, bounded project-folder
+suggestions, reusable presets and whole-team export. Preview fields, omit
+secrets, credentials, permissions, history and local paths, and import
+autonomous features disabled. A managed organization catalog is a separate
+future decision.
+
+### P2 — Improve file and computer reach
+
+Add bounded PDF and Office document extraction with visible failures. Decide
+whether remote VPS computers are needed; if so, design workspace placement,
+SSH trust, viewer transport, lifecycle, egress and cost before building them.
+For local Docker computers, evaluate a real egress policy and clearer handling
+when another conversation owns the screen. Keep isolated Docker as the default.
+
+### P2 — Add voice and richer media
+
+Stage spoken replies before live calls. Add optional text-to-speech settings,
+macOS dictation that inserts editable text without sending, and a half-duplex
+call view with captions and explicit mute/hang-up controls. Keep screenshots
+from intentional actions as bounded transcript attachments; do not retain
+polled preview frames.
+
+## Deliberate scope
+
+- Keep personal self-hosting single-owner. Multi-tenant hosting, organization
+  accounts and billing are not part of the current desktop/server path.
+- Build the core workspace and trust controls before a very broad app catalog.
+- Treat mascots and other cosmetic parity as lower priority than integrations,
+  memory correctness and release confidence.
+- Do not rebuild the existing search, role gallery, routines, team delegation,
+  rooms, desktop preview, takeover or structured browser tools.

@@ -13,10 +13,12 @@ Chromium browser. See [the image setup](../desktop-image/README.md) and
 [browser tools](BROWSER.md). Rebuild the local image and recreate older desktop
 computers to install Chromium and the CDP broker.
 
-Status: experimental. Tested with a fake `docker` executable and the real
-Claude CLI. Provider tests against a real Docker daemon are included and run
-only when Docker is answering and the image is already present (see
-[Testing](#testing)).
+Status: experimental and opt-in. Automated coverage uses a fake `docker`
+executable and scripted provider CLIs; provider tests against a real Docker
+daemon run only when Docker is answering and the image is already present (see
+[Testing](#testing)). Focused macOS source-build checks have also exercised the
+real Docker lifecycle, computer tools, desktop preview and take-control flow.
+These checks do not establish broad engine, platform or security coverage.
 
 ## What it does
 
@@ -44,7 +46,7 @@ One table, `computer` (migration `4b7e1d9c2a58`), at most one row per agent:
 | Column | Meaning |
 |---|---|
 | `agent_id` | The agent (unique). No foreign key, like `thread.agent_id`: a row outlives its agent until its machine is removed. |
-| `provider` | `docker` today. Later `ssh` and `desktop`. |
+| `provider` | `docker` for isolated agent computers. The native macOS desktop preview is a separate, opt-in app path; SSH computers are not implemented. |
 | `image`, `image_id` | The image reference (a digest pins it) and the content id it resolved to when the machine was made. |
 | `cpu_millis`, `memory_mb`, `pids_limit` | Limits. CPU is stored in thousandths so the column is an integer on every database. |
 | `network` | `none` (no network at all, the default) or `default` (Docker's bridge: internet out, nothing in). |

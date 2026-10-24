@@ -6,11 +6,31 @@ The database stores team membership, creation records, jobs, room membership and
 
 The foundation migration uses additive columns and new tables, with an SQLite-safe downgrade. It does not start paid work or change existing agents automatically.
 
+## Shared rooms
+
+A room is a shared conversation for selected agents, with shared instructions
+and one visible transcript. Create one from the Chat page's Rooms panel or let
+a Claude team lead create it with `create_room`. Choose one to twelve agents
+when creating it; the member list is fixed after creation. You can edit the
+room name, shared instructions and default responder setting later.
+
+For a message without a tag, choose **Only tagged members**, **One member**, or
+**Everyone**. Tag an individual with `@name` or use `@everyone` to direct a
+message to members. Members take turns, so room work is queued rather than
+running every responder at once. Each member has a separate work conversation;
+the room shows replies, pending approvals, progress, failures and links to that
+work. Owners can hold or resume a member, stop work, retry a failed dispatch,
+and export the room transcript as Markdown or JSON. Tool approvals still use
+each agent's normal approval mode.
+
+Room rosters cannot currently be edited after creation, and there is no
+model-based automatic responder for untagged messages.
+
 ## Handing work out without waiting
 
 The lead's `delegate` tool assigns work to one to four teammates and returns receipts at once. The lead then ends its turn. Each result is stored in an inbox; when every awaited result is in, or a teammate asks the person a question, the lead is resumed once in a new turn on the same conversation, with the results in a message written by the app. Results are quoted data and never approve a tool call. `ask_agent` stays for a short question the lead must have answered before it can go on (it waits up to `TEAM_JOB_WAIT_SECONDS`). A teammate that needs the person ends its reply with a last line `NEEDS INPUT: <question>`; the person answers in that teammate's own conversation and the job runs again. Pressing Stop on a lead that is waiting stops what it handed out and it is not resumed. After a restart, a job interrupted before its engine took the prompt is queued again once; otherwise it is marked failed, and a lead whose turn was cut is resumed with a note to check what it already did.
 
-Verification: the migrated SQLite schema and PostgreSQL DDL snapshots were checked locally. A real Claude lead handing work to two specialists and being resumed once was checked locally on SQLite. Long MCP calls, real room members and PostgreSQL multiple backend execution have not been verified.
+Verification: the migrated SQLite schema and PostgreSQL DDL snapshots were checked locally. Focused macOS source-build checks exercised a Claude lead delegating to specialists and one- and two-member room replies. This does not establish broad engine compatibility, long-running room behavior, hostile-input resistance, or PostgreSQL multi-backend execution.
 
 ## When a teammate's run goes wrong
 

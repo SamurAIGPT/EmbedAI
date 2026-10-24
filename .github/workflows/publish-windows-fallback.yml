@@ -1,0 +1,72 @@
+name: Publish Windows prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Release desktop workflow run with a successful Windows package
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Publish Windows installer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source release run
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid run ID." >&2; exit 1; }
+
+          run_json="$(gh api "repos/${GH_REPO}/actions/runs/${SOURCE_RUN_ID}")"
+          [[ "$(jq -r '.event' <<<"$run_json")" == "push" ]] || { echo "Source must be a tag push." >&2; exit 1; }
+          tag="$(jq -r '.head_branch' <<<"$run_json")"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Source ref is not a version tag." >&2; exit 1; }
+
+          workflow_id="$(jq -r '.workflow_id' <<<"$run_json")"
+          workflow_json="$(gh api "repos/${GH_REPO}/actions/workflows/${workflow_id}")"
+          [[ "$(jq -r '.path' <<<"$workflow_json")" == ".github/workflows/release.yml" ]] || { echo "Source is not the desktop release workflow." >&2; exit 1; }
+
+          jobs_json="$(gh api "repos/${GH_REPO}/actions/runs/${SOURCE_RUN_ID}/jobs?per_page=100")"
+          windows_result="$(jq -r '.jobs[] | select(.name == "Package (windows-latest)") | .conclusion' <<<"$jobs_json")"
+          [[ "$windows_result" == "success" ]] || { echo "Windows packaging did not succeed." >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download the Windows installer artifact
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: installer-windows-latest
+          path: installers
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          tag_name: ${{ steps.source.outputs.tag }}
+          name: Open Duet ${{ steps.source.outputs.tag }}
+          files: installers/*
+          fail_on_unmatched_files: true
+          prerelease: true
+          body: |
+            ## Highlights
+
+            - Named agents can use saved, text-only skills and a gallery of 16 reviewed templates.
+            - Agent file import/export now handles large topic notes safely, with skipped-file reporting and undoable imports.
+            - Gemini CLI and Cursor ACP setup, experimental gated OpenCode, generic provider forms, and improved OpenRouter model discovery.
+            - The desktop app can find, download, and verify newer release installers before opening them.
+            - Codex agents can use the isolated Docker computer, and agents can be deleted from the sidebar or Agents panel.
+
+            ## Installer availability
+
+            The Windows x64 installer is attached. A macOS installer is not included in this prerelease: the macOS preview driver bundle is not part of the hosted checkout, and the project requires Developer ID signing and notarization before shipping that native bundle. See `docs/NATIVE-DESKTOP.md` in the source archive.

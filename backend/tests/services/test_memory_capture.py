@@ -19,7 +19,7 @@ from app.services import (
 )
 from app.services.memory_capture import Fact
 from tests.services.test_openai_chat_adapter import BASE, KEY, data_of, delta, endpoint, ort, run, sse  # noqa: F401
-from tests.services.thread_harness import cleanup, events_of, finished, owner, sessions  # noqa: F401
+from tests.services.thread_harness import cleanup, events_of, finished, owner, sessions, wait_until  # noqa: F401
 
 DAY = "2026-10-23"
 
@@ -347,7 +347,11 @@ async def test_turns_waiting_at_shutdown_are_read_back_at_the_next_start(ort, se
     answering(endpoint, '[{"text": "The person lives in Pune", "kind": "fact"}]')
     ort.capture._quiet = lambda: 30
     agent = await make_agent(sessions, owner)
-    await run(ort, sessions, LONG, agent_id=agent.id, title="Moving")
+    thread, _ = await run(ort, sessions, LONG, agent_id=agent.id, title="Moving")
+    # The terminal row is committed before ThreadRuntime queues memory capture.
+    # Wait for that hand-off before simulating a shutdown so PostgreSQL polling
+    # cannot close the worker in the gap between those two steps.
+    await wait_until(lambda: (agent.id, thread.id) in ort.capture._waiting)
     ort.capture.close()  # the app quits
     saved = json.loads(memory_capture._pending_path().read_text())
     assert saved["batches"][0]["agent_id"] == agent.id and "Pune" not in json.dumps(saved)  # ids, never text

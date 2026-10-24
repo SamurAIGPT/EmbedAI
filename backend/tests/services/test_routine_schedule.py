@@ -140,6 +140,8 @@ def test_latest_due_collapses_a_backlog():
         ("5 * * * *", "Every hour at :05 (UTC)"),
         ("0 9 * * *", "Every day at 09:00 (UTC)"),
         ("0 9 * * 1-5", "Mon–Fri at 09:00 (UTC)"),
+        ("0 9 * * Mon-Fri", "Mon–Fri at 09:00 (UTC)"),
+        ("0 9 * * MON-FRI", "Mon–Fri at 09:00 (UTC)"),
         ("0 18 * * 0,6", "Weekends at 18:00 (UTC)"),
         ("0 9 1 * *", "Monthly on day 1 at 09:00 (UTC)"),
         ("0 9 1 1 *", "Cron 0 9 1 1 * (UTC)"),

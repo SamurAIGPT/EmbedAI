@@ -6,9 +6,9 @@ import { useRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 
-type Size = "sm" | "md" | "wide" | "lg";
+type Size = "sm" | "md" | "wide" | "lg" | "xl";
 
-const WIDTHS: Record<Size, string> = { sm: "sm:max-w-md", md: "sm:max-w-xl", wide: "sm:max-w-2xl", lg: "sm:max-w-4xl" };
+const WIDTHS: Record<Size, string> = { sm: "sm:max-w-md", md: "sm:max-w-xl", wide: "sm:max-w-2xl", lg: "sm:max-w-4xl", xl: "sm:max-w-7xl" };
 
 // A modal. On a phone it becomes a sheet anchored to the bottom edge (full width, rounded top,
 // scrolls inside itself); from `sm` up it is a centered card. Use `lg` for forms and workflows

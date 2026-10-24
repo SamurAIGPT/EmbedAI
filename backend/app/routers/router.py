@@ -16,6 +16,7 @@ from app.routers.computers import router as computers_router
 from app.routers.computer_viewer import router as computer_viewer_router
 from app.routers.engines import router as engines_router
 from app.routers.routines import router as routines_router
+from app.routers.work_planner import router as planner_router
 from app.routers.search import router as search_router
 from app.routers.attachments import router as attachments_router
 from app.routers.workspace_files import router as workspace_files_router
@@ -51,6 +52,7 @@ router.include_router(computers_router)
 router.include_router(computer_viewer_router)
 router.include_router(engines_router)
 router.include_router(routines_router)
+router.include_router(planner_router)
 router.include_router(search_router)
 router.include_router(attachments_router)
 router.include_router(workspace_files_router)

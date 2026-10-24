@@ -17,6 +17,7 @@ import { computerChip } from "@/lib/computers";
 import { AgentsPanel } from "./AgentsPanel";
 import { NotificationBell } from "./NotificationBell";
 import { RoutinesPanel } from "./RoutinesPanel";
+import { PlannerPanel } from "./PlannerPanel";
 import { EngineModelFields } from "./EngineModelFields";
 import { ComputerView } from "./ComputerPanel";
 import { ApprovalsPanel } from "@/components/approvals/ApprovalsPanel";
@@ -150,6 +151,7 @@ export function ChatApp() {
   // The Agents panel opened from New agent starts on the form.
   const [agentsCreate, setAgentsCreate] = useState(false);
   const [routinesOpen, setRoutinesOpen] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   // Files chosen for the next message, and why one was refused.
@@ -625,6 +627,7 @@ export function ChatApp() {
       onNewAgent={agents !== null ? () => { setAgentsCreate(true); setAgentsOpen(true); } : undefined}
       collaboration={ready ? <RoomList selected={roomId} onTeam={() => setTeamOpen(true)} onNavigate={() => setDrawerOpen(false)} /> : undefined}
       onOpenRoutines={ready && agents !== null ? () => setRoutinesOpen(true) : undefined}
+      onOpenPlanner={ready && agents !== null ? () => setPlannerOpen(true) : undefined}
       onNavigate={() => { setDrawerOpen(false); setModelDraft(null); }}
     />
   );
@@ -724,6 +727,7 @@ export function ChatApp() {
       {routinesOpen && agents !== null && (
         <RoutinesPanel agents={agents} onClose={() => setRoutinesOpen(false)} />
       )}
+      {plannerOpen && agents !== null && <PlannerPanel agents={agents} threads={threads ?? []} onClose={() => setPlannerOpen(false)} onOpenRoutines={() => { setPlannerOpen(false); setRoutinesOpen(true); }} />}
       {agentsOpen && agents !== null && (
         <AgentsPanel
           agents={agents}

@@ -39,6 +39,9 @@ does not include a model or a model subscription.
   and off until you enable them.
 - **Keep track of work.** Search conversations, attach text files and images,
   browse or download workspace files, and review reported token use and cost.
+- **Plan tasks and deadlines.** Keep work on a board, assign an agent or team,
+  and review deadlines alongside routine occurrences in a week or month
+  calendar. See [tasks and calendar](docs/TASKS.md).
 
 ## Example: prepare a weekly project briefing
 
@@ -149,6 +152,7 @@ is needed for the agent workspace.
 - [Teams and delegated work](docs/TEAMS.md)
 - [Memory and context](docs/MEMORY.md)
 - [Routines](docs/ROUTINES.md)
+- [Tasks and calendar](docs/TASKS.md)
 - [Agent computers](docs/COMPUTERS.md) and [browser tools](docs/BROWSER.md)
 - [Self-hosting](docs/SELF-HOSTING.md)
 - [Contributing](docs/CONTRIBUTING.md)

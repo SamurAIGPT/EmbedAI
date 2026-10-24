@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, CalendarClock, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, Columns3, Plus, Settings, SlidersHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import type { Agent, Thread } from "@/lib/api";
@@ -52,6 +52,7 @@ export function Sidebar({
   onDeleteAgent,
   onNewAgent,
   onOpenRoutines,
+  onOpenPlanner,
   onNavigate,
   collaboration,
 }: {
@@ -75,6 +76,7 @@ export function Sidebar({
   // Open the new-agent form. Offered even when there are no agents yet.
   onNewAgent?: () => void;
   onOpenRoutines?: () => void;
+  onOpenPlanner?: () => void;
   // Lets a drawer close itself after a choice.
   onNavigate?: () => void;
   collaboration?: React.ReactNode;
@@ -204,6 +206,12 @@ export function Sidebar({
       {error && <p role="alert" className="px-4 pb-2 text-xs text-danger">{error}</p>}
 
       <div className="space-y-0.5 border-t border-line p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        {onOpenPlanner && (
+          <button type="button" onClick={() => { onOpenPlanner(); onNavigate?.(); }} className={cn(ROW, "hover:bg-hover/60")}>
+            <Columns3 size={16} aria-hidden="true" />
+            <span className="font-medium">Tasks & calendar</span>
+          </button>
+        )}
         {onOpenRoutines && (
           <button type="button" onClick={() => { onOpenRoutines(); onNavigate?.(); }} className={cn(ROW, "hover:bg-hover/60")}>
             <CalendarClock size={18} aria-hidden="true" className="shrink-0 text-muted" />

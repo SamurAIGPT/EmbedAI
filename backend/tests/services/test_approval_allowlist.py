@@ -41,6 +41,22 @@ def test_unbalanced_quotes_never_match_a_prefix():
     assert not command_matches(PREFIX, "echo", "echo 'unterminated")
 
 
+def test_a_prefix_rule_matches_when_operators_are_only_quoted_text():
+    assert command_matches(PREFIX, "git commit", 'git commit -m "fix > docs"')
+    assert command_matches(PREFIX, "git commit", 'git commit -m "a; b"')
+    assert command_matches(PREFIX, "git commit", "git commit -m 'cost $(id)'")
+    assert command_matches(PREFIX, "git commit", 'git commit -m "a & b"')
+
+
+def test_a_prefix_rule_still_rejects_a_command_chained_after_quoted_text():
+    assert not command_matches(PREFIX, "git commit", 'git commit -m "a > b" && rm -rf ~')
+    assert not command_matches(PREFIX, "git commit", 'git commit -m "cost $(id)"')
+    assert not command_matches(PREFIX, "git commit", 'git commit -m "ok"\nrm -rf ~')
+    assert not command_matches(PREFIX, "git commit", 'git commit -m "ok"&&rm -rf ~')
+    assert not command_matches(PREFIX, "git status", "git status > out")
+    assert not command_matches(PREFIX, "git commit", "git commit -m 'unterminated")
+
+
 def test_rules_are_validated():
     assert allow.validate_rule(EXACT, "  ls -la ") == "ls -la"
     assert allow.validate_rule(PREFIX, "git log") == "git log"

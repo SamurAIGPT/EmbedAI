@@ -11,9 +11,12 @@ does not match still asks, and a command on the safety floor
 
   exact   the whole command, character for character
   prefix  the command starts with these words (`git status` allows
-          `git status -s`). A command containing shell operators (`;` `&` `|`
-          `<` `>` backtick, `$(`, a newline) never matches a prefix rule,
-          because `git status; rm -rf ~` would otherwise ride along.
+          `git status -s`). An unquoted `;` `&` `|` `<` `>` backtick, `$(`,
+          or newline never matches a prefix rule, because
+          `git status; rm -rf ~` would otherwise ride along. Those same
+          characters inside quotes are argument text
+          (`git commit -m "fix > docs"`). Double quotes still expand
+          `$(` and backticks, and an unclosed quote does not match.
 
 A rule saved from an answer is tied to that conversation's workspace folder,
 spelled exactly as stored (no symlink or `..` folding, so a rule can never
@@ -43,7 +46,6 @@ BASH_TOOL = "Bash"
 # Tools whose `command` is a shell command a rule can match.
 COMMAND_TOOLS = (BASH_TOOL, "mcp__computer__exec")
 
-_SHELL_OPERATORS = (";", "&", "|", "<", ">", "`", "$(", "\n", "\r")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -52,7 +54,35 @@ class InvalidRule(ValueError):
 
 
 def _has_shell_operators(command: str) -> bool:
-    return any(op in command for op in _SHELL_OPERATORS)
+    """True when a prefix match could run more than the saved words."""
+    i = 0
+    n = len(command)
+    quote: str | None = None
+    while i < n:
+        char = command[i]
+        if quote == "'":
+            if char == "'":
+                quote = None
+            i += 1
+            continue
+        if char == "\\":
+            i += 2
+            continue
+        if quote == '"':
+            if char == '"':
+                quote = None
+            elif char == "`" or command.startswith("$(", i):
+                return True
+            i += 1
+            continue
+        if char in "'\"":
+            quote = char
+            i += 1
+            continue
+        if char in ";|&<>\n\r" or char == "`" or command.startswith("$(", i):
+            return True
+        i += 1
+    return quote is not None
 
 
 def _words(command: str) -> list[str] | None:
